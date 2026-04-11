@@ -31,6 +31,7 @@ Final trait assignment uses priority and conflict rules so the engine can keep a
 - [smb4_mlb_ratings/engine.py](smb4_mlb_ratings/engine.py): rating engine and framework rules
 - [smb4_mlb_ratings/models.py](smb4_mlb_ratings/models.py): input and output models
 - [smb4_mlb_ratings/cli.py](smb4_mlb_ratings/cli.py): command-line entry point
+- [smb4_mlb_ratings/output.py](smb4_mlb_ratings/output.py): structured team-by-team ratings output
 - [smb4_mlb_ratings/ingest/savant.py](smb4_mlb_ratings/ingest/savant.py): Baseball Savant CSV ingestion and normalization
 - [smb4_mlb_ratings/ingest/baseball_reference.py](smb4_mlb_ratings/ingest/baseball_reference.py): Baseball Reference CSV ingestion for result-based stats
 
@@ -162,9 +163,12 @@ New subcommands are also available:
 python -m smb4_mlb_ratings.cli rate players.json ratings_output.json
 python -m smb4_mlb_ratings.cli ingest savant_manifest.json normalized_players.json
 python -m smb4_mlb_ratings.cli ingest-rate savant_manifest.json ratings_output.json --normalized-output normalized_players.json
+python -m smb4_mlb_ratings.cli ingest-rate savant_manifest.json --structured-output team_ratings
 ```
 
 The `ingest` manifest can now target `baseball_savant`, `baseball_reference`, or `mixed`.
+
+When `--structured-output` is provided to `ingest-rate`, the tool writes one file per team at `<output_dir>/<league>/<division>/<team>.json` and creates `<output_dir>/index.json` with the organized file list.
 
 ## Baseball Savant Ingestion
 

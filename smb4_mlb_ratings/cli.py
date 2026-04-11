@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .engine import rate_players
 from .ingest import ingest_from_manifest, load_manifest
+from .output import write_structured_output
 
 
 def load_players(path: Path) -> list[dict]:
@@ -36,13 +37,21 @@ def run_ingest(manifest_path: Path, output_path: Path) -> int:
     return 0
 
 
-def run_ingest_rate(manifest_path: Path, output_path: Path, normalized_output_path: Path | None) -> int:
+def run_ingest_rate(
+    manifest_path: Path,
+    output_path: Path | None,
+    normalized_output_path: Path | None,
+    structured_output_path: Path | None,
+) -> int:
     manifest = load_manifest(manifest_path)
     players = ingest_from_manifest(manifest)
     if normalized_output_path is not None:
         write_json(normalized_output_path, {"players": players})
     outputs = rate_players(players)
-    write_json(output_path, [output.to_dict() for output in outputs])
+    if output_path is not None:
+        write_json(output_path, [output.to_dict() for output in outputs])
+    if structured_output_path is not None:
+        write_structured_output(outputs, structured_output_path)
     return 0
 
 
@@ -60,12 +69,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     ingest_rate_parser = subparsers.add_parser("ingest-rate", help="Normalize supported source files and rate them")
     ingest_rate_parser.add_argument("manifest", type=Path, help="Ingestion manifest JSON file")
-    ingest_rate_parser.add_argument("output", type=Path, help="Output ratings JSON file")
+    ingest_rate_parser.add_argument("output", type=Path, nargs="?", default=None, help="Optional output ratings JSON file")
     ingest_rate_parser.add_argument(
         "--normalized-output",
         type=Path,
         default=None,
         help="Optional path to also write normalized player JSON",
+    )
+    ingest_rate_parser.add_argument(
+        "--structured-output",
+        type=Path,
+        default=None,
+        help="Optional directory path for league/division/team JSON output",
     )
     return parser
 
@@ -82,7 +97,14 @@ def main(argv: list[str] | None = None) -> int:
     if namespace.command == "ingest":
         return run_ingest(namespace.manifest, namespace.output)
     if namespace.command == "ingest-rate":
-        return run_ingest_rate(namespace.manifest, namespace.output, namespace.normalized_output)
+        if namespace.output is None and namespace.structured_output is None:
+            parser.error("ingest-rate requires either an output file or --structured-output")
+        return run_ingest_rate(
+            namespace.manifest,
+            namespace.output,
+            namespace.normalized_output,
+            namespace.structured_output,
+        )
 
     parser.print_help(sys.stderr)
     return 1
