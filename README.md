@@ -8,6 +8,7 @@ This workspace now includes a small Python tool that converts MLB-style player m
 - Supports weighted multi-season metrics using `current`, `previous`, and `two_years_ago`
 - Weights multi-season metrics by both recency and season-specific volume when matching sample data is present
 - Stabilizes noisy samples with regression toward league averages
+- Blends underlying metrics with surface stats on a sample-based ramp, keeping underlying signals at 50-100% of each affected rating
 - Treats raw-tool ratings more aggressively than skill ratings, allowing smaller samples and age-sensitive trend effects for `power`, `speed`, `arm`, `velocity`, and `junk`
 - Suggests traits aggressively from component outliers, including negative traits that preserve weaknesses hidden by a blended rating
 - Recommends a ranked list of SMB4 personality types per player using a personal-traits-first and team-traits-second blend

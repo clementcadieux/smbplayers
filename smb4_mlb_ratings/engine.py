@@ -139,6 +139,7 @@ class ComponentSpec:
     weight: float
     higher_is_better: bool = True
     position_groups: frozenset[str] | None = None
+    is_surface_stat: bool = False
 
 
 @dataclass(frozen=True)
@@ -168,7 +169,7 @@ RATING_SPECS = (
             ComponentSpec("iso", 0.35),
             ComponentSpec("hr_per_pa", 0.25),
             ComponentSpec("barrel_rate", 0.20),
-            ComponentSpec("slugging", 0.10),
+            ComponentSpec("slugging", 0.10, is_surface_stat=True),
             ComponentSpec("avg_exit_velocity", 0.10),
         ),
     ),
@@ -180,10 +181,10 @@ RATING_SPECS = (
         review_threshold=150,
         peer_mode="hitter",
         components=(
-            ComponentSpec("strikeout_rate", 0.35, higher_is_better=False),
-            ComponentSpec("contact_rate", 0.25),
-            ComponentSpec("batting_average", 0.20),
-            ComponentSpec("adjusted_obp", 0.10),
+            ComponentSpec("strikeout_rate", 0.35, higher_is_better=False, is_surface_stat=True),
+            ComponentSpec("contact_rate", 0.25, is_surface_stat=True),
+            ComponentSpec("batting_average", 0.20, is_surface_stat=True),
+            ComponentSpec("adjusted_obp", 0.10, is_surface_stat=True),
             ComponentSpec("two_strike_contact_rate", 0.10),
         ),
     ),
@@ -265,7 +266,7 @@ RATING_SPECS = (
             ComponentSpec("movement_quality", 0.20),
             ComponentSpec("stuff_metric", 0.20),
             ComponentSpec("arsenal_diversity", 0.10),
-            ComponentSpec("weak_contact_rate", 0.10),
+            ComponentSpec("weak_contact_rate", 0.10, is_surface_stat=True),
         ),
     ),
     RatingSpec(
@@ -276,8 +277,8 @@ RATING_SPECS = (
         review_threshold=250,
         peer_mode="pitcher",
         components=(
-            ComponentSpec("walk_rate", 0.35, higher_is_better=False),
-            ComponentSpec("strike_pct", 0.25),
+            ComponentSpec("walk_rate", 0.35, higher_is_better=False, is_surface_stat=True),
+            ComponentSpec("strike_pct", 0.25, is_surface_stat=True),
             ComponentSpec("zone_pct", 0.15),
             ComponentSpec("first_pitch_strike_pct", 0.15),
             ComponentSpec("command_error_rate", 0.10, higher_is_better=False),
@@ -451,6 +452,38 @@ def mean_or_none(values: list[float]) -> float | None:
 def stabilize_metric(raw_value: float, sample: float, threshold: float, league_average: float) -> float:
     reliability = clamp(sample / threshold, 0.0, 1.0)
     return league_average + reliability * (raw_value - league_average)
+
+
+def surface_weight_factor(sample: float, threshold: float) -> float:
+    if sample <= 0 or threshold <= 0:
+        return 0.0
+    return 0.5 * clamp(sample / threshold, 0.0, 1.0)
+
+
+def blend_component_percentiles(
+    component_percentiles: list[tuple[float, float, bool]],
+    *,
+    sample: float,
+    threshold: float,
+) -> float:
+    underlying_components = [(percentile, weight) for percentile, weight, is_surface in component_percentiles if not is_surface]
+    surface_components = [(percentile, weight) for percentile, weight, is_surface in component_percentiles if is_surface]
+
+    def weighted_average(components: list[tuple[float, float]]) -> float:
+        total_weight = sum(weight for _, weight in components)
+        return sum(percentile * weight for percentile, weight in components) / total_weight
+
+    if not underlying_components or not surface_components:
+        return weighted_average([(percentile, weight) for percentile, weight, _ in component_percentiles])
+
+    surface_share = surface_weight_factor(sample, threshold)
+    if surface_share == 0.0:
+        return weighted_average(underlying_components)
+
+    underlying_share = 1.0 - surface_share
+    underlying_score = weighted_average(underlying_components)
+    surface_score = weighted_average(surface_components)
+    return underlying_score * underlying_share + surface_score * surface_share
 
 
 def percentile_rank(value: float, peers: list[float], higher_is_better: bool) -> float:
@@ -1480,7 +1513,7 @@ def rate_players(players: list[PlayerInput | dict], trim_final_traits: bool = Tr
             continue
 
         for state in eligible_states:
-            component_percentiles: list[tuple[float, float]] = []
+            component_percentiles: list[tuple[float, float, bool]] = []
             missing_components: list[str] = []
 
             for component in spec.components:
@@ -1551,9 +1584,9 @@ def rate_players(players: list[PlayerInput | dict], trim_final_traits: bool = Tr
                     higher_is_better=component.higher_is_better,
                 )
                 state.component_percentiles.setdefault(spec.name, {})[component.metric] = round(percentile, 2)
-                component_percentiles.append((percentile, component.weight))
+                component_percentiles.append((percentile, component.weight, component.is_surface_stat))
 
-            available_weight = sum(weight for _, weight in component_percentiles)
+            available_weight = sum(weight for _, weight, _ in component_percentiles)
             if available_weight == 0:
                 apply_review_flags(
                     state,
@@ -1563,7 +1596,11 @@ def rate_players(players: list[PlayerInput | dict], trim_final_traits: bool = Tr
                 )
                 continue
 
-            combined_percentile = sum(percentile * weight for percentile, weight in component_percentiles) / available_weight
+            combined_percentile = blend_component_percentiles(
+                component_percentiles,
+                sample=state.samples.get(spec.sample_key, 0.0),
+                threshold=spec.stabilization_threshold,
+            )
             state.percentiles[spec.name] = round(combined_percentile, 2)
             state.ratings[spec.name] = interpolate_rating(combined_percentile)
             apply_review_flags(state, spec, available_weight, missing_components)
