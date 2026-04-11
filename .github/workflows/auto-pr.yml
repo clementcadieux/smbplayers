@@ -38,6 +38,11 @@ jobs:
             const { data: repoData } = await github.rest.repos.get({ owner, repo });
             const baseBranch = repoData.default_branch;
 
+            // Extract issue number from branch name (e.g. "123-my-feature", "feature/123-desc", "issue/123")
+            const issueMatch = branch.match(/(?:^|[\/\-])(\d+)(?:[\/\-]|$)/);
+            const issueNumber = issueMatch ? issueMatch[1] : null;
+            const issueRef = issueNumber ? `\n\nCloses #${issueNumber}` : '';
+
             // Create the PR
             const { data: pr } = await github.rest.pulls.create({
               owner,
@@ -45,7 +50,7 @@ jobs:
               title: branch,
               head: branch,
               base: baseBranch,
-              body: `Automated PR for branch \`${branch}\`.`,
+              body: `Automated PR for branch \`${branch}\`.${issueRef}`,
             });
 
             console.log(`Created PR #${pr.number}: ${pr.html_url}`);
