@@ -10,6 +10,19 @@ htmlcov/
 dist/
 build/
 *.egg-info/
+
+# Local MLB exports and derived rating artifacts must stay out of the public repo.
+*.csv
+exports/
+data/
+output/
+ratings/
+normalized_*.json
+ratings_*.json
+
+# Keep the SMB4 reference catalog tracked even as local JSON outputs are ignored.
+!smb4_player_reference.json
+
 .DS_Store
 Thumbs.db
 .vscode/
