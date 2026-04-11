@@ -1,0 +1,665 @@
+from __future__ import annotations
+
+import csv
+import json
+import math
+from collections import defaultdict
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+
+SEASON_KEYS = ("current", "previous", "two_years_ago")
+SUPPORTED_SOURCES = frozenset({"baseball_savant", "baseball_reference", "mixed"})
+MIXABLE_SOURCES = frozenset({"baseball_savant", "baseball_reference"})
+SUPPORTED_FILE_TYPES = frozenset({"hitters", "pitchers", "fielding", "running", "roster"})
+
+POSITION_ALIASES = {
+    "C": "C",
+    "CATCHER": "C",
+    "1B": "1B",
+    "FIRST": "1B",
+    "FIRSTBASE": "1B",
+    "2B": "2B",
+    "SECOND": "2B",
+    "SECONDBASE": "2B",
+    "3B": "3B",
+    "THIRD": "3B",
+    "THIRDBASE": "3B",
+    "SS": "SS",
+    "SHORTSTOP": "SS",
+    "LF": "LF",
+    "LEFTFIELD": "LF",
+    "CF": "CF",
+    "CENTERFIELD": "CF",
+    "CENTER": "CF",
+    "RF": "RF",
+    "RIGHTFIELD": "RF",
+    "OF": "OF",
+    "OUTFIELD": "OF",
+    "IF": "IF",
+    "INFIELD": "IF",
+    "DH": "DH",
+    "DESIGNATEDHITTER": "DH",
+    "P": "P",
+    "SP": "P",
+    "RP": "P",
+    "RHP": "P",
+    "LHP": "P",
+    "PITCHER": "P",
+}
+
+POSITION_DIFFICULTY = {
+    "C": 0.98,
+    "SS": 0.92,
+    "CF": 0.82,
+    "3B": 0.78,
+    "2B": 0.76,
+    "LF": 0.62,
+    "RF": 0.62,
+    "1B": 0.46,
+    "OF": 0.60,
+    "IF": 0.70,
+    "DH": 0.12,
+    "P": 0.35,
+}
+
+ARM_POSITION_BASELINE = {
+    "C": 0.95,
+    "RF": 0.85,
+    "3B": 0.80,
+    "SS": 0.72,
+    "CF": 0.68,
+    "LF": 0.58,
+    "2B": 0.48,
+    "1B": 0.38,
+    "OF": 0.64,
+    "IF": 0.60,
+    "DH": 0.10,
+    "P": 0.50,
+}
+
+PITCH_USAGE_COLUMNS = {
+    "ff": ("ff_pct", "four_seam_pct", "fourseam_pct", "fb_pct"),
+    "si": ("si_pct", "sinker_pct"),
+    "fc": ("fc_pct", "cutter_pct"),
+    "sl": ("sl_pct", "slider_pct"),
+    "cu": ("cu_pct", "curve_pct", "curveball_pct", "kc_pct"),
+    "ch": ("ch_pct", "changeup_pct"),
+    "fs": ("fs_pct", "splitter_pct", "splitfinger_pct"),
+    "sv": ("sv_pct", "sweeper_pct"),
+    "kn": ("kn_pct", "knuckleball_pct"),
+}
+
+
+def _normalized_key(value: str) -> str:
+    return "".join(ch.lower() for ch in value if ch.isalnum())
+
+
+def _normalize_field_name(value: str) -> str:
+    value = value.strip().lower().replace("%", " pct ").replace("/", " ")
+    pieces = [piece for piece in value.replace("-", " ").split() if piece]
+    return "_".join(pieces)
+
+
+def _normalize_row(row: dict[str, str]) -> dict[str, str]:
+    normalized: dict[str, str] = {}
+    for key, value in row.items():
+        if key is None:
+            continue
+        normalized[_normalize_field_name(key)] = value.strip() if isinstance(value, str) else value
+    return normalized
+
+
+def _as_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if not isinstance(value, str):
+        return None
+    cleaned = value.strip()
+    if not cleaned or cleaned in {"--", "-", "N/A", "n/a", "null", "None"}:
+        return None
+    cleaned = cleaned.replace(",", "")
+    if cleaned.endswith("%"):
+        try:
+            return float(cleaned[:-1]) / 100.0
+        except ValueError:
+            return None
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
+def _coerce_rate(value: float | None) -> float | None:
+    if value is None:
+        return None
+    if value > 1.0:
+        return value / 100.0
+    return value
+
+
+def _pick_first(row: dict[str, str], *aliases: str) -> str | None:
+    for alias in aliases:
+        value = row.get(alias)
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def _pick_number(row: dict[str, str], *aliases: str, rate: bool = False) -> float | None:
+    value = _as_float(_pick_first(row, *aliases))
+    return _coerce_rate(value) if rate else value
+
+
+def _safe_divide(numerator: float | None, denominator: float | None) -> float | None:
+    if numerator is None or denominator in (None, 0):
+        return None
+    return numerator / denominator
+
+
+def _clamp(value: float | None, minimum: float, maximum: float) -> float | None:
+    if value is None:
+        return None
+    return max(minimum, min(maximum, value))
+
+
+def _canonical_position(raw_value: str | None) -> str | None:
+    if not raw_value:
+        return None
+    cleaned = _normalized_key(raw_value)
+    return POSITION_ALIASES.get(cleaned.upper()) or POSITION_ALIASES.get(cleaned)
+
+
+def _row_player_name(row: dict[str, str]) -> str | None:
+    direct = _pick_first(row, "player_name", "player", "name", "full_name")
+    if direct:
+        return direct
+    first_name = _pick_first(row, "first_name", "firstname")
+    last_name = _pick_first(row, "last_name", "lastname")
+    if first_name or last_name:
+        return " ".join(part for part in (first_name, last_name) if part)
+    return None
+
+
+def _row_player_id(row: dict[str, str]) -> str | None:
+    raw = _pick_first(row, "player_id", "mlbam_id", "batter", "pitcher", "playerid", "id")
+    if raw is None:
+        return None
+    numeric = _as_float(raw)
+    if numeric is not None:
+        return str(int(numeric))
+    return raw.strip() or None
+
+
+def _normalized_name(name: str) -> str:
+    return " ".join(name.lower().split())
+
+
+@dataclass(slots=True)
+class SeasonInputs:
+    year: int | None = None
+    files: dict[str, Path] = field(default_factory=dict)
+    source_files: dict[str, dict[str, Path]] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class IngestManifest:
+    source: str
+    seasons: dict[str, SeasonInputs]
+    manifest_path: Path
+
+
+@dataclass(slots=True)
+class PlayerAccumulator:
+    name: str
+    source: str = "baseball_savant"
+    source_id: str | None = None
+    team: str | None = None
+    age: int | None = None
+    primary_position: str | None = None
+    secondary_position: str | None = None
+    bats: str | None = None
+    throws: str | None = None
+    roles: set[str] = field(default_factory=set)
+    metrics: dict[str, dict[str, float]] = field(default_factory=lambda: defaultdict(dict))
+    samples: dict[str, dict[str, float]] = field(default_factory=lambda: defaultdict(dict))
+    estimated_metrics: dict[str, list[str]] = field(default_factory=lambda: defaultdict(list))
+    missing_files: dict[str, list[str]] = field(default_factory=lambda: defaultdict(list))
+    source_years: dict[str, int] = field(default_factory=dict)
+
+    def set_metric(self, metric_name: str, season_key: str, value: float | None, estimated: bool = False) -> None:
+        if value is None:
+            return
+        self.metrics[metric_name][season_key] = round(float(value), 6)
+        if estimated and metric_name not in self.estimated_metrics[season_key]:
+            self.estimated_metrics[season_key].append(metric_name)
+
+    def set_sample(self, sample_name: str, season_key: str, value: float | None) -> None:
+        if value is None:
+            return
+        self.samples[sample_name][season_key] = round(float(value), 6)
+
+    def note_missing_file(self, season_key: str, file_type: str) -> None:
+        if file_type not in self.missing_files[season_key]:
+            self.missing_files[season_key].append(file_type)
+
+    def to_player_dict(self) -> dict[str, Any]:
+        metadata: dict[str, Any] = {
+            "source": self.source,
+            "source_years": dict(sorted(self.source_years.items())),
+            "ingest": {
+                "estimated_metrics": {season: sorted(values) for season, values in sorted(self.estimated_metrics.items()) if values},
+                "missing_files": {season: sorted(values) for season, values in sorted(self.missing_files.items()) if values},
+            },
+        }
+        if self.source_id:
+            metadata["source_player_id"] = self.source_id
+        role = "two_way" if {"hitter", "pitcher"}.issubset(self.roles) else ("pitcher" if "pitcher" in self.roles else "hitter")
+        return {
+            "name": self.name,
+            "role": role,
+            "team": self.team,
+            "age": self.age,
+            "primary_position": self.primary_position,
+            "secondary_position": self.secondary_position,
+            "bats": self.bats,
+            "throws": self.throws,
+            "metrics": {name: dict(sorted(values.items())) for name, values in sorted(self.metrics.items()) if values},
+            "samples": {name: dict(sorted(values.items())) for name, values in sorted(self.samples.items()) if values},
+            "metadata": metadata,
+        }
+
+
+def load_manifest(path: Path) -> IngestManifest:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    source = str(data.get("source", "")).strip().lower()
+    if source not in SUPPORTED_SOURCES:
+        raise ValueError("Manifest source must be one of: baseball_savant, baseball_reference")
+
+    raw_seasons = data.get("seasons")
+    if not isinstance(raw_seasons, dict):
+        raise ValueError("Manifest must contain a 'seasons' object")
+
+    seasons: dict[str, SeasonInputs] = {}
+    base_dir = path.parent
+
+    def resolve_files(files_payload: dict[str, object], season_key: str) -> dict[str, Path]:
+        files: dict[str, Path] = {}
+        for file_type, raw_path in files_payload.items():
+            if file_type not in SUPPORTED_FILE_TYPES:
+                raise ValueError(f"Unsupported file type '{file_type}' in season '{season_key}'")
+            if not isinstance(raw_path, str) or not raw_path.strip():
+                raise ValueError(f"File path for '{file_type}' in season '{season_key}' must be a non-empty string")
+            file_path = Path(raw_path)
+            if not file_path.is_absolute():
+                file_path = base_dir / file_path
+            files[file_type] = file_path.resolve()
+        return files
+
+    for season_key, payload in raw_seasons.items():
+        if season_key not in SEASON_KEYS:
+            raise ValueError(f"Unsupported season key '{season_key}'. Expected one of {', '.join(SEASON_KEYS)}")
+        if not isinstance(payload, dict):
+            raise ValueError(f"Season '{season_key}' must be an object")
+
+        year_value = payload.get("year")
+        year = int(year_value) if year_value is not None else None
+        if source == "mixed":
+            raw_sources = payload.get("sources")
+            if not isinstance(raw_sources, dict):
+                raise ValueError(f"Mixed season '{season_key}' must contain a 'sources' object")
+            source_files: dict[str, dict[str, Path]] = {}
+            for nested_source, nested_payload in raw_sources.items():
+                if nested_source not in MIXABLE_SOURCES:
+                    raise ValueError(f"Unsupported mixed source '{nested_source}' in season '{season_key}'")
+                if not isinstance(nested_payload, dict):
+                    raise ValueError(f"Mixed source '{nested_source}' in season '{season_key}' must be an object")
+                files_payload = nested_payload.get("files", {})
+                if not isinstance(files_payload, dict):
+                    raise ValueError(f"Mixed source '{nested_source}' files in season '{season_key}' must be an object")
+                source_files[nested_source] = resolve_files(files_payload, season_key)
+            seasons[season_key] = SeasonInputs(year=year, files={}, source_files=source_files)
+        else:
+            files_payload = payload.get("files", {})
+            if not isinstance(files_payload, dict):
+                raise ValueError(f"Season '{season_key}' files must be an object")
+            seasons[season_key] = SeasonInputs(year=year, files=resolve_files(files_payload, season_key))
+
+    if not seasons:
+        raise ValueError("Manifest must declare at least one season")
+
+    return IngestManifest(source=source, seasons=seasons, manifest_path=path)
+
+
+def _read_csv(path: Path) -> list[dict[str, str]]:
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        return [_normalize_row(row) for row in reader if any((value or "").strip() for value in row.values())]
+
+
+def _player_key(row: dict[str, str]) -> tuple[str, str]:
+    player_id = _row_player_id(row)
+    if player_id:
+        return ("id", player_id)
+    name = _row_player_name(row)
+    if not name:
+        raise ValueError("CSV row is missing both player id and player name")
+    return ("name", _normalized_name(name))
+
+
+def _ensure_player(
+    players: dict[tuple[str, str], PlayerAccumulator],
+    row: dict[str, str],
+    *,
+    source: str = "baseball_savant",
+) -> PlayerAccumulator:
+    key = _player_key(row)
+    player = players.get(key)
+    if player is None:
+        player = PlayerAccumulator(name=_row_player_name(row) or key[1], source=source, source_id=_row_player_id(row))
+        players[key] = player
+    player.source = source
+    if player.source_id is None:
+        player.source_id = _row_player_id(row)
+    return player
+
+
+def _apply_identity(player: PlayerAccumulator, row: dict[str, str], *, default_position: str | None = None) -> None:
+    team = _pick_first(row, "team", "team_abbr", "team_name", "last_team")
+    if team:
+        player.team = team
+    age_value = _pick_number(row, "age")
+    if age_value is not None:
+        player.age = int(age_value)
+    primary_position = _canonical_position(
+        _pick_first(row, "primary_position", "position", "pos", "fielding_position", "mlb_pos")
+    )
+    if primary_position:
+        player.primary_position = primary_position
+    elif default_position and player.primary_position is None:
+        player.primary_position = default_position
+    secondary_position = _canonical_position(_pick_first(row, "secondary_position", "secondary_pos"))
+    if secondary_position:
+        player.secondary_position = secondary_position
+    bats = _pick_first(row, "bats", "bat_side", "stand", "stands")
+    if bats:
+        player.bats = bats
+    throws = _pick_first(row, "throws", "pitch_hand", "throws_hand", "p_throws")
+    if throws:
+        player.throws = throws
+
+
+def _apply_roster_rows(
+    players: dict[tuple[str, str], PlayerAccumulator],
+    rows: list[dict[str, str]],
+    *,
+    source: str = "baseball_savant",
+) -> None:
+    for row in rows:
+        player = _ensure_player(players, row, source=source)
+        _apply_identity(player, row)
+
+
+def _position_metric(position: str | None, mapping: dict[str, float], default: float | None = None) -> float | None:
+    if position is None:
+        return default
+    return mapping.get(position, default)
+
+
+def _apply_hitter_row(player: PlayerAccumulator, season_key: str, row: dict[str, str]) -> None:
+    player.roles.add("hitter")
+    _apply_identity(player, row)
+
+    plate_appearances = _pick_number(row, "pa", "plate_appearances")
+    at_bats = _pick_number(row, "ab", "at_bats")
+    hits = _pick_number(row, "h", "hits")
+    doubles = _pick_number(row, "2b", "doubles")
+    triples = _pick_number(row, "3b", "triples")
+    home_runs = _pick_number(row, "hr", "home_runs")
+    walks = _pick_number(row, "bb", "walks")
+    hit_by_pitch = _pick_number(row, "hbp", "hit_by_pitch")
+    stolen_bases = _pick_number(row, "sb", "stolen_bases")
+    caught_stealing = _pick_number(row, "cs", "caught_stealing")
+
+    singles = None
+    if hits is not None:
+        singles = hits - (doubles or 0) - (triples or 0) - (home_runs or 0)
+        singles = max(singles, 0)
+
+    strikeout_rate = _pick_number(row, "k_pct", "k_percent", "strikeout_rate", "strikeout_pct", rate=True)
+    contact_rate = _pick_number(row, "contact_rate", "contact_pct", "contact_percent", rate=True)
+    if contact_rate is None:
+        whiff_rate = _pick_number(row, "whiff_rate", "whiff_pct", "whiff_percent", rate=True)
+        if whiff_rate is not None:
+            contact_rate = _clamp(1.0 - whiff_rate, 0.0, 1.0)
+
+    adjusted_obp = _pick_number(row, "adjusted_obp", "obp", "on_base_pct", "on_base_percentage", "xobp")
+    baserunning_value = _pick_number(row, "baserunning_value", "bsr", "running_value", "baserunning_run_value")
+    if baserunning_value is None and stolen_bases is not None:
+        baserunning_value = stolen_bases - ((caught_stealing or 0) * 1.5)
+        player.estimated_metrics[season_key].append("baserunning_value")
+
+    baserunning_opportunities = _pick_number(row, "baserunning_opportunities", "br_opportunities")
+    if baserunning_opportunities is None and any(value is not None for value in (singles, walks, hit_by_pitch)):
+        baserunning_opportunities = max((singles or 0) + (walks or 0) + (hit_by_pitch or 0), 1)
+
+    steal_attempts = None
+    if stolen_bases is not None or caught_stealing is not None:
+        steal_attempts = (stolen_bases or 0) + (caught_stealing or 0)
+
+    metric_specs = {
+        "iso": (_pick_number(row, "iso", "isolated_power"), False),
+        "hr_per_pa": (_safe_divide(home_runs, plate_appearances), home_runs is not None and plate_appearances is not None),
+        "barrel_rate": (_pick_number(row, "barrel_rate", "barrel_pct", "barrel_percent", "barrels_per_bbe", rate=True), False),
+        "slugging": (_pick_number(row, "slg", "slugging", "slugging_pct"), False),
+        "avg_exit_velocity": (_pick_number(row, "avg_exit_velocity", "avg_hit_speed", "ev", "exit_velocity_avg"), False),
+        "strikeout_rate": (strikeout_rate, False),
+        "contact_rate": (contact_rate, contact_rate is not None and _pick_first(row, "contact_rate", "contact_pct", "contact_percent") is None),
+        "batting_average": (_pick_number(row, "batting_average", "avg", "ba"), False),
+        "adjusted_obp": (adjusted_obp, adjusted_obp is not None and _pick_first(row, "adjusted_obp") is None),
+        "two_strike_contact_rate": (
+            _pick_number(row, "two_strike_contact_rate", "two_strike_contact_pct", "2strike_contact_pct", rate=True),
+            False,
+        ),
+        "sprint_speed": (_pick_number(row, "sprint_speed"), False),
+        "baserunning_value": (baserunning_value, _pick_first(row, "baserunning_value", "bsr", "running_value", "baserunning_run_value") is None and baserunning_value is not None),
+        "sb_attempt_rate": (_safe_divide(steal_attempts, baserunning_opportunities or plate_appearances), steal_attempts is not None),
+        "sb_success_rate": (_safe_divide(stolen_bases, steal_attempts), steal_attempts is not None),
+        "triple_double_rate": (_safe_divide((doubles or 0) + (triples or 0), plate_appearances), doubles is not None or triples is not None),
+    }
+
+    for metric_name, (value, estimated) in metric_specs.items():
+        player.set_metric(metric_name, season_key, value, estimated=estimated)
+
+    player.set_sample("weighted_pa", season_key, plate_appearances)
+    player.set_sample("baserunning_opportunities", season_key, baserunning_opportunities)
+
+
+def _apply_pitcher_row(player: PlayerAccumulator, season_key: str, row: dict[str, str]) -> None:
+    player.roles.add("pitcher")
+    _apply_identity(player, row, default_position="P")
+
+    tracked_pitches = _pick_number(row, "pitches", "tracked_pitches", "pitch_count", "total_pitches")
+    batters_faced = _pick_number(row, "bf", "batters_faced")
+    fastball_usage = _pick_number(row, "fastball_usage", "fastball_pct", "ff_pct", rate=True)
+    tracked_fastballs = _pick_number(row, "tracked_fastballs", "fastballs", "ff")
+    if tracked_fastballs is None and tracked_pitches is not None and fastball_usage is not None:
+        tracked_fastballs = tracked_pitches * fastball_usage
+
+    swinging_strike_rate = _pick_number(row, "swinging_strike_rate", "swstr_rate", "swstr_pct", rate=True)
+    chase_rate = _pick_number(row, "chase_rate", "chase_pct", "oz_swing_pct", rate=True)
+    strike_pct = _pick_number(row, "strike_pct", "strk_pct", rate=True)
+    zone_pct = _pick_number(row, "zone_pct", rate=True)
+    first_pitch_strike_pct = _pick_number(row, "first_pitch_strike_pct", "f_strike_pct", "fps_pct", rate=True)
+
+    horizontal_break = _pick_number(row, "horizontal_break", "hb", "avg_horz_break")
+    induced_vertical_break = _pick_number(row, "induced_vertical_break", "ivb", "avg_induced_vert_break")
+    movement_quality = _pick_number(row, "movement_quality", "movement_plus", "movement_grade")
+    movement_estimated = False
+    if movement_quality is None and (horizontal_break is not None or induced_vertical_break is not None):
+        movement_quality = abs(horizontal_break or 0) + abs(induced_vertical_break or 0)
+        movement_estimated = True
+
+    stuff_metric = _pick_number(row, "stuff_metric", "stuff_plus", "stuff", "pitching_plus")
+    stuff_estimated = False
+    if stuff_metric is None:
+        velocity = _pick_number(row, "avg_fastball_velocity", "avg_fb_velocity", "avg_fastball_speed", "release_speed")
+        if velocity is not None and swinging_strike_rate is not None and chase_rate is not None:
+            stuff_metric = (velocity - 85.0) * 2.0 + swinging_strike_rate * 100.0 + chase_rate * 60.0
+            stuff_estimated = True
+
+    arsenal_diversity = _pick_number(row, "arsenal_diversity", "pitch_mix_diversity")
+    arsenal_estimated = False
+    if arsenal_diversity is None:
+        usage_values: list[float] = []
+        for aliases in PITCH_USAGE_COLUMNS.values():
+            value = _pick_number(row, *aliases, rate=True)
+            if value and value > 0:
+                usage_values.append(value)
+        usage_sum = sum(usage_values)
+        if usage_sum > 0 and len(usage_values) > 1:
+            normalized_values = [value / usage_sum for value in usage_values]
+            entropy = -sum(value * math.log(value) for value in normalized_values if value > 0)
+            arsenal_diversity = entropy / math.log(len(normalized_values))
+            arsenal_estimated = True
+
+    weak_contact_rate = _pick_number(row, "weak_contact_rate", "weak_pct", "weak_percent", rate=True)
+    weak_contact_estimated = False
+    if weak_contact_rate is None:
+        hard_hit_rate = _pick_number(row, "hard_hit_rate", "hard_hit_pct", "hard_hit_percent", rate=True)
+        if hard_hit_rate is not None:
+            weak_contact_rate = _clamp(1.0 - hard_hit_rate, 0.0, 1.0)
+            weak_contact_estimated = True
+
+    command_error_rate = _pick_number(row, "command_error_rate", "ball_pct", "miss_zone_pct", rate=True)
+    command_error_estimated = False
+    if command_error_rate is None and strike_pct is not None:
+        command_error_rate = _clamp(1.0 - strike_pct, 0.0, 1.0)
+        command_error_estimated = True
+
+    metric_specs = {
+        "avg_fastball_velocity": (_pick_number(row, "avg_fastball_velocity", "avg_fb_velocity", "avg_fastball_speed", "release_speed"), False),
+        "peak_fastball_velocity": (_pick_number(row, "peak_fastball_velocity", "max_fastball_velocity", "max_fb_velocity", "release_speed_max"), False),
+        "fastball_usage": (fastball_usage, False),
+        "swinging_strike_rate": (swinging_strike_rate, False),
+        "chase_rate": (chase_rate, False),
+        "movement_quality": (movement_quality, movement_estimated),
+        "stuff_metric": (stuff_metric, stuff_estimated),
+        "arsenal_diversity": (arsenal_diversity, arsenal_estimated),
+        "weak_contact_rate": (weak_contact_rate, weak_contact_estimated),
+        "walk_rate": (_pick_number(row, "walk_rate", "bb_pct", "bb_percent", rate=True), False),
+        "strike_pct": (strike_pct, False),
+        "zone_pct": (zone_pct, False),
+        "first_pitch_strike_pct": (first_pitch_strike_pct, False),
+        "command_error_rate": (command_error_rate, command_error_estimated),
+    }
+    for metric_name, (value, estimated) in metric_specs.items():
+        player.set_metric(metric_name, season_key, value, estimated=estimated)
+
+    player.set_sample("weighted_bf", season_key, batters_faced)
+    player.set_sample("tracked_pitches", season_key, tracked_pitches)
+    player.set_sample("tracked_fastballs", season_key, tracked_fastballs)
+
+
+def _apply_fielding_row(player: PlayerAccumulator, season_key: str, row: dict[str, str]) -> None:
+    _apply_identity(player, row)
+    innings = _pick_number(row, "defensive_innings", "innings", "inn", "fielding_innings")
+    position = player.primary_position or _canonical_position(_pick_first(row, "position", "pos", "primary_position"))
+    oaa = _pick_number(row, "oaa", "outs_above_average")
+    drs = _pick_number(row, "drs", "defensive_runs_saved")
+    uzr = _pick_number(row, "uzr")
+    fielding_pct = _pick_number(row, "fielding_pct_proxy", "fielding_pct", "fld_pct")
+    if fielding_pct is None:
+        putouts = _pick_number(row, "po", "putouts")
+        assists = _pick_number(row, "a", "assists")
+        errors = _pick_number(row, "e", "errors")
+        chances = None
+        if putouts is not None or assists is not None or errors is not None:
+            chances = (putouts or 0) + (assists or 0) + (errors or 0)
+        fielding_pct = _safe_divide((putouts or 0) + (assists or 0), chances)
+    arm_strength = _pick_number(row, "arm_strength", "arm_strength_avg", "throw_speed", "avg_throw_speed")
+    catcher_throw_value = _pick_number(row, "catcher_throw_value", "caught_stealing_above_average", "cs_above_average")
+    outfield_arm_runs = _pick_number(row, "outfield_arm_runs", "arm_value", "outfielder_jump_runs")
+
+    player.set_metric("oaa", season_key, oaa)
+    player.set_metric("drs", season_key, drs)
+    player.set_metric("uzr", season_key, uzr)
+    player.set_metric("fielding_pct_proxy", season_key, fielding_pct, estimated=_pick_first(row, "fielding_pct_proxy", "fielding_pct", "fld_pct") is None and fielding_pct is not None)
+    player.set_metric("position_difficulty", season_key, _position_metric(position, POSITION_DIFFICULTY, 0.55), estimated=True)
+    player.set_metric("arm_strength", season_key, arm_strength)
+    player.set_metric("catcher_throw_value", season_key, catcher_throw_value)
+    player.set_metric("outfield_arm_runs", season_key, outfield_arm_runs)
+    player.set_metric("arm_position_baseline", season_key, _position_metric(position, ARM_POSITION_BASELINE, 0.50), estimated=True)
+    player.set_sample("defensive_innings", season_key, innings)
+
+
+def _apply_running_row(player: PlayerAccumulator, season_key: str, row: dict[str, str]) -> None:
+    _apply_identity(player, row)
+    sprint_speed = _pick_number(row, "sprint_speed")
+    baserunning_value = _pick_number(row, "baserunning_value", "bsr", "running_value", "baserunning_run_value")
+    opportunities = _pick_number(row, "baserunning_opportunities", "br_opportunities")
+
+    player.set_metric("sprint_speed", season_key, sprint_speed)
+    player.set_metric("baserunning_value", season_key, baserunning_value)
+    player.set_sample("baserunning_opportunities", season_key, opportunities)
+
+
+def ingest_from_manifest(manifest: IngestManifest | Path) -> list[dict[str, Any]]:
+    manifest_obj = load_manifest(manifest) if isinstance(manifest, Path) else manifest
+    if manifest_obj.source != "baseball_savant":
+        raise ValueError("Baseball Savant adapter received a non-Savant manifest")
+    players: dict[tuple[str, str], PlayerAccumulator] = {}
+
+    for season_key, season_inputs in manifest_obj.seasons.items():
+        if season_inputs.year is not None:
+            for player in players.values():
+                player.source_years.setdefault(season_key, season_inputs.year)
+
+        roster_path = season_inputs.files.get("roster")
+        if roster_path is not None:
+            _apply_roster_rows(players, _read_csv(roster_path), source=manifest_obj.source)
+
+        hitters_path = season_inputs.files.get("hitters")
+        if hitters_path is not None:
+            for row in _read_csv(hitters_path):
+                player = _ensure_player(players, row, source=manifest_obj.source)
+                if season_inputs.year is not None:
+                    player.source_years[season_key] = season_inputs.year
+                _apply_hitter_row(player, season_key, row)
+
+        pitchers_path = season_inputs.files.get("pitchers")
+        if pitchers_path is not None:
+            for row in _read_csv(pitchers_path):
+                player = _ensure_player(players, row, source=manifest_obj.source)
+                if season_inputs.year is not None:
+                    player.source_years[season_key] = season_inputs.year
+                _apply_pitcher_row(player, season_key, row)
+
+        fielding_path = season_inputs.files.get("fielding")
+        if fielding_path is not None:
+            for row in _read_csv(fielding_path):
+                player = _ensure_player(players, row, source=manifest_obj.source)
+                if season_inputs.year is not None:
+                    player.source_years[season_key] = season_inputs.year
+                _apply_fielding_row(player, season_key, row)
+        else:
+            for player in players.values():
+                player.note_missing_file(season_key, "fielding")
+
+        running_path = season_inputs.files.get("running")
+        if running_path is not None:
+            for row in _read_csv(running_path):
+                player = _ensure_player(players, row, source=manifest_obj.source)
+                if season_inputs.year is not None:
+                    player.source_years[season_key] = season_inputs.year
+                _apply_running_row(player, season_key, row)
+        else:
+            for player in players.values():
+                player.note_missing_file(season_key, "running")
+
+    outputs = [player.to_player_dict() for player in players.values() if player.roles]
+    outputs.sort(key=lambda item: (item["role"], item["name"]))
+    return outputs

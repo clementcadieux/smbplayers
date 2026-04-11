@@ -1,0 +1,819 @@
+{
+  "game": "Super Mega Baseball 4",
+  "compiled_at": "2026-04-11",
+  "notes": [
+    "This file normalizes publicly available SMB4 player-facing ratings, metadata, chemistry types, and traits.",
+    "Traits marked with chemistry_scaled=true are documented as scaling with team chemistry.",
+    "Pitchers publicly expose batting and fielding-style attributes in roster databases in addition to pitcher-specific ratings."
+  ],
+  "sources": [
+    {
+      "name": "ClutchPoints - Super Mega Baseball 4: Full Traits List",
+      "url": "https://clutchpoints.com/gaming/super-mega-baseball-4-full-traits-list",
+      "purpose": "Trait names, categories, descriptions, chemistry scaling note"
+    },
+    {
+      "name": "Redundant Robot SMB4 roster pages",
+      "url": "https://redundantrobot.com/super_mega_baseball/",
+      "purpose": "Observed player rating columns, pitcher metadata, roster field schema"
+    }
+  ],
+  "chemistry_types": [
+    "Competitive",
+    "Spirited",
+    "Disciplined",
+    "Scholarly",
+    "Crafty"
+  ],
+  "ratings": {
+    "overall_grade": {
+      "type": "letter_grade",
+      "observed_values": [
+        "S",
+        "A+",
+        "A",
+        "A-",
+        "B+",
+        "B",
+        "B-",
+        "C+",
+        "C",
+        "C-",
+        "D+",
+        "D",
+        "D-"
+      ]
+    },
+    "position_player_attributes": [
+      {
+        "key": "power",
+        "label": "Power",
+        "applies_to": [
+          "position_player",
+          "pitcher"
+        ],
+        "description": "Batting power rating."
+      },
+      {
+        "key": "contact",
+        "label": "Contact",
+        "applies_to": [
+          "position_player",
+          "pitcher"
+        ],
+        "description": "Batting contact rating."
+      },
+      {
+        "key": "speed",
+        "label": "Speed",
+        "applies_to": [
+          "position_player",
+          "pitcher"
+        ],
+        "description": "Running speed rating."
+      },
+      {
+        "key": "fielding",
+        "label": "Fielding",
+        "applies_to": [
+          "position_player",
+          "pitcher"
+        ],
+        "description": "Defensive fielding rating."
+      },
+      {
+        "key": "arm",
+        "label": "Arm",
+        "applies_to": [
+          "position_player"
+        ],
+        "description": "Throwing strength and speed rating for non-pitchers."
+      }
+    ],
+    "pitcher_attributes": [
+      {
+        "key": "velocity",
+        "label": "Velocity",
+        "applies_to": [
+          "pitcher"
+        ],
+        "description": "Pitch speed rating."
+      },
+      {
+        "key": "junk",
+        "label": "Junk",
+        "applies_to": [
+          "pitcher"
+        ],
+        "description": "Pitch movement and break rating."
+      },
+      {
+        "key": "accuracy",
+        "label": "Accuracy",
+        "applies_to": [
+          "pitcher"
+        ],
+        "description": "Pitch command and location rating."
+      }
+    ],
+    "shared_player_metadata": [
+      {
+        "key": "bats",
+        "values": [
+          "L",
+          "R",
+          "S"
+        ]
+      },
+      {
+        "key": "throws",
+        "values": [
+          "L",
+          "R"
+        ]
+      },
+      {
+        "key": "age",
+        "type": "integer"
+      },
+      {
+        "key": "salary",
+        "type": "currency_string"
+      },
+      {
+        "key": "primary_position",
+        "type": "string"
+      },
+      {
+        "key": "secondary_position",
+        "type": "string_or_null"
+      }
+    ],
+    "pitcher_metadata": [
+      {
+        "key": "pitcher_type",
+        "observed_values": [
+          "SP",
+          "RP",
+          "CP",
+          "SP/RP"
+        ]
+      },
+      {
+        "key": "arm_slot",
+        "observed_values": [
+          "High",
+          "Mid",
+          "Low"
+        ]
+      },
+      {
+        "key": "pitch_repertoire_codes",
+        "observed_values": [
+          "4F",
+          "2F",
+          "SB",
+          "CH",
+          "FK",
+          "CB",
+          "SL",
+          "CF"
+        ]
+      }
+    ]
+  },
+  "traits": {
+    "non_pitcher_positive": [
+      {
+        "name": "Cannon Arm",
+        "chemistry_type": "Competitive",
+        "polarity": "positive",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": false,
+        "description": "Increased throw speed when throwing with maximum power from the throwing minigame."
+      },
+      {
+        "name": "Durable",
+        "chemistry_type": "Competitive",
+        "polarity": "positive",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": false,
+        "description": "Reduced chance of injury during play and slower fitness decay from being overplayed."
+      },
+      {
+        "name": "First Pitch Slayer",
+        "chemistry_type": "Competitive",
+        "polarity": "positive",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": true,
+        "description": "Increased power and contact on a 0-0 count."
+      },
+      {
+        "name": "Sprinter",
+        "chemistry_type": "Competitive",
+        "polarity": "positive",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": false,
+        "description": "Increased running speed while running out of the batter's box."
+      },
+      {
+        "name": "Tough Out",
+        "chemistry_type": "Competitive",
+        "polarity": "positive",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": true,
+        "description": "Increased contact when batting with a 2-strike count."
+      },
+      {
+        "name": "CON vs LHP",
+        "chemistry_type": "Spirited",
+        "polarity": "positive",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": true,
+        "description": "Increased contact when batting versus a left-handed pitcher."
+      },
+      {
+        "name": "CON vs RHP",
+        "chemistry_type": "Spirited",
+        "polarity": "positive",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": true,
+        "description": "Increased contact when batting versus a right-handed pitcher."
+      },
+      {
+        "name": "Dive Wizard",
+        "chemistry_type": "Spirited",
+        "polarity": "positive",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": false,
+        "description": "Faster recoveries from diving catches."
+      },
+      {
+        "name": "POW vs LHP",
+        "chemistry_type": "Spirited",
+        "polarity": "positive",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": true,
+        "description": "Increased power when batting versus a left-handed pitcher."
+      },
+      {
+        "name": "POW vs RHP",
+        "chemistry_type": "Spirited",
+        "polarity": "positive",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": true,
+        "description": "Increased power when batting versus a right-handed pitcher."
+      },
+      {
+        "name": "Rally Starter",
+        "chemistry_type": "Spirited",
+        "polarity": "positive",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": true,
+        "description": "Increased contact when trailing and batting with bases empty."
+      },
+      {
+        "name": "RBI Hero",
+        "chemistry_type": "Spirited",
+        "polarity": "positive",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": true,
+        "description": "Increased power and contact when batting with a runner on second or third."
+      },
+      {
+        "name": "Base Rounder",
+        "chemistry_type": "Disciplined",
+        "polarity": "positive",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": false,
+        "description": "Increased running speed while rounding a base."
+      },
+      {
+        "name": "Consistent",
+        "chemistry_type": "Disciplined",
+        "polarity": "positive",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": true,
+        "description": "Mojo changes at a slower rate from play to play and game to game."
+      },
+      {
+        "name": "Fastball Hitter",
+        "chemistry_type": "Disciplined",
+        "polarity": "positive",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": false,
+        "description": "Swing power and contact improve when swinging at a 4F, 2F, or CF pitch."
+      },
+      {
+        "name": "High Pitch",
+        "chemistry_type": "Disciplined",
+        "polarity": "positive",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": false,
+        "description": "Swing power and contact improve when targeting the upper half of the strike zone."
+      },
+      {
+        "name": "Inside Pitch",
+        "chemistry_type": "Disciplined",
+        "polarity": "positive",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": false,
+        "description": "Swing power and contact improve when targeting the inside half of the strike zone."
+      },
+      {
+        "name": "Low Pitch",
+        "chemistry_type": "Disciplined",
+        "polarity": "positive",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": false,
+        "description": "Swing power and contact improve when targeting the lower half of the strike zone."
+      },
+      {
+        "name": "Magic Hands",
+        "chemistry_type": "Disciplined",
+        "polarity": "positive",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": true,
+        "description": "Reduced chance of a missed catch when jumping, diving, or sliding."
+      },
+      {
+        "name": "Off-Speed Hitter",
+        "chemistry_type": "Disciplined",
+        "polarity": "positive",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": false,
+        "description": "Swing power and contact improve when swinging at a CB, SL, CH, SB, or FK pitch."
+      },
+      {
+        "name": "Outside Pitch",
+        "chemistry_type": "Disciplined",
+        "polarity": "positive",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": false,
+        "description": "Swing power and contact improve when targeting the outside half of the strike zone."
+      },
+      {
+        "name": "Volatile",
+        "chemistry_type": "Disciplined",
+        "polarity": "positive",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": true,
+        "description": "Mojo changes at a faster rate from play to play and game to game."
+      },
+      {
+        "name": "Pinch Perfect",
+        "chemistry_type": "Disciplined",
+        "polarity": "positive",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": true,
+        "description": "Increased power and contact when pinch hitting."
+      },
+      {
+        "name": "Ace Exterminator",
+        "chemistry_type": "Scholarly",
+        "polarity": "positive",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": true,
+        "description": "Increased power and contact when batting against an A- pitcher or better."
+      },
+      {
+        "name": "Big Hack",
+        "chemistry_type": "Scholarly",
+        "polarity": "positive",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": true,
+        "description": "Increased power and reduced contact in 2-0, 3-0, and 3-1 counts."
+      },
+      {
+        "name": "Bunter",
+        "chemistry_type": "Scholarly",
+        "polarity": "positive",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": false,
+        "description": "Bunting balls down the foul line is easier."
+      },
+      {
+        "name": "Little Hack",
+        "chemistry_type": "Scholarly",
+        "polarity": "positive",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": true,
+        "description": "Increased contact and reduced power in 0-1, 0-2, and 1-2 counts."
+      },
+      {
+        "name": "Utility",
+        "chemistry_type": "Scholarly",
+        "polarity": "positive",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": false,
+        "description": "No fielding penalty when playing at a secondary position."
+      },
+      {
+        "name": "Clutch",
+        "chemistry_type": "Crafty",
+        "polarity": "positive",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": true,
+        "description": "Increase to all skills when pressure is high. The effect is doubled when pressure is extreme."
+      },
+      {
+        "name": "Bad Ball Hitter",
+        "chemistry_type": "Crafty",
+        "polarity": "positive",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": false,
+        "description": "Reduced batted ball speed penalty when making contact with pitches on the corners or outside of the strike zone."
+      },
+      {
+        "name": "Distractor",
+        "chemistry_type": "Crafty",
+        "polarity": "positive",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": true,
+        "description": "While on first or second and the next base is open, the opposing pitcher suffers reduced accuracy."
+      },
+      {
+        "name": "Mind Gamer",
+        "chemistry_type": "Crafty",
+        "polarity": "positive",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": true,
+        "description": "While batting, the opposing pitcher suffers reduced accuracy."
+      },
+      {
+        "name": "Sign Stealer",
+        "chemistry_type": "Crafty",
+        "polarity": "positive",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": true,
+        "description": "Increased chance of receiving an audio and visual cue of whether a fastball or off-speed pitch is coming."
+      },
+      {
+        "name": "Stealer",
+        "chemistry_type": "Crafty",
+        "polarity": "positive",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": false,
+        "description": "Increased running speed while attempting to steal a base."
+      },
+      {
+        "name": "Stimulated",
+        "chemistry_type": "Crafty",
+        "polarity": "positive",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": true,
+        "description": "Increased chance of mojo becoming Juiced for the final 2.5 innings."
+      }
+    ],
+    "non_pitcher_negative": [
+      {
+        "name": "First Pitch Prayer",
+        "chemistry_type": "Competitive",
+        "polarity": "negative",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": true,
+        "description": "Reduced power and contact on a 0-0 count."
+      },
+      {
+        "name": "Injury Prone",
+        "chemistry_type": "Competitive",
+        "polarity": "negative",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": false,
+        "description": "Increased chance of injury during a play and faster fitness decay from being overplayed."
+      },
+      {
+        "name": "Noodle Arm",
+        "chemistry_type": "Competitive",
+        "polarity": "negative",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": false,
+        "description": "Decreased throw speed when throwing with less than maximum power from the throwing minigame."
+      },
+      {
+        "name": "Slow Poke",
+        "chemistry_type": "Competitive",
+        "polarity": "negative",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": false,
+        "description": "Decreased running speed while running out of the batter's box."
+      },
+      {
+        "name": "Whiffer",
+        "chemistry_type": "Competitive",
+        "polarity": "negative",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": true,
+        "description": "Reduced contact when batting with a 2-strike count."
+      },
+      {
+        "name": "Choker",
+        "chemistry_type": "Spirited",
+        "polarity": "negative",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": true,
+        "description": "All skills are reduced when pressure is high. The effect is doubled when pressure is extreme."
+      },
+      {
+        "name": "RBI Zero",
+        "chemistry_type": "Spirited",
+        "polarity": "negative",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": true,
+        "description": "Reduced power and contact when batting with a runner on second or third."
+      },
+      {
+        "name": "Base Jogger",
+        "chemistry_type": "Disciplined",
+        "polarity": "negative",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": false,
+        "description": "Decreased running speed while rounding a base."
+      },
+      {
+        "name": "Butter Fingers",
+        "chemistry_type": "Disciplined",
+        "polarity": "negative",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": true,
+        "description": "Increased chance of a missed catch when jumping, diving, or sliding."
+      },
+      {
+        "name": "Bad Jumps",
+        "chemistry_type": "Crafty",
+        "polarity": "negative",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": false,
+        "description": "Decreased running speed while attempting to steal a base."
+      },
+      {
+        "name": "Easy Target",
+        "chemistry_type": "Crafty",
+        "polarity": "negative",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": true,
+        "description": "While batting, the opposing pitcher gains increased accuracy."
+      },
+      {
+        "name": "Wild Thrower",
+        "chemistry_type": "Crafty",
+        "polarity": "negative",
+        "role_scope": "non_pitcher",
+        "chemistry_scaled": true,
+        "description": "Increased chance of committing an errant or disastrous throw, regardless of throwing minigame outcome."
+      }
+    ],
+    "pitcher_positive": [
+      {
+        "name": "Durable",
+        "chemistry_type": "Competitive",
+        "polarity": "positive",
+        "role_scope": "pitcher",
+        "chemistry_scaled": false,
+        "description": "Reduced chance of injury during play and slower fitness decay from being overplayed."
+      },
+      {
+        "name": "K Collector",
+        "chemistry_type": "Competitive",
+        "polarity": "positive",
+        "role_scope": "pitcher",
+        "chemistry_scaled": true,
+        "description": "Increased velocity and junk when pitching with a 2-strike count."
+      },
+      {
+        "name": "Workhouse",
+        "chemistry_type": "Competitive",
+        "polarity": "positive",
+        "role_scope": "pitcher",
+        "chemistry_scaled": true,
+        "description": "Stamina decreases at a slower rate."
+      },
+      {
+        "name": "Clutch",
+        "chemistry_type": "Spirited",
+        "polarity": "positive",
+        "role_scope": "pitcher",
+        "chemistry_scaled": true,
+        "description": "Increases to all skills when pressure is high. The effect is doubled when pressure is extreme."
+      },
+      {
+        "name": "Rally Stopper",
+        "chemistry_type": "Spirited",
+        "polarity": "positive",
+        "role_scope": "pitcher",
+        "chemistry_scaled": true,
+        "description": "Increased velocity, junk, and accuracy when pitching with at least two runners on base."
+      },
+      {
+        "name": "Two Way (C)",
+        "chemistry_type": "Spirited",
+        "polarity": "positive",
+        "role_scope": "pitcher",
+        "chemistry_scaled": true,
+        "description": "Reduced fielding and arm penalties when playing catcher."
+      },
+      {
+        "name": "Two Way (IF)",
+        "chemistry_type": "Spirited",
+        "polarity": "positive",
+        "role_scope": "pitcher",
+        "chemistry_scaled": true,
+        "description": "Reduced fielding and arm penalties when playing in the infield."
+      },
+      {
+        "name": "Two Way (OF)",
+        "chemistry_type": "Spirited",
+        "polarity": "positive",
+        "role_scope": "pitcher",
+        "chemistry_scaled": true,
+        "description": "Reduced fielding and arm penalties when playing in the outfield."
+      },
+      {
+        "name": "Composed",
+        "chemistry_type": "Disciplined",
+        "polarity": "positive",
+        "role_scope": "pitcher",
+        "chemistry_scaled": true,
+        "description": "Increased accuracy when pitching with a 3-ball count."
+      },
+      {
+        "name": "Consistent",
+        "chemistry_type": "Disciplined",
+        "polarity": "positive",
+        "role_scope": "pitcher",
+        "chemistry_scaled": true,
+        "description": "Mojo changes at a slower rate from play to play and game to game."
+      },
+      {
+        "name": "Metal Head",
+        "chemistry_type": "Disciplined",
+        "polarity": "positive",
+        "role_scope": "pitcher",
+        "chemistry_scaled": true,
+        "description": "Increased chance of instantly recovering from a comebacker to the head."
+      },
+      {
+        "name": "Volatile",
+        "chemistry_type": "Disciplined",
+        "polarity": "positive",
+        "role_scope": "pitcher",
+        "chemistry_scaled": true,
+        "description": "Mojo changes at a faster rate from play to play and game to game."
+      },
+      {
+        "name": "Elite 4F",
+        "chemistry_type": "Scholarly",
+        "polarity": "positive",
+        "role_scope": "pitcher",
+        "chemistry_scaled": false,
+        "description": "Increased pitch speed when pitching a 4-seam fastball."
+      },
+      {
+        "name": "Elite CB",
+        "chemistry_type": "Scholarly",
+        "polarity": "positive",
+        "role_scope": "pitcher",
+        "chemistry_scaled": false,
+        "description": "Increased break when pitching a curveball."
+      },
+      {
+        "name": "Elite CH",
+        "chemistry_type": "Scholarly",
+        "polarity": "positive",
+        "role_scope": "pitcher",
+        "chemistry_scaled": false,
+        "description": "Decreased pitch speed and increased break when pitching a change-up."
+      },
+      {
+        "name": "Elite SL",
+        "chemistry_type": "Scholarly",
+        "polarity": "positive",
+        "role_scope": "pitcher",
+        "chemistry_scaled": false,
+        "description": "Increased pitch speed and break when pitching a slider."
+      },
+      {
+        "name": "Gets Ahead",
+        "chemistry_type": "Scholarly",
+        "polarity": "positive",
+        "role_scope": "pitcher",
+        "chemistry_scaled": true,
+        "description": "Increased accuracy on a 0-0 count."
+      },
+      {
+        "name": "Pick Officer",
+        "chemistry_type": "Crafty",
+        "polarity": "positive",
+        "role_scope": "pitcher",
+        "chemistry_scaled": false,
+        "description": "While pitching, opposing baserunners suffer decreased running speed when attempting to steal a base."
+      },
+      {
+        "name": "Reverse Splits",
+        "chemistry_type": "Crafty",
+        "polarity": "positive",
+        "role_scope": "pitcher",
+        "chemistry_scaled": true,
+        "description": "While pitching, opposite-handed opposing batters suffer reduced power and contact."
+      },
+      {
+        "name": "Specialist",
+        "chemistry_type": "Crafty",
+        "polarity": "positive",
+        "role_scope": "pitcher",
+        "chemistry_scaled": true,
+        "description": "While pitching, same-handed opposing batters suffer reduced power and contact."
+      },
+      {
+        "name": "Stimulated",
+        "chemistry_type": "Crafty",
+        "polarity": "positive",
+        "role_scope": "pitcher",
+        "chemistry_scaled": true,
+        "description": "Increased chance of mojo becoming Juiced for the final 2.5 innings."
+      }
+    ],
+    "pitcher_negative": [
+      {
+        "name": "K Neglecter",
+        "chemistry_type": "Competitive",
+        "polarity": "negative",
+        "role_scope": "pitcher",
+        "chemistry_scaled": true,
+        "description": "Reduced velocity and junk when pitching with a 2-strike count."
+      },
+      {
+        "name": "Injury Prone",
+        "chemistry_type": "Competitive",
+        "polarity": "negative",
+        "role_scope": "pitcher",
+        "chemistry_scaled": false,
+        "description": "Increased chance of injury during a play and faster fitness decay from being overplayed."
+      },
+      {
+        "name": "Choker",
+        "chemistry_type": "Spirited",
+        "polarity": "negative",
+        "role_scope": "pitcher",
+        "chemistry_scaled": true,
+        "description": "Reduction to all skills when pressure is high. The effect is doubled when pressure is extreme."
+      },
+      {
+        "name": "Meltdown",
+        "chemistry_type": "Spirited",
+        "polarity": "negative",
+        "role_scope": "pitcher",
+        "chemistry_scaled": true,
+        "description": "Reduced accuracy for the remainder of the inning after four consecutive batters reach base with no outs recorded."
+      },
+      {
+        "name": "Surrounded",
+        "chemistry_type": "Spirited",
+        "polarity": "negative",
+        "role_scope": "pitcher",
+        "chemistry_scaled": true,
+        "description": "Reduced velocity, junk, and accuracy when pitching with at least two runners on base."
+      },
+      {
+        "name": "Wild Thing",
+        "chemistry_type": "Spirited",
+        "polarity": "negative",
+        "role_scope": "pitcher",
+        "chemistry_scaled": false,
+        "description": "Increased error in pitch location when holding a power pitch for too long."
+      },
+      {
+        "name": "BB Prone",
+        "chemistry_type": "Disciplined",
+        "polarity": "negative",
+        "role_scope": "pitcher",
+        "chemistry_scaled": true,
+        "description": "Reduced accuracy when pitching with a 3-ball count."
+      },
+      {
+        "name": "Crossed Up",
+        "chemistry_type": "Scholarly",
+        "polarity": "negative",
+        "role_scope": "pitcher",
+        "chemistry_scaled": true,
+        "description": "Increased chance of the catcher dropping or failing to cleanly catch the pitch."
+      },
+      {
+        "name": "Falls Behind",
+        "chemistry_type": "Scholarly",
+        "polarity": "negative",
+        "role_scope": "pitcher",
+        "chemistry_scaled": true,
+        "description": "Reduced accuracy on a 0-0 count."
+      },
+      {
+        "name": "Easy Jumps",
+        "chemistry_type": "Crafty",
+        "polarity": "negative",
+        "role_scope": "pitcher",
+        "chemistry_scaled": false,
+        "description": "While pitching, opposing baserunners gain increased running speed when attempting to steal a base."
+      }
+    ]
+  }
+}
