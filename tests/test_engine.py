@@ -896,5 +896,100 @@ class SurfaceBlendTests(unittest.TestCase):
         }
 
 
+class MissingFieldConsumptionTests(unittest.TestCase):
+    """Issue 41: verify oaa/drs/uzr are active in rating composites."""
+
+    def _build_fielder(self, name: str, oaa: float, drs: float, uzr: float) -> dict:
+        """Build a hitter with controlled defensive metrics and identical offensive stats."""
+        return {
+            "name": name,
+            "role": "hitter",
+            "team": "NYM",
+            "primary_position": "CF",
+            "metrics": {
+                "iso": 0.180,
+                "hr_per_pa": 0.032,
+                "barrel_rate": 0.085,
+                "slugging": 0.445,
+                "avg_exit_velocity": 89.0,
+                "strikeout_rate": 0.200,
+                "contact_rate": 0.780,
+                "batting_average": 0.272,
+                "adjusted_obp": 0.340,
+                "oaa": oaa,
+                "drs": drs,
+                "uzr": uzr,
+                "fielding_pct_proxy": 0.990,
+                "position_difficulty": 0.82,
+                "arm_strength": 87.0,
+                "outfield_arm_runs": 1.0,
+                "arm_position_baseline": 0.68,
+            },
+            "samples": {"weighted_pa": 550, "defensive_innings": 1050},
+        }
+
+    def test_high_oaa_player_has_higher_fielding_percentile(self) -> None:
+        players = [
+            self._build_fielder("Elite Fielder", oaa=18.0, drs=15.0, uzr=12.0),
+            self._build_fielder("Average Fielder", oaa=0.0, drs=0.0, uzr=0.0),
+            self._build_fielder("Poor Fielder", oaa=-15.0, drs=-12.0, uzr=-10.0),
+        ]
+        outputs = rate_players(players)
+        by_name = {output.name: output for output in outputs}
+
+        elite_pct = by_name["Elite Fielder"].percentiles["fielding"]
+        average_pct = by_name["Average Fielder"].percentiles["fielding"]
+        poor_pct = by_name["Poor Fielder"].percentiles["fielding"]
+
+        self.assertGreater(elite_pct, average_pct)
+        self.assertGreater(average_pct, poor_pct)
+
+    def test_two_strike_contact_rate_is_ignored_for_contact_rating(self) -> None:
+        base_metrics = {
+            "iso": 0.160,
+            "hr_per_pa": 0.028,
+            "barrel_rate": 0.075,
+            "slugging": 0.420,
+            "avg_exit_velocity": 88.5,
+            "strikeout_rate": 0.215,
+            "contact_rate": 0.765,
+            "batting_average": 0.262,
+            "adjusted_obp": 0.330,
+        }
+        players = [
+            {
+                "name": "High Two Strike",
+                "role": "hitter",
+                "team": "NYM",
+                "primary_position": "2B",
+                "metrics": {**base_metrics, "two_strike_contact_rate": 0.820},
+                "samples": {"weighted_pa": 500},
+            },
+            {
+                "name": "Low Two Strike",
+                "role": "hitter",
+                "team": "NYM",
+                "primary_position": "2B",
+                "metrics": {**base_metrics, "two_strike_contact_rate": 0.520},
+                "samples": {"weighted_pa": 500},
+            },
+            {
+                "name": "Peer A",
+                "role": "hitter",
+                "team": "NYM",
+                "primary_position": "2B",
+                "metrics": {**base_metrics, "two_strike_contact_rate": 0.650},
+                "samples": {"weighted_pa": 500},
+            },
+        ]
+        outputs = rate_players(players)
+        by_name = {output.name: output for output in outputs}
+
+        self.assertEqual(
+            by_name["High Two Strike"].percentiles["contact"],
+            by_name["Low Two Strike"].percentiles["contact"],
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

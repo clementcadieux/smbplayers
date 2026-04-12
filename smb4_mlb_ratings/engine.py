@@ -299,7 +299,7 @@ RATING_SPECS = (
             ComponentSpec("contact_rate", 0.25, is_surface_stat=True),
             ComponentSpec("batting_average", 0.20, is_surface_stat=True),
             ComponentSpec("adjusted_obp", 0.10, is_surface_stat=True),
-            ComponentSpec("two_strike_contact_rate", 0.10),
+            ComponentSpec("slugging", 0.10, is_surface_stat=True),
         ),
     ),
     RatingSpec(
@@ -1425,7 +1425,6 @@ def suggest_traits(state: PlayerState) -> list[TraitSuggestion]:
         arm_pct = state.percentiles.get("arm")
 
         strikeout_pct = component_percentile(state, "contact", "strikeout_rate")
-        two_strike_pct = component_percentile(state, "contact", "two_strike_contact_rate")
         contact_rate_pct = component_percentile(state, "contact", "contact_rate")
         batting_average_pct = component_percentile(state, "contact", "batting_average")
         sprint_pct = component_percentile(state, "speed", "sprint_speed")
@@ -1440,12 +1439,11 @@ def suggest_traits(state: PlayerState) -> list[TraitSuggestion]:
             value
             for value in (
                 contact_pct,
-                two_strike_pct,
                 contact_rate_pct,
                 batting_average_pct,
             )
             if value is not None
-        ) if any(value is not None for value in (contact_pct, two_strike_pct, contact_rate_pct, batting_average_pct)) else None
+        ) if any(value is not None for value in (contact_pct, contact_rate_pct, batting_average_pct)) else None
         contact_bridge_gap = None
         if contact_bridge_signal is not None and strikeout_pct is not None:
             contact_bridge_gap = contact_bridge_signal - strikeout_pct
@@ -1457,15 +1455,6 @@ def suggest_traits(state: PlayerState) -> list[TraitSuggestion]:
                 polarity="negative",
                 score=score,
                 reason="The bat still carries playable contact indicators, but strikeout rate is a clear negative outlier within the contact profile.",
-            )
-        if two_strike_pct is not None and two_strike_pct >= 75:
-            score = two_strike_pct - 55
-            add_trait(
-                suggestions,
-                name="Tough Out",
-                polarity="positive",
-                score=score,
-                reason="Strong two-strike contact supports contact value beyond the base rating.",
             )
         if contact_rate_pct is not None and batting_average_pct is not None and max(contact_rate_pct, batting_average_pct) >= 75:
             score = max(contact_rate_pct, batting_average_pct) - 55

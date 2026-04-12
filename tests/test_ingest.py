@@ -572,6 +572,44 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertEqual(pitcher["trait_lists"]["secondary_field_positions"], ["OF"])
         self.assertIn("arsenal_diversity", pitcher["metadata"]["ingest"]["estimated_metrics"]["current"])
 
+    def test_two_strike_contact_rate_is_ignored_from_hitter_csv(self) -> None:
+        manifest = load_manifest(self.root / "manifest.json")
+        players = ingest_from_manifest(manifest)
+        hitter = next(player for player in players if player["name"] == "Test Hitter")
+        self.assertNotIn("two_strike_contact_rate", hitter["metrics"])
+
+    def test_defensive_metrics_parsed_from_fielding_csv(self) -> None:
+        manifest = load_manifest(self.root / "manifest.json")
+        players = ingest_from_manifest(manifest)
+        hitter = next(player for player in players if player["name"] == "Test Hitter")
+        # fielding_2025.csv has OAA=8, DRS=6, UZR=4.1
+        self.assertAlmostEqual(hitter["metrics"]["oaa"]["current"], 8.0)
+        self.assertAlmostEqual(hitter["metrics"]["drs"]["current"], 6.0)
+        self.assertAlmostEqual(hitter["metrics"]["uzr"]["current"], 4.1, places=2)
+
+    def test_absent_defensive_metric_columns_are_gracefully_omitted(self) -> None:
+        roster_path = self.root / "sparse_def_roster.csv"
+        hitters_path = self.root / "sparse_def_hitters.csv"
+        fielding_path = self.root / "sparse_def_fielding.csv"
+        manifest_path = self.root / "sparse_def_manifest.json"
+
+        self._write_csv(roster_path, [{"player_id": 910, "player_name": "Sparse Fielder", "team": "MIL", "age": 27, "position": "2B", "bats": "R", "throws": "R"}])
+        self._write_csv(hitters_path, [{"player_id": 910, "player_name": "Sparse Fielder", "team": "MIL", "position": "2B", "PA": 450, "ISO": 0.140, "HR": 11, "SLG": 0.390, "AVG": 0.249, "OBP": 0.312, "K %": 20.0, "Contact %": 78.0, "H": 107}])
+        # fielding CSV has no OAA, DRS, or UZR columns — only innings and fielding pct
+        self._write_csv(fielding_path, [{"player_id": 910, "player_name": "Sparse Fielder", "team": "MIL", "position": "2B", "Defensive Innings": 720, "Fielding %": 0.982}])
+        manifest_path.write_text(
+            json.dumps({"source": "baseball_savant", "seasons": {"current": {"year": 2025, "files": {"roster": roster_path.name, "hitters": hitters_path.name, "fielding": fielding_path.name}}}}),
+            encoding="utf-8",
+        )
+
+        players = ingest_from_manifest(load_manifest(manifest_path))
+        fielder = next(player for player in players if player["name"] == "Sparse Fielder")
+
+        self.assertIn("fielding_pct_proxy", fielder["metrics"])
+        self.assertNotIn("oaa", fielder["metrics"])
+        self.assertNotIn("drs", fielder["metrics"])
+        self.assertNotIn("uzr", fielder["metrics"])
+
     def test_ingest_handles_missing_specialized_fielding_columns(self) -> None:
         roster_path = self.root / "defense_sparse_roster.csv"
         hitters_path = self.root / "defense_sparse_hitters.csv"

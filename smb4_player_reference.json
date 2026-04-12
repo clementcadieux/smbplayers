@@ -83,6 +83,24 @@
       "minimum": -10,
       "maximum": 15,
       "higher_is_better": true
+    },
+    "oaa": {
+      "minimum": -20,
+      "maximum": 25,
+      "higher_is_better": true,
+      "notes": "Outs Above Average from Baseball Savant OAA leaderboard. League median is 0. Elite defenders reach +15 to +20."
+    },
+    "drs": {
+      "minimum": -20,
+      "maximum": 25,
+      "higher_is_better": true,
+      "notes": "Defensive Runs Saved from FanGraphs fielding leaderboard. League median is 0. Elite defenders reach +15 to +20."
+    },
+    "uzr": {
+      "minimum": -20,
+      "maximum": 20,
+      "higher_is_better": true,
+      "notes": "Ultimate Zone Rating from FanGraphs fielding leaderboard. League median is 0. Elite defenders reach +12 to +18."
     }
   },
   "pitch_slot_limit": 4,
