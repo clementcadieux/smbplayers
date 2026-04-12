@@ -80,3 +80,32 @@
 6. **Update tests:**
    - Add unit tests confirming that a synthetic hitter with strong fastball metrics receives a fastball-related trait.
    - Add unit tests for at least one location-specific trait (e.g. a hitter with elite inside-pitch performance receives the corresponding inside-pitch trait).
+
+---
+
+## Issue #56 – Potential Undervaluing of Elite Pitches
+
+**Problem:** Some elite pitches are being undervalued in the quality-score calculation. For example, Tarik Skubal's changeup is not being recognised as elite despite having strong run-value metrics. The fix is to ingest Statcast pitch-type run value (`run_value_per_100`) as an authoritative signal and incorporate it into `_savant_pitch_quality_score`.
+
+### Steps
+
+1. **Extend the manifest schema in `models.py`:**
+   - Add `pitch_run_values` as a recognised file type so callers can supply the Statcast pitch-type leaderboard CSV alongside existing manifest entries.
+
+2. **Add a new parser in `ingest/savant.py`:**
+   - Implement `parse_savant_pitch_run_value_csv()` that reads the pitch-type detail export and returns a dict keyed by `(player_id, pitch_type)` → `run_value_per_100`.
+
+3. **Merge run-value data into `savant_pitch_details`:**
+   - During ingestion, combine the new per-pitch `run_value_per_100` values alongside the existing `xwoba` / `whiff_rate` inputs so the data is available when `engine.py` scores pitches.
+
+4. **Update `_savant_pitch_quality_score` in `engine.py`:**
+   - Add a `rv_score` component weighted ~25–30%:
+     - Use `bounded_score(−2.0 − rv_per_100, 4.0)` so that elite values (−2.0 to −6.0 RV/100) map toward the top of the scale.
+   - Adjust remaining component weights proportionally so the composite still sums to 100.
+
+5. **Add normalisation bounds to `smb4_player_reference.json`:**
+   - Store `pitch_rv_per_100_elite` (e.g. −2.0) and `pitch_rv_per_100_exceptional` (e.g. −6.0) as reference thresholds for the new bound.
+
+6. **Update tests:**
+   - Add a unit test with a synthetic pitcher whose changeup has `run_value_per_100 ≈ −2.5` and assert the pitch quality score reaches the elite tier.
+   - Confirm that average pitches (RV/100 near 0) do not receive an outsized boost from the new component.
