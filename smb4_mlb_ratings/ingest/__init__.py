@@ -17,6 +17,8 @@ SAVANT_TOOL_METRICS = frozenset(
 		"arm_strength",
 		"catcher_throw_value",
 		"outfield_arm_runs",
+		"pop_time",
+		"framing_runs",
 		"avg_fastball_velocity",
 		"peak_fastball_velocity",
 		"fastball_usage",

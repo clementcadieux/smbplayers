@@ -918,6 +918,12 @@ def _apply_pitcher_row(player: PlayerAccumulator, season_key: str, row: dict[str
 
 
 def _apply_fielding_row(player: PlayerAccumulator, season_key: str, row: dict[str, str]) -> None:
+    # Expected leaderboard CSVs for specialized defensive inputs:
+    # - https://baseballsavant.mlb.com/leaderboard/outs_above_average -> oaa / outs_above_average, innings
+    # - https://baseballsavant.mlb.com/leaderboard/arm-strength -> arm_strength / throw_speed
+    # - https://baseballsavant.mlb.com/leaderboard/poptime -> pop_time, catcher_throw_value / cs_above_average
+    # - https://baseballsavant.mlb.com/catcher_framing -> framing_runs
+    # - outfield arm exports usually expose outfield_arm_runs as arm_value or outfielder_jump_runs
     _apply_identity(player, row)
     player.set_trait_metrics(season_key, _row_trait_metrics(row, HITTER_TRAIT_METRIC_COLUMNS))
     innings = _pick_number(row, "defensive_innings", "innings", "inn", "fielding_innings")
@@ -937,6 +943,8 @@ def _apply_fielding_row(player: PlayerAccumulator, season_key: str, row: dict[st
     arm_strength = _pick_number(row, "arm_strength", "arm_strength_avg", "throw_speed", "avg_throw_speed")
     catcher_throw_value = _pick_number(row, "catcher_throw_value", "caught_stealing_above_average", "cs_above_average")
     outfield_arm_runs = _pick_number(row, "outfield_arm_runs", "arm_value", "outfielder_jump_runs")
+    pop_time = _pick_number(row, "pop_time", "pop_2b_sba", "exchange_2b_sba", "pop_time_2b", "avg_pop_time_2b")
+    framing_runs = _pick_number(row, "framing_runs", "framing", "framing_run_value", "catcher_framing_runs")
 
     player.set_metric("oaa", season_key, oaa)
     player.set_metric("drs", season_key, drs)
@@ -946,6 +954,8 @@ def _apply_fielding_row(player: PlayerAccumulator, season_key: str, row: dict[st
     player.set_metric("arm_strength", season_key, arm_strength)
     player.set_metric("catcher_throw_value", season_key, catcher_throw_value)
     player.set_metric("outfield_arm_runs", season_key, outfield_arm_runs)
+    player.set_metric("pop_time", season_key, pop_time)
+    player.set_metric("framing_runs", season_key, framing_runs)
     player.set_metric("arm_position_baseline", season_key, _position_metric(position, ARM_POSITION_BASELINE, 0.50), estimated=True)
     player.set_sample("defensive_innings", season_key, innings)
 

@@ -85,6 +85,8 @@ Example:
         "fielding_pct_proxy": 0.990,
         "position_difficulty": 0.82,
         "arm_strength": 88.6,
+        "pop_time": 1.92,
+        "framing_runs": 8.4,
         "outfield_arm_runs": 3.1,
         "arm_position_baseline": 0.70
       },
@@ -124,6 +126,8 @@ Hitters:
 - `position_difficulty`
 - `arm_strength`
 - `catcher_throw_value`
+- `pop_time`
+- `framing_runs`
 - `outfield_arm_runs`
 - `arm_position_baseline`
 
@@ -263,7 +267,7 @@ Each season entry can provide any combination of:
 
 - `hitters`: batting and quality-of-contact summaries
 - `pitchers`: pitching and arsenal summaries
-- `fielding`: defensive leaderboards such as OAA, DRS, UZR, arm metrics, and innings
+- `fielding`: defensive leaderboards such as OAA, DRS, UZR, arm strength, catcher pop time, framing runs, outfield arm runs, and innings
 - `running`: sprint speed and baserunning tables
 - `roster`: optional identity enrichment with age, handedness, team, and positions
 
@@ -306,6 +310,14 @@ Create a manifest JSON file that points at one or more season windows:
 ```
 
 Relative paths are resolved from the manifest file location.
+
+Recommended `fielding` CSV exports by source:
+
+- Baseball Savant OAA leaderboard for `oaa` and innings
+- Baseball Savant Arm Strength leaderboard for `arm_strength`
+- Baseball Savant Pop Time leaderboard for `pop_time` and `catcher_throw_value`
+- Baseball Savant Catcher Framing leaderboard for `framing_runs`
+- FanGraphs or Baseball Reference advanced fielding export for `drs` and `uzr`
 
 ### Output Behavior
 
@@ -374,7 +386,7 @@ The first Baseball Reference implementation focuses on actual-result inputs:
 
 - hitters: `iso`, `hr_per_pa`, `slugging`, `strikeout_rate`, `contact_rate`, `batting_average`, `adjusted_obp`, baserunning result metrics
 - pitchers: `stuff_metric`, `weak_contact_rate`, `walk_rate`, `strike_pct`, `command_error_rate`
-- fielding: `drs`, `uzr` when present, fielding percentage proxy, position difficulty, and arm-position baseline
+- fielding: `drs`, `uzr` when present, fielding percentage proxy, position difficulty, and arm-position baseline. Specialized Savant catcher and arm leaderboards can be paired with this through the shared `fielding` file type when you need `arm_strength`, `catcher_throw_value`, `pop_time`, `framing_runs`, or `outfield_arm_runs`.
 
 If a Baseball Reference file does not provide a direct tool metric, the adapter either omits that metric or derives a conservative proxy and records that fact in `metadata.ingest.estimated_metrics`.
 

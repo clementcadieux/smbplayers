@@ -132,6 +132,8 @@ class IngestFrameworkTests(unittest.TestCase):
                     "Dive Recovery": 72,
                     "Fielding %": 0.992,
                     "Arm Strength": 89.4,
+                    "Pop Time": 1.92,
+                    "Framing Runs": 8.1,
                     "Outfield Arm Runs": 2.9,
                 }
             ],
@@ -483,6 +485,8 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertEqual(hitter["trait_metrics"]["pressure_hitting"]["current"], 77.0)
         self.assertEqual(hitter["trait_metrics"]["out_of_zone_contact_pct"]["current"], 71.0)
         self.assertEqual(hitter["trait_metrics"]["dive_recovery"]["current"], 72.0)
+        self.assertAlmostEqual(hitter["metrics"]["pop_time"]["current"], 1.92)
+        self.assertAlmostEqual(hitter["metrics"]["framing_runs"]["current"], 8.1)
 
         self.assertEqual(pitcher["role"], "pitcher")
         self.assertEqual(pitcher["primary_position"], "P")
@@ -501,6 +505,86 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertEqual(pitcher["trait_metrics"]["opposite_handed_pitching_gap"]["current"], -14.0)
         self.assertEqual(pitcher["trait_lists"]["secondary_field_positions"], ["OF"])
         self.assertIn("arsenal_diversity", pitcher["metadata"]["ingest"]["estimated_metrics"]["current"])
+
+    def test_ingest_handles_missing_specialized_fielding_columns(self) -> None:
+        roster_path = self.root / "defense_sparse_roster.csv"
+        hitters_path = self.root / "defense_sparse_hitters.csv"
+        fielding_path = self.root / "defense_sparse_fielding.csv"
+        manifest_path = self.root / "defense_sparse_manifest.json"
+
+        self._write_csv(
+            roster_path,
+            [
+                {
+                    "player_id": 710,
+                    "player_name": "Sparse Catcher",
+                    "team": "NYM",
+                    "age": 26,
+                    "position": "C",
+                    "bats": "R",
+                    "throws": "R",
+                }
+            ],
+        )
+        self._write_csv(
+            hitters_path,
+            [
+                {
+                    "player_id": 710,
+                    "player_name": "Sparse Catcher",
+                    "team": "NYM",
+                    "position": "C",
+                    "PA": 330,
+                    "ISO": 0.145,
+                    "HR": 10,
+                    "SLG": 0.403,
+                    "AVG": 0.254,
+                    "OBP": 0.319,
+                    "K %": 19.8,
+                    "Contact %": 78.6,
+                    "H": 81,
+                }
+            ],
+        )
+        self._write_csv(
+            fielding_path,
+            [
+                {
+                    "player_id": 710,
+                    "player_name": "Sparse Catcher",
+                    "team": "NYM",
+                    "position": "C",
+                    "Defensive Innings": 640,
+                    "Fielding %": 0.994,
+                }
+            ],
+        )
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "source": "baseball_savant",
+                    "seasons": {
+                        "current": {
+                            "year": 2025,
+                            "files": {
+                                "roster": roster_path.name,
+                                "hitters": hitters_path.name,
+                                "fielding": fielding_path.name,
+                            },
+                        }
+                    },
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        players = ingest_from_manifest(load_manifest(manifest_path))
+        catcher = next(player for player in players if player["name"] == "Sparse Catcher")
+
+        self.assertIn("fielding_pct_proxy", catcher["metrics"])
+        self.assertNotIn("pop_time", catcher["metrics"])
+        self.assertNotIn("framing_runs", catcher["metrics"])
 
     def test_cli_ingest_and_legacy_rate_flow(self) -> None:
         normalized_path = self.root / "normalized.json"

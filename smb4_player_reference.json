@@ -33,6 +33,48 @@
     "full_season_days_hitter": 162,
     "full_season_days_pitcher": 180
   },
+  "defensive_metric_sources": {
+    "baseball_savant": {
+      "outs_above_average": {
+        "url": "https://baseballsavant.mlb.com/leaderboard/outs_above_average",
+        "columns": ["player_id", "player_name", "oaa", "outs_above_average", "defensive_innings"]
+      },
+      "arm_strength": {
+        "url": "https://baseballsavant.mlb.com/leaderboard/arm-strength",
+        "columns": ["player_id", "player_name", "arm_strength", "arm_strength_avg", "throw_speed"]
+      },
+      "catcher_throwing": {
+        "url": "https://baseballsavant.mlb.com/leaderboard/poptime",
+        "columns": ["player_id", "player_name", "pop_time", "pop_2b_sba", "catcher_throw_value", "cs_above_average"]
+      },
+      "catcher_framing": {
+        "url": "https://baseballsavant.mlb.com/catcher_framing",
+        "columns": ["player_id", "player_name", "framing_runs", "catcher_framing_runs"]
+      },
+      "outfield_arm": {
+        "url": "https://baseballsavant.mlb.com/leaderboard/arm-strength",
+        "columns": ["player_id", "player_name", "outfield_arm_runs", "arm_value", "outfielder_jump_runs"]
+      }
+    },
+    "fangraphs": {
+      "advanced_fielding": {
+        "url": "https://www.fangraphs.com/leaders/major-league",
+        "columns": ["player_id", "player_name", "drs", "uzr"]
+      }
+    }
+  },
+  "metric_bounds": {
+    "pop_time": {
+      "minimum": 1.8,
+      "maximum": 2.2,
+      "higher_is_better": false
+    },
+    "framing_runs": {
+      "minimum": -10,
+      "maximum": 15,
+      "higher_is_better": true
+    }
+  },
   "pitch_slot_limit": 4,
   "pitch_mappings": {
     "ff": {
