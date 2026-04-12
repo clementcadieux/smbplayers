@@ -32,6 +32,17 @@ DEFAULT_MLB_STATS_API = "https://statsapi.mlb.com/api/v1"
 DEFAULT_BASEBALL_SAVANT = "https://baseballsavant.mlb.com"
 DEFAULT_FANGRAPHS = "https://www.fangraphs.com"
 
+_POSITION_OUTS_COLUMN_MAP: dict[str, str] = {
+    "outs_2": "C",
+    "outs_3": "1B",
+    "outs_4": "2B",
+    "outs_5": "3B",
+    "outs_6": "SS",
+    "outs_7": "LF",
+    "outs_8": "CF",
+    "outs_9": "RF",
+}
+
 
 def parse_savant_statcast_summary(payload: str, *, season: int) -> dict[str, float]:
     match = re.search(r"statcast:\s*(\[.*?\]),\s*statcastArrayString:", payload, re.DOTALL)
@@ -229,9 +240,15 @@ def build_savant_fielding_rows(
     players: Iterable[Mapping[str, Any]],
     *,
     team_abbreviation: str,
+    season: int | None = None,
+    ssl_context: SSLContext | None = None,
+    baseball_savant: str = DEFAULT_BASEBALL_SAVANT,
+    fielding_run_value_payload: str | None = None,
+    oaa_payload: str | None = None,
 ) -> list[dict[str, object]]:
+    player_list = list(players)
     rows: list[dict[str, object]] = []
-    for player in players:
+    for player in player_list:
         if player.get("type") != "hitter":
             continue
         fielding = player.get("fielding_stats") if isinstance(player.get("fielding_stats"), Mapping) else {}
@@ -256,7 +273,55 @@ def build_savant_fielding_rows(
                 "Framing Runs": _as_float(fielding.get("framingRuns")) or _as_float(fielding.get("catcherFramingRuns")),
             }
         )
-    return rows
+
+    if season is None:
+        return rows
+
+    fallback_rows = _build_savant_defensive_fallback_rows(
+        player_list,
+        team_abbreviation=team_abbreviation,
+        season=season,
+        ssl_context=ssl_context,
+        baseball_savant=baseball_savant,
+        fielding_run_value_payload=fielding_run_value_payload,
+        oaa_payload=oaa_payload,
+    )
+    if not fallback_rows:
+        return rows
+
+    merged_by_key: dict[tuple[str, str], dict[str, object]] = {}
+    for row in rows:
+        player_id = _as_str(row.get("player_id"))
+        position = _as_str(row.get("position"))
+        if not player_id or not position:
+            continue
+        merged_by_key[(player_id, position.upper())] = dict(row)
+
+    for fallback in fallback_rows:
+        player_id = _as_str(fallback.get("player_id"))
+        position = _as_str(fallback.get("position"))
+        if not player_id:
+            continue
+        if not position:
+            # Fall back to player's listed primary position if Savant row omits explicit position.
+            position = _as_str(next((p.get("position") for p in player_list if _as_str(p.get("player_id")) == player_id), None))
+        if not position:
+            continue
+
+        key = (player_id, position.upper())
+        existing = merged_by_key.get(key)
+        if existing is None:
+            merged_by_key[key] = dict(fallback)
+            continue
+        if existing.get("Defensive Innings") is None and fallback.get("Defensive Innings") is not None:
+            existing["Defensive Innings"] = fallback.get("Defensive Innings")
+        for metric_key in ("OAA", "DRS", "UZR", "Outfield Arm Runs", "Catcher Throw Value", "Framing Runs"):
+            if fallback.get(metric_key) is not None:
+                existing[metric_key] = fallback.get(metric_key)
+
+    merged_rows = list(merged_by_key.values())
+    merged_rows.sort(key=lambda row: (_as_str(row.get("player_name")) or "", _as_str(row.get("position")) or ""))
+    return merged_rows
 
 
 def parse_fangraphs_fielding_csv(payload: str) -> list[dict[str, Any]]:
@@ -293,7 +358,17 @@ def parse_savant_fielding_run_value_csv(payload: str) -> list[dict[str, Any]]:
         name = _player_name_from_row(row)
         if not name:
             continue
+        player_id = _as_int(row.get("player_id") or row.get("id"))
         team = _as_str(row.get("Team") or row.get("Tm") or row.get("team") or row.get("display_team_name"))
+        position = _as_str(
+            row.get("position")
+            or row.get("pos")
+            or row.get("fielder_position")
+            or row.get("fielding_position")
+            or row.get("display_position")
+            or row.get("position_name")
+            or row.get("primary_pos_formatted")
+        )
         fielding_run_value = _as_float(
             row.get("Fielding Run Value")
             or row.get("fielding_run_value")
@@ -304,17 +379,25 @@ def parse_savant_fielding_run_value_csv(payload: str) -> list[dict[str, Any]]:
         arm_runs = _as_float(row.get("Arm") or row.get("arm") or row.get("arm_runs"))
         framing_runs = _as_float(row.get("Framing") or row.get("framing") or row.get("framing_runs"))
         throwing_runs = _as_float(row.get("Throwing") or row.get("throwing") or row.get("throwing_runs"))
+        positional_outs: dict[str, float] = {}
+        for outs_column, parsed_position in _POSITION_OUTS_COLUMN_MAP.items():
+            outs_value = _as_float(row.get(outs_column))
+            if outs_value is not None and outs_value > 0:
+                positional_outs[parsed_position] = outs_value
         if all(value is None for value in (fielding_run_value, range_runs, arm_runs, framing_runs, throwing_runs)):
             continue
         parsed_rows.append(
             {
                 "name": name,
+                "player_id": player_id,
                 "team": team.upper() if team else None,
+                "position": position.upper() if position else None,
                 "fielding_run_value": fielding_run_value,
                 "range_runs": range_runs,
                 "arm_runs": arm_runs,
                 "framing_runs": framing_runs,
                 "throwing_runs": throwing_runs,
+                "positional_outs": positional_outs,
             }
         )
     return parsed_rows
@@ -329,7 +412,17 @@ def parse_savant_oaa_csv(payload: str) -> list[dict[str, Any]]:
         name = _player_name_from_row(row)
         if not name:
             continue
+        player_id = _as_int(row.get("player_id") or row.get("id"))
         team = _as_str(row.get("Team") or row.get("Tm") or row.get("team") or row.get("display_team_name"))
+        position = _as_str(
+            row.get("position")
+            or row.get("pos")
+            or row.get("fielder_position")
+            or row.get("fielding_position")
+            or row.get("display_position")
+            or row.get("position_name")
+            or row.get("primary_pos_formatted")
+        )
         oaa = _as_float(
             row.get("OAA")
             or row.get("outs_above_average")
@@ -345,7 +438,9 @@ def parse_savant_oaa_csv(payload: str) -> list[dict[str, Any]]:
         parsed_rows.append(
             {
                 "name": name,
+                "player_id": player_id,
                 "team": team.upper() if team else None,
+                "position": position.upper() if position else None,
                 "oaa": oaa,
                 "runs_prevented": runs_prevented,
             }
@@ -497,6 +592,7 @@ def _build_savant_defensive_fallback_rows(
     baseball_savant: str,
     fielding_run_value_payload: str | None,
     oaa_payload: str | None,
+    career_oaa_payload: str | None = None,
 ) -> list[dict[str, object]]:
     frv_payload = fielding_run_value_payload
     if frv_payload is None:
@@ -512,29 +608,39 @@ def _build_savant_defensive_fallback_rows(
             ssl_context=ssl_context,
             baseball_savant=baseball_savant,
         )
+    career_oaa_csv_payload = career_oaa_payload
+    if career_oaa_csv_payload is None and oaa_payload is None:
+        career_oaa_csv_payload = _fetch_savant_oaa_csv(
+            season=season,
+            start_year=max(2015, season - 12),
+            ssl_context=ssl_context,
+            baseball_savant=baseball_savant,
+        )
 
     frv_rows = parse_savant_fielding_run_value_csv(frv_payload) if frv_payload else []
     oaa_rows = parse_savant_oaa_csv(oaa_csv_payload) if oaa_csv_payload else []
+    if career_oaa_csv_payload:
+        oaa_rows.extend(parse_savant_oaa_csv(career_oaa_csv_payload))
     if not frv_rows and not oaa_rows:
         return []
 
-    frv_by_name_team = {
-        (_normalized_name(row["name"]), row.get("team")): row
+    frv_by_id_key = {
+        (int(row["player_id"]), row.get("position")): row
         for row in frv_rows
-        if isinstance(row.get("name"), str)
+        if isinstance(row.get("player_id"), int)
     }
-    frv_by_name = {
-        _normalized_name(row["name"]): row
-        for row in frv_rows
-        if isinstance(row.get("name"), str)
-    }
-    oaa_by_name_team = {
-        (_normalized_name(row["name"]), row.get("team")): row
+    oaa_by_id_key = {
+        (int(row["player_id"]), row.get("position")): row
         for row in oaa_rows
+        if isinstance(row.get("player_id"), int)
+    }
+    frv_by_name_team_key = {
+        (_normalized_name(str(row.get("name") or "")), row.get("team"), row.get("position")): row
+        for row in frv_rows
         if isinstance(row.get("name"), str)
     }
-    oaa_by_name = {
-        _normalized_name(row["name"]): row
+    oaa_by_name_team_key = {
+        (_normalized_name(str(row.get("name") or "")), row.get("team"), row.get("position")): row
         for row in oaa_rows
         if isinstance(row.get("name"), str)
     }
@@ -548,46 +654,106 @@ def _build_savant_defensive_fallback_rows(
             continue
         team = (_as_str(player.get("team")) or team_abbreviation).upper()
         normalized = _normalized_name(player_name)
+        player_position = _as_str(player.get("position"))
+        player_id = _as_int(player.get("player_id"))
 
-        frv = frv_by_name_team.get((normalized, team)) or frv_by_name.get(normalized)
-        oaa_row = oaa_by_name_team.get((normalized, team)) or oaa_by_name.get(normalized)
-        if frv is None and oaa_row is None:
+        candidate_positions: set[str | None] = set()
+        frv_general_row: Mapping[str, Any] | None = None
+        if player_id is not None:
+            candidate_positions.update(position for pid, position in frv_by_id_key if pid == player_id)
+            candidate_positions.update(position for pid, position in oaa_by_id_key if pid == player_id)
+            frv_general_row = frv_by_id_key.get((player_id, None))
+        if not candidate_positions:
+            candidate_positions.update(
+                position
+                for name_key, team_key, position in frv_by_name_team_key
+                if name_key == normalized and team_key == team
+            )
+            candidate_positions.update(
+                position
+                for name_key, team_key, position in oaa_by_name_team_key
+                if name_key == normalized and team_key == team
+            )
+
+        if frv_general_row is None:
+            frv_general_row = frv_by_name_team_key.get((normalized, team, None))
+
+        positional_outs = frv_general_row.get("positional_outs") if isinstance(frv_general_row, Mapping) else None
+        if isinstance(positional_outs, Mapping):
+            for parsed_position, outs_value in positional_outs.items():
+                numeric_outs = _as_float(outs_value)
+                if numeric_outs is not None and numeric_outs > 0:
+                    normalized_position = _as_str(parsed_position)
+                    if normalized_position:
+                        candidate_positions.add(normalized_position)
+
+        candidate_keys = sorted(candidate_positions, key=lambda value: str(value or ""))
+        if not candidate_keys:
+            candidate_keys = [player_position.upper() if player_position else None]
+
+        matched_any = False
+        for candidate_position in candidate_keys:
+            frv = None
+            oaa_row = None
+            if player_id is not None:
+                frv = frv_by_id_key.get((player_id, candidate_position))
+                oaa_row = oaa_by_id_key.get((player_id, candidate_position))
+            if frv is None:
+                frv = frv_by_name_team_key.get((normalized, team, candidate_position))
+            if frv is None and isinstance(frv_general_row, Mapping):
+                frv = frv_general_row
+            if oaa_row is None:
+                oaa_row = oaa_by_name_team_key.get((normalized, team, candidate_position))
+            if frv is None and oaa_row is None:
+                continue
+            matched_any = True
+
+            fielding_run_value = _as_float(frv.get("fielding_run_value")) if isinstance(frv, Mapping) else None
+            range_runs = _as_float(frv.get("range_runs")) if isinstance(frv, Mapping) else None
+            arm_runs = _as_float(frv.get("arm_runs")) if isinstance(frv, Mapping) else None
+            framing_runs = _as_float(frv.get("framing_runs")) if isinstance(frv, Mapping) else None
+            throwing_runs = _as_float(frv.get("throwing_runs")) if isinstance(frv, Mapping) else None
+            oaa = _as_float(oaa_row.get("oaa")) if isinstance(oaa_row, Mapping) else None
+            runs_prevented = _as_float(oaa_row.get("runs_prevented")) if isinstance(oaa_row, Mapping) else None
+
+            drs_proxy = fielding_run_value
+            if drs_proxy is None:
+                drs_proxy = runs_prevented
+            if drs_proxy is None:
+                drs_proxy = oaa
+
+            uzr_proxy = range_runs
+            if uzr_proxy is None:
+                uzr_proxy = runs_prevented
+            if uzr_proxy is None:
+                uzr_proxy = oaa
+
+            defensive_innings = None
+            if isinstance(frv, Mapping):
+                frv_positional_outs = frv.get("positional_outs")
+                if isinstance(frv_positional_outs, Mapping):
+                    outs_value = _as_float(frv_positional_outs.get(candidate_position or ""))
+                    if outs_value is not None and outs_value > 0:
+                        defensive_innings = round(outs_value / 3.0, 3)
+
+            rows.append(
+                {
+                    "player_id": player.get("player_id"),
+                    "player_name": player_name,
+                    "team": team,
+                    "position": candidate_position or player_position,
+                    "Defensive Innings": defensive_innings,
+                    "OAA": oaa,
+                    "DRS": drs_proxy,
+                    "UZR": uzr_proxy,
+                    "Outfield Arm Runs": arm_runs,
+                    "Catcher Throw Value": throwing_runs,
+                    "Framing Runs": framing_runs,
+                }
+            )
+
+        if matched_any:
             continue
-
-        fielding_run_value = _as_float(frv.get("fielding_run_value")) if isinstance(frv, Mapping) else None
-        range_runs = _as_float(frv.get("range_runs")) if isinstance(frv, Mapping) else None
-        arm_runs = _as_float(frv.get("arm_runs")) if isinstance(frv, Mapping) else None
-        framing_runs = _as_float(frv.get("framing_runs")) if isinstance(frv, Mapping) else None
-        throwing_runs = _as_float(frv.get("throwing_runs")) if isinstance(frv, Mapping) else None
-        oaa = _as_float(oaa_row.get("oaa")) if isinstance(oaa_row, Mapping) else None
-        runs_prevented = _as_float(oaa_row.get("runs_prevented")) if isinstance(oaa_row, Mapping) else None
-
-        drs_proxy = fielding_run_value
-        if drs_proxy is None:
-            drs_proxy = runs_prevented
-        if drs_proxy is None:
-            drs_proxy = oaa
-
-        uzr_proxy = range_runs
-        if uzr_proxy is None:
-            uzr_proxy = runs_prevented
-        if uzr_proxy is None:
-            uzr_proxy = oaa
-
-        rows.append(
-            {
-                "player_id": player.get("player_id"),
-                "player_name": player_name,
-                "team": team,
-                "position": player.get("position"),
-                "OAA": oaa,
-                "DRS": drs_proxy,
-                "UZR": uzr_proxy,
-                "Outfield Arm Runs": arm_runs,
-                "Catcher Throw Value": throwing_runs,
-                "Framing Runs": framing_runs,
-            }
-        )
     return rows
 
 
@@ -1077,18 +1243,25 @@ def _fetch_savant_fielding_run_value_csv(
 def _fetch_savant_oaa_csv(
     *,
     season: int,
+    start_year: int | None = None,
     ssl_context: SSLContext | None,
     baseball_savant: str,
 ) -> str | None:
+    effective_start_year = start_year if start_year is not None else season
     candidate_urls = (
         (
             f"{baseball_savant}/leaderboard/outs_above_average"
-            f"?type=Fielder&startYear={season}&endYear={season}&split=no&team=&range=year"
+            f"?type=Fielder&startYear={effective_start_year}&endYear={season}&split=yes&team=&range=year"
             "&min=0&pos=&roles=&viz=hide&csv=true"
         ),
         (
             f"{baseball_savant}/leaderboard/outs_above_average"
-            f"?startYear={season}&endYear={season}&csv=true"
+            f"?type=Fielder&startYear={effective_start_year}&endYear={season}&split=no&team=&range=year"
+            "&min=0&pos=&roles=&viz=hide&csv=true"
+        ),
+        (
+            f"{baseball_savant}/leaderboard/outs_above_average"
+            f"?startYear={effective_start_year}&endYear={season}&csv=true"
         ),
     )
     return _fetch_first_valid_csv(

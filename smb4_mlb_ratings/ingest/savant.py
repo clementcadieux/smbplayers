@@ -311,6 +311,51 @@ def _canonical_position(raw_value: str | None) -> str | None:
     return POSITION_ALIASES.get(cleaned.upper()) or POSITION_ALIASES.get(cleaned)
 
 
+def _canonical_positions(raw_value: str | None) -> list[str]:
+    if not raw_value:
+        return []
+    pieces = (
+        raw_value.replace("/", ",")
+        .replace(";", ",")
+        .replace("|", ",")
+        .replace("-", ",")
+        .split(",")
+    )
+    positions: list[str] = []
+    seen: set[str] = set()
+    for piece in pieces:
+        position = _canonical_position(piece.strip())
+        if position is None or position in seen:
+            continue
+        seen.add(position)
+        positions.append(position)
+    return positions
+
+
+def _row_positions(row: dict[str, str]) -> list[str]:
+    candidates: list[str] = []
+    for field_name in ("primary_position", "position", "pos", "fielding_position", "mlb_pos"):
+        raw_value = _pick_first(row, field_name)
+        if isinstance(raw_value, str) and raw_value.strip():
+            candidates.extend(_canonical_positions(raw_value))
+    for field_name in SECONDARY_FIELD_POSITION_COLUMNS:
+        raw_value = _pick_first(row, field_name)
+        if isinstance(raw_value, str) and raw_value.strip():
+            candidates.extend(_canonical_positions(raw_value))
+    raw_secondary = _pick_first(row, "secondary_position", "secondary_pos")
+    if isinstance(raw_secondary, str) and raw_secondary.strip():
+        candidates.extend(_canonical_positions(raw_secondary))
+
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for position in candidates:
+        if position in seen:
+            continue
+        seen.add(position)
+        ordered.append(position)
+    return ordered
+
+
 def _row_player_name(row: dict[str, str]) -> str | None:
     direct = _pick_first(row, "player_name", "player", "name", "full_name")
     if direct:
@@ -687,16 +732,19 @@ def _apply_identity(player: PlayerAccumulator, row: dict[str, str], *, default_p
     age_value = _pick_number(row, "age")
     if age_value is not None:
         player.age = int(age_value)
-    primary_position = _canonical_position(
-        _pick_first(row, "primary_position", "position", "pos", "fielding_position", "mlb_pos")
-    )
+    row_positions = _row_positions(row)
+    primary_position = row_positions[0] if row_positions else None
     if primary_position:
         player.primary_position = primary_position
     elif default_position and player.primary_position is None:
         player.primary_position = default_position
-    secondary_position = _canonical_position(_pick_first(row, "secondary_position", "secondary_pos"))
+    secondary_position = row_positions[1] if len(row_positions) > 1 else _canonical_position(_pick_first(row, "secondary_position", "secondary_pos"))
     if secondary_position:
         player.secondary_position = secondary_position
+    if player.primary_position in row_positions:
+        start_index = row_positions.index(player.primary_position) + 1
+        for alternate_position in row_positions[start_index:]:
+            player.add_positional_games(alternate_position, 1.0)
     player.add_trait_list_values("secondary_field_positions", _row_secondary_field_positions(row))
     bats = _pick_first(row, "bats", "bat_side", "stand", "stands")
     if bats:
@@ -936,7 +984,8 @@ def _apply_fielding_row(player: PlayerAccumulator, season_key: str, row: dict[st
     player.set_trait_metrics(season_key, _row_trait_metrics(row, HITTER_TRAIT_METRIC_COLUMNS))
     innings = _pick_number(row, "defensive_innings", "innings", "inn", "fielding_innings")
     games = _pick_number(row, "g", "games", "fielding_games")
-    position = _canonical_position(_pick_first(row, "position", "pos", "primary_position")) or player.primary_position
+    row_positions = _row_positions(row)
+    position = row_positions[0] if row_positions else (_canonical_position(_pick_first(row, "position", "pos", "primary_position")) or player.primary_position)
     oaa = _pick_number(row, "oaa", "outs_above_average")
     drs = _pick_number(row, "drs", "defensive_runs_saved", "drs_total")
     uzr = _pick_number(row, "uzr", "uzr_150", "ultimate_zone_rating")
@@ -967,7 +1016,17 @@ def _apply_fielding_row(player: PlayerAccumulator, season_key: str, row: dict[st
     player.set_metric("framing_runs", season_key, framing_runs)
     player.set_metric("arm_position_baseline", season_key, _position_metric(position, ARM_POSITION_BASELINE, 0.50), estimated=True)
     player.set_sample("defensive_innings", season_key, innings)
-    player.add_positional_games(position, innings if innings is not None else games)
+    if row_positions:
+        total_value = innings if innings is not None else games
+        if total_value is not None and total_value > 0:
+            share = total_value / len(row_positions)
+            for parsed_position in row_positions:
+                player.add_positional_games(parsed_position, share)
+        else:
+            for parsed_position in row_positions:
+                player.add_positional_games(parsed_position, 1.0)
+    else:
+        player.add_positional_games(position, innings if innings is not None else games)
 
 
 def _apply_running_row(player: PlayerAccumulator, season_key: str, row: dict[str, str]) -> None:

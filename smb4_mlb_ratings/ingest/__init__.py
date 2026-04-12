@@ -305,6 +305,11 @@ def _merge_player_records(
 		baseball_reference.get("days_on_roster", {}) if isinstance(baseball_reference.get("days_on_roster"), dict) else {},
 		fangraphs.get("days_on_roster", {}) if isinstance(fangraphs.get("days_on_roster"), dict) else {},
 	)
+	positional_games = _union_season_values(
+		savant.get("positional_games", {}) if isinstance(savant.get("positional_games"), dict) else {},
+		fangraphs.get("positional_games", {}) if isinstance(fangraphs.get("positional_games"), dict) else {},
+		baseball_reference.get("positional_games", {}) if isinstance(baseball_reference.get("positional_games"), dict) else {},
+	)
 	pitch_mix = savant.get("pitch_mix", {}) if isinstance(savant.get("pitch_mix"), dict) else {}
 
 	merged_player = {
@@ -327,6 +332,8 @@ def _merge_player_records(
 		merged_player["trait_lists"] = trait_lists
 	if days_on_roster:
 		merged_player["days_on_roster"] = {str(key): float(value) for key, value in sorted(days_on_roster.items())}
+	if positional_games:
+		merged_player["positional_games"] = {str(key): float(value) for key, value in sorted(positional_games.items())}
 	if pitch_mix:
 		merged_player["pitch_mix"] = {str(key): float(value) for key, value in sorted(pitch_mix.items())}
 	return merged_player
