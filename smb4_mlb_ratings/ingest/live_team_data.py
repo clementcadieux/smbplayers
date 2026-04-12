@@ -605,7 +605,6 @@ def build_mixed_source_manifest(
     savant_hitters_file: str,
     savant_pitchers_file: str,
     savant_fielding_file: str | None = None,
-    fangraphs_fielding_file: str | None = None,
     baseball_reference_hitters_file: str,
     baseball_reference_pitchers_file: str,
 ) -> dict[str, Any]:
@@ -628,8 +627,6 @@ def build_mixed_source_manifest(
             "files": savant_files
         },
     }
-    if fangraphs_fielding_file:
-        sources["fangraphs"] = {"files": {"fielding": fangraphs_fielding_file}}
 
     return {
         "source": "mixed",
