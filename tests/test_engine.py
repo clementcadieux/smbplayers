@@ -113,6 +113,41 @@ class SurfaceBlendTests(unittest.TestCase):
         volume_test = next(output for output in outputs if output.name == "Volume Test")
         self.assertEqual(volume_test.projected_pa, 570.0)
 
+    def test_rate_players_surfaces_recommended_pitches_for_pitchers(self) -> None:
+        outputs = rate_players(
+            [
+                {
+                    "name": "Pitch Mix Test",
+                    "role": "pitcher",
+                    "team": "NYM",
+                    "primary_position": "P",
+                    "pitch_mix": {"ff": 0.42, "sv": 0.21, "sl": 0.18, "fs": 0.12, "kn": 0.07},
+                    "metrics": {
+                        "avg_fastball_velocity": 96.0,
+                        "peak_fastball_velocity": 98.0,
+                        "fastball_usage": 0.42,
+                        "swinging_strike_rate": 0.14,
+                        "chase_rate": 0.31,
+                        "movement_quality": 24.0,
+                        "stuff_metric": 132.0,
+                        "arsenal_diversity": 0.81,
+                        "weak_contact_rate": 0.68,
+                        "walk_rate": 0.07,
+                        "strike_pct": 0.65,
+                        "zone_pct": 0.49,
+                        "first_pitch_strike_pct": 0.61,
+                        "command_error_rate": 0.35,
+                    },
+                    "samples": {"weighted_bf": 680, "tracked_pitches": 2700, "tracked_fastballs": 1134},
+                },
+                self._pitcher_peer("Pitcher Peer 1", 95.0, 0.13, 0.30, 0.075),
+                self._pitcher_peer("Pitcher Peer 2", 93.5, 0.11, 0.28, 0.085),
+            ]
+        )
+
+        pitch_mix_test = next(output for output in outputs if output.name == "Pitch Mix Test")
+        self.assertEqual(pitch_mix_test.recommended_pitches, ["4-Seam Fastball", "Slider", "Forkball"])
+
     def _build_power_players(self, *, sample: float) -> list[dict[str, object]]:
         return [
             self._player("Poor Surface", 0.390, sample),
@@ -147,6 +182,39 @@ class SurfaceBlendTests(unittest.TestCase):
             "samples": {
                 "weighted_pa": sample,
             },
+        }
+
+    def _pitcher_peer(
+        self,
+        name: str,
+        avg_fastball_velocity: float,
+        swinging_strike_rate: float,
+        chase_rate: float,
+        walk_rate: float,
+    ) -> dict[str, object]:
+        return {
+            "name": name,
+            "role": "pitcher",
+            "team": "NYM",
+            "primary_position": "P",
+            "pitch_mix": {"ff": 0.55, "sl": 0.25, "ch": 0.20},
+            "metrics": {
+                "avg_fastball_velocity": avg_fastball_velocity,
+                "peak_fastball_velocity": avg_fastball_velocity + 2.0,
+                "fastball_usage": 0.55,
+                "swinging_strike_rate": swinging_strike_rate,
+                "chase_rate": chase_rate,
+                "movement_quality": 22.0,
+                "stuff_metric": 120.0,
+                "arsenal_diversity": 0.75,
+                "weak_contact_rate": 0.64,
+                "walk_rate": walk_rate,
+                "strike_pct": 0.64,
+                "zone_pct": 0.48,
+                "first_pitch_strike_pct": 0.60,
+                "command_error_rate": 0.36,
+            },
+            "samples": {"weighted_bf": 650, "tracked_pitches": 2600, "tracked_fastballs": 1430},
         }
 
 

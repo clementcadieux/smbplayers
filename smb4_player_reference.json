@@ -29,6 +29,54 @@
     "min_pa_fraction": 0.6,
     "min_ip_fraction": 0.6
   },
+  "pitch_slot_limit": 4,
+  "pitch_mappings": {
+    "ff": {
+      "mlb_name": "Four-Seam Fastball",
+      "smb4_name": "4-Seam Fastball",
+      "merge_target": null
+    },
+    "si": {
+      "mlb_name": "Sinker",
+      "smb4_name": "2-Seam Fastball",
+      "merge_target": null
+    },
+    "fc": {
+      "mlb_name": "Cutter",
+      "smb4_name": "Cut Fastball",
+      "merge_target": null
+    },
+    "sl": {
+      "mlb_name": "Slider",
+      "smb4_name": "Slider",
+      "merge_target": null
+    },
+    "cu": {
+      "mlb_name": "Curveball",
+      "smb4_name": "Curveball",
+      "merge_target": null
+    },
+    "ch": {
+      "mlb_name": "Changeup",
+      "smb4_name": "Changeup",
+      "merge_target": null
+    },
+    "fs": {
+      "mlb_name": "Splitter",
+      "smb4_name": "Forkball",
+      "merge_target": null
+    },
+    "sv": {
+      "mlb_name": "Sweeper",
+      "smb4_name": null,
+      "merge_target": "Slider"
+    },
+    "kn": {
+      "mlb_name": "Knuckleball",
+      "smb4_name": null,
+      "merge_target": null
+    }
+  },
   "ratings": {
     "overall_grade": {
       "type": "letter_grade",
