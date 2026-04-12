@@ -32,6 +32,7 @@ Final trait assignment uses priority and conflict rules so the engine can keep a
 - [smb4_mlb_ratings/models.py](smb4_mlb_ratings/models.py): input and output models
 - [smb4_mlb_ratings/cli.py](smb4_mlb_ratings/cli.py): command-line entry point
 - [smb4_mlb_ratings/output.py](smb4_mlb_ratings/output.py): structured team-by-team ratings output
+- [smb4_mlb_ratings/roster_selector.py](smb4_mlb_ratings/roster_selector.py): 22-man roster recommendation logic
 - [smb4_mlb_ratings/ingest/savant.py](smb4_mlb_ratings/ingest/savant.py): Baseball Savant CSV ingestion and normalization
 - [smb4_mlb_ratings/ingest/baseball_reference.py](smb4_mlb_ratings/ingest/baseball_reference.py): Baseball Reference CSV ingestion for result-based stats
 
@@ -162,13 +163,16 @@ New subcommands are also available:
 ```powershell
 python -m smb4_mlb_ratings.cli rate players.json ratings_output.json
 python -m smb4_mlb_ratings.cli ingest savant_manifest.json normalized_players.json
+python -m smb4_mlb_ratings.cli rank ratings_output.json roster_output.json
 python -m smb4_mlb_ratings.cli ingest-rate savant_manifest.json ratings_output.json --normalized-output normalized_players.json
 python -m smb4_mlb_ratings.cli ingest-rate savant_manifest.json --structured-output team_ratings
 ```
 
 The `ingest` manifest can now target `baseball_savant`, `baseball_reference`, or `mixed`.
 
-When `--structured-output` is provided to `ingest-rate`, the tool writes one file per team at `<output_dir>/<league>/<division>/<team>.json` and creates `<output_dir>/index.json` with the organized file list.
+When `--structured-output` is provided to `ingest-rate`, the tool writes one file per team at `<output_dir>/<league>/<division>/<team>.json` and creates `<output_dir>/index.json` with the organized file list. Each team file includes both the full rated-player list and a recommended 22-man roster.
+
+The `rank` subcommand reads a ratings JSON file and writes grouped roster recommendations per team. It uses projected plate appearances for hitters and projected innings for pitchers when available, and otherwise falls back to the most recent relevant sample volume already preserved in the rating output.
 
 ## Baseball Savant Ingestion
 
