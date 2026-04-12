@@ -16,114 +16,78 @@
 - **#28 – Improvements for Volume Predictor** – Replaced raw seasonal totals with a per-day rate metric using `days_on_roster`; full-season day targets stored in `smb4_player_reference.json`.
 - **#31 – Find and Ingest Data for More In-Depth Trait Allocations** – Audited all traits; added a `trait_criteria` mapping table in `smb4_player_reference.json`; wired new columns into trait allocation in `engine.py`.
 - **#34 – Fielding and Arm Strength Stats Almost Entirely Missing** – Added `pop_time` and `framing_runs` parsing in `savant.py`; wired both into the `arm`/`fielding` composites in `engine.py`; added normalisation bounds in `smb4_player_reference.json`.
+- **#38 – Secondary Positions** – Parsed per-position innings from Baseball Reference; derived `secondary_positions` list in `engine.py` using a configurable minimum-innings threshold; implemented *Utility* trait logic for full position-group coverage; all fields added to `PlayerInput`/`PlayerOutput`.
+- **#39 – Cap Volume Predictor** – Added `max_projected_pa` (700) and `max_projected_ip` (250) to `smb4_player_reference.json`; clamped projected volumes in `engine.py` after all other adjustments.
+- **#40 – Metrics Available in Baseball Savant Not Being Properly Consumed** – Audited Statcast CSV schema; added parsing for `avg_exit_velocity`, `barrel_rate`, `sprint_speed` and other gaps in `savant.py`; wired into `power`, `speed`, and `baserunning` composites with normalisation bounds in `smb4_player_reference.json`.
+- **#41 – Find and Consume Other Missing Fields** – Added parsing for `oaa`, `drs`, `uzr` (fielding composites) and removed `two_strike_contact_rate` (column absent from available exports); verified normalisation bounds active in `smb4_player_reference.json`.
 
 ---
 
 ## Open Issues
 
-## Issue #38 – Secondary Positions
+## Issue #45 – Position Players Have Innings Pitched
 
-**Problem:** Secondary positions don't get populated. Almost all players have the ability to play a different position. If a player has any innings at a position in their career, that position should appear as a secondary position. Players who can cover an entire position group (all OF, all IF, etc.) should have a high likelihood of receiving the *Utility* trait.
-
-### Steps
-
-1. **Parse positional innings from ingestion sources:**
-   - In `baseball_reference.py` (and `savant.py` if applicable), parse per-position innings or games from the fielding table.
-   - Store as a `positional_games: dict[str, int]` (or `dict[str, float]` for innings) optional field on `PlayerInput`, keyed by position abbreviation.
-
-2. **Derive secondary positions in `engine.py`:**
-   - After determining the primary position, iterate `positional_games` and list every other position where the player has at least a configurable minimum number of innings/games (threshold in `smb4_player_reference.json`).
-   - Populate a `secondary_positions: list[str]` field on `PlayerOutput`.
-
-3. **Implement *Utility* trait logic:**
-   - Define "full group coverage" in `smb4_player_reference.json` as position group sets (e.g. `["LF","CF","RF"]` for OF, `["1B","2B","3B","SS"]` for IF).
-   - If a player's combined primary + secondary positions cover an entire group, raise the probability of awarding the *Utility* trait (weight configurable in `trait_criteria`).
-
-4. **Add optional fields to `PlayerInput` in `models.py`:**
-   - Add `positional_games: Optional[dict[str, float]] = None` to preserve backward compatibility.
-
-5. **Update tests:**
-   - Confirm that a player with innings at multiple IF positions has those positions listed as secondary positions.
-   - Confirm that a player covering all OF positions receives the *Utility* trait.
-   - Confirm graceful handling when `positional_games` is absent.
-
----
-
-## Issue #39 – Cap Volume Predictor
-
-**Problem:** Some players with unusual situations (e.g. Cody Ponce) receive unrealistically high projected volumes. The volume predictor should be capped at sensible maximums: **250 IP** for pitchers and **700 PA** for hitters.
+**Problem:** Non-pitchers are showing innings pitched values, which shouldn't happen. Position players should not have an innings-pitched stat populated.
 
 ### Steps
 
-1. **Add configurable caps to `smb4_player_reference.json`:**
-   - In the existing `volume_projection` block (or create one), add `max_projected_pa` (e.g. `700`) and `max_projected_ip` (e.g. `250`) keys.
+1. **Guard IP assignment in `engine.py`:**
+   - When setting `projected_ip` or any innings-pitched output field, check the player's primary position.
+   - Only populate IP-related fields if the player is classified as a pitcher (SP or RP).
+   - Set IP to `None` / `0` for all position players regardless of raw data.
 
-2. **Apply caps in `engine.py`:**
-   - After computing `resolved_projected_pa` and `resolved_projected_ip`, clamp each value to its respective maximum using the values from `smb4_player_reference.json`.
+2. **Filter at ingestion in `baseball_reference.py` / `savant.py`:**
+   - Skip or discard pitching-row data for players whose primary position is not a pitcher.
 
 3. **Update tests:**
-   - Add a test where inputs would produce a raw projection above the cap and confirm the output equals the cap value.
-   - Confirm that projections below the cap are unaffected.
+   - Add a test confirming that a position player (e.g. a 1B) has no innings-pitched output after rating.
+   - Confirm pitchers are unaffected.
 
 ---
 
-## Issue #40 – Metrics Available in Baseball Savant Not Being Properly Consumed
+## Issue #48 – Trait Limitations
 
-**Problem:** Several key Statcast metrics present in Baseball Savant CSV exports are not being parsed or wired into the rating engine. Key examples: `avg_exit_velocity`, `barrel_rate`, `sprint_speed`.
+**Problem:** Players can receive more traits than the game allows. SMB4 limits each player to **2 traits**. Additionally, only **1 elite-pitch trait** should be assignable per player.
 
 ### Steps
 
-1. **Audit `savant.py` against the full Statcast CSV schema:**
-   - List all columns currently parsed vs. all columns present in a representative Savant export.
-   - Identify high-value gaps beyond the known examples (`avg_exit_velocity`, `barrel_rate`, `sprint_speed`).
+1. **Enforce 2-trait maximum in `engine.py`:**
+   - After scoring all candidate traits, sort by probability/score descending and keep only the top 2.
+   - Remove or truncate any excess traits before writing to `PlayerOutput`.
 
-2. **Add parsing for missing columns in `savant.py`:**
-   - Use existing `_pick_number` / `_pick_string` helper patterns to read each new column.
-   - Store values via `player.set_metric(...)` with the canonical metric name.
+2. **Add elite-pitch mutual-exclusivity rule:**
+   - Define "elite pitch" traits in `smb4_player_reference.json` (e.g. `elite_fastball`, `elite_breaking`, `elite_offspeed`).
+   - When multiple elite-pitch traits qualify, retain only the highest-scoring one.
 
-3. **Add corresponding optional fields to `PlayerInput` in `models.py`:**
-   - Add `avg_exit_velocity`, `barrel_rate`, `sprint_speed`, and any other newly parsed fields as `Optional[float] = None`.
+3. **Make limits configurable:**
+   - Store `max_traits_per_player` (default `2`) and `max_elite_pitch_traits` (default `1`) in `smb4_player_reference.json`.
 
-4. **Wire new metrics into rating composites in `engine.py`:**
-   - `avg_exit_velocity` and `barrel_rate` → `power` composite (with weights defined in `smb4_player_reference.json`).
-   - `sprint_speed` → `speed` and `baserunning` composites.
-   - Add normalisation bounds for each new metric in `smb4_player_reference.json`.
-
-5. **Update tests:**
-   - Add a test fixture row with the new columns and verify they are stored correctly after ingestion.
-   - Add engine tests confirming that a player with high `barrel_rate` receives a higher `power` rating.
+4. **Update tests:**
+   - Confirm a player never has more than 2 traits in output.
+   - Confirm a player never has more than 1 elite-pitch trait.
+   - Confirm the 2 traits chosen are the highest-scoring ones.
 
 ---
 
-## Issue #41 – Find and Consume Other Missing Fields
+## Issue #49 – Ensure Anything Done in the Blue Jays Specific Test Flow Was Applied to Full Pipeline
 
-**Problem:** Additional fields assumed to be available from Baseball Reference or Baseball Savant are not being consumed. Key gaps: `two_strike_contact_rate`, `oaa`, `drs`, `uzr`.
+**Problem:** Some changes appear to have been made specifically to support the Blue Jays integration test rather than being applied to the general pipeline. The full pipeline should behave consistently for any team.
 
 ### Steps
 
-1. **Identify source columns for each missing field:**
-   - `two_strike_contact_rate`: Baseball Savant plate-discipline export (`two_strike_contact_pct` or similar column).
-   - `oaa` (Outs Above Average): Baseball Savant OAA leaderboard CSV.
-   - `drs` (Defensive Runs Saved): Baseball Reference or FanGraphs fielding leaderboard.
-   - `uzr` (Ultimate Zone Rating): FanGraphs fielding leaderboard.
-   - Document expected column names and source URLs as comments in `savant.py` / `baseball_reference.py`.
+1. **Audit Blue Jays test fixtures and helpers:**
+   - Review `tests/test_e2e_bluejays.py` and any test fixtures for team-specific overrides, hard-coded team IDs, or logic branches gated on "TOR" / "Blue Jays".
 
-2. **Add parsing in `savant.py` and/or `baseball_reference.py`:**
-   - Parse each field using existing `_pick_number` helpers.
-   - Route defensive metrics through `_apply_fielding_row`; route plate-discipline metrics through the batting/stats row handler.
+2. **Identify pipeline code with team-specific branches:**
+   - Search `engine.py`, `ingest/`, `roster_selector.py`, and `cli.py` for any conditionals or data references that only apply to Toronto.
 
-3. **Add optional fields to `PlayerInput` in `models.py`:**
-   - `two_strike_contact_rate: Optional[float] = None`
-   - `oaa: Optional[float] = None` (if not already present)
-   - `drs: Optional[float] = None` (if not already present)
-   - `uzr: Optional[float] = None` (if not already present)
+3. **Generalise all team-specific logic:**
+   - Replace any hard-coded team references with configurable or data-driven equivalents.
+   - Ensure ingest, rating, and roster-selection steps work identically for any team input.
 
-4. **Wire fields into rating composites in `engine.py`:**
-   - `two_strike_contact_rate` → `contact` or *Avoid K* trait criteria.
-   - `oaa`, `drs`, `uzr` → `fielding` composite weights (already partially wired; confirm they are active).
-   - Add or verify normalisation bounds in `smb4_player_reference.json`.
+4. **Expand integration test coverage:**
+   - Add (or parameterise) the end-to-end test so it runs against at least one additional synthetic team dataset to confirm the pipeline is team-agnostic.
 
 5. **Update tests:**
-   - Confirm each new field is parsed correctly from a fixture CSV row.
-   - Confirm a player with high `oaa` receives a higher `fielding` rating.
-   - Confirm graceful handling when columns are absent from the CSV.
+   - Confirm all previously passing Blue Jays test assertions still pass.
+   - Confirm the new multi-team test passes.
