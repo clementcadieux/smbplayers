@@ -725,16 +725,50 @@ def role_weighted_overall_numeric(role: str, ratings: Mapping[str, int]) -> int 
     role_weights = ROLE_OVERALL_WEIGHTS.get(role, {})
     weighted_total = 0.0
     total_weight = 0.0
+    role_values: list[float] = []
+
     for rating_name, weight in role_weights.items():
         rating_value = ratings.get(rating_name)
         if rating_value is None:
             continue
-        weighted_total += float(rating_value) * weight
+        numeric_value = float(rating_value)
+        weighted_total += numeric_value * weight
         total_weight += weight
+        role_values.append(numeric_value)
 
     if total_weight > 0:
-        return int(round(weighted_total / total_weight))
-    return int(round(mean(ratings.values())))
+        base_overall = weighted_total / total_weight
+    else:
+        role_values = [float(value) for value in ratings.values()]
+        base_overall = mean(role_values)
+
+    if not role_values:
+        return int(round(base_overall))
+
+    sorted_values = sorted(role_values, reverse=True)
+    top_value = sorted_values[0]
+    second_value = sorted_values[1] if len(sorted_values) > 1 else sorted_values[0]
+    min_value = sorted_values[-1]
+    bonus = 0.0
+
+    # Keep average players in the middle band, but stop flattening clear elite builds.
+    if role == "pitcher":
+        if top_value >= 94 and second_value >= 86:
+            bonus += 4.0 + (top_value - 94.0) * 0.5 + max(0.0, second_value - 86.0) * 0.25
+        if min_value >= 82:
+            bonus += 2.0
+    elif role == "hitter":
+        if base_overall >= 80 and top_value >= 93 and second_value >= 88:
+            bonus += 2.5
+        if base_overall >= 84 and min_value >= 78:
+            bonus += 1.5
+    elif role == "two_way":
+        if base_overall >= 82 and top_value >= 93 and second_value >= 88:
+            bonus += 2.5
+        if base_overall >= 86 and min_value >= 76:
+            bonus += 1.0
+
+    return int(round(clamp(base_overall + bonus, 1.0, 99.0)))
 
 
 def confidence_level(flags: list[str]) -> str:
