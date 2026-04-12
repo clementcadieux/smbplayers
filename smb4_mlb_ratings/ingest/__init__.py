@@ -258,16 +258,32 @@ def _merge_player_records(
 	merged_status = None
 	merged_status_code = None
 	merged_on_il = None
+	merged_mlb_trait_metric_percentiles = None
+	merged_mlb_trait_metric_percentile_peer_counts = None
 	for metadata in (sv_metadata, fg_metadata, br_metadata):
 		status = metadata.get("status") if isinstance(metadata, dict) else None
 		status_code = metadata.get("status_code") if isinstance(metadata, dict) else None
 		on_il = metadata.get("on_il") if isinstance(metadata, dict) else None
+		mlb_trait_metric_percentiles = metadata.get("mlb_trait_metric_percentiles") if isinstance(metadata, dict) else None
+		mlb_trait_metric_percentile_peer_counts = metadata.get("mlb_trait_metric_percentile_peer_counts") if isinstance(metadata, dict) else None
 		if merged_status is None and isinstance(status, str) and status:
 			merged_status = status
 		if merged_status_code is None and isinstance(status_code, str) and status_code:
 			merged_status_code = status_code
 		if merged_on_il is None and isinstance(on_il, bool):
 			merged_on_il = on_il
+		if merged_mlb_trait_metric_percentiles is None and isinstance(mlb_trait_metric_percentiles, dict):
+			merged_mlb_trait_metric_percentiles = {
+				str(metric_name): float(value)
+				for metric_name, value in mlb_trait_metric_percentiles.items()
+				if isinstance(value, (int, float))
+			}
+		if merged_mlb_trait_metric_percentile_peer_counts is None and isinstance(mlb_trait_metric_percentile_peer_counts, dict):
+			merged_mlb_trait_metric_percentile_peer_counts = {
+				str(metric_name): int(value)
+				for metric_name, value in mlb_trait_metric_percentile_peer_counts.items()
+				if isinstance(value, (int, float))
+			}
 
 	metadata = {
 		"source": "mixed",
@@ -297,6 +313,10 @@ def _merge_player_records(
 		metadata["status_code"] = merged_status_code
 	if isinstance(merged_on_il, bool):
 		metadata["on_il"] = merged_on_il
+	if isinstance(merged_mlb_trait_metric_percentiles, dict) and merged_mlb_trait_metric_percentiles:
+		metadata["mlb_trait_metric_percentiles"] = dict(sorted(merged_mlb_trait_metric_percentiles.items()))
+	if isinstance(merged_mlb_trait_metric_percentile_peer_counts, dict) and merged_mlb_trait_metric_percentile_peer_counts:
+		metadata["mlb_trait_metric_percentile_peer_counts"] = dict(sorted(merged_mlb_trait_metric_percentile_peer_counts.items()))
 	active = bool(baseball_reference.get("active", True)) and bool(savant.get("active", True))
 	active = active and bool(fangraphs.get("active", True))
 	days_on_roster = _union_season_values(

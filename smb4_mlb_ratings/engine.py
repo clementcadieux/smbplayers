@@ -1305,6 +1305,65 @@ def player_trait_stat(player: PlayerInput, stat_name: str) -> float | list[str] 
     return metadata_list(player.metadata, stat_name) or None
 
 
+ELITE_PITCH_QUALITY_METRICS = frozenset(
+    {
+        "pitch_quality_4f",
+        "pitch_quality_2f",
+        "pitch_quality_cf",
+        "pitch_quality_cb",
+        "pitch_quality_ch",
+        "pitch_quality_fk",
+        "pitch_quality_sl",
+        "pitch_quality_sb",
+    }
+)
+ELITE_PITCH_PERCENTILE_MIN_PEERS = 8
+ELITE_FASTBALL_TRAIT_NAMES = frozenset({"Elite 4F", "Elite 2F", "Elite CF"})
+
+
+def cache_elite_pitch_quality_percentiles(states: list[PlayerState]) -> None:
+    peer_values_by_metric: dict[str, list[float]] = {}
+    for metric_name in ELITE_PITCH_QUALITY_METRICS:
+        peers: list[float] = []
+        for state in states:
+            if state.player.role not in {"pitcher", "two_way"}:
+                continue
+            value = player_trait_metric(state.player, metric_name)
+            if isinstance(value, (int, float)):
+                peers.append(float(value))
+        peer_values_by_metric[metric_name] = peers
+
+    for state in states:
+        if state.player.role not in {"pitcher", "two_way"}:
+            continue
+        percentile_values: dict[str, float] = {}
+        peer_counts: dict[str, int] = {}
+        mlb_percentiles = metadata_lookup(state.player.metadata, "mlb_trait_metric_percentiles")
+        mlb_peer_counts = metadata_lookup(state.player.metadata, "mlb_trait_metric_percentile_peer_counts")
+        if not isinstance(mlb_percentiles, Mapping):
+            mlb_percentiles = metadata_lookup(state.player.metadata, "source_details.baseball_savant.mlb_trait_metric_percentiles")
+        if not isinstance(mlb_peer_counts, Mapping):
+            mlb_peer_counts = metadata_lookup(state.player.metadata, "source_details.baseball_savant.mlb_trait_metric_percentile_peer_counts")
+        for metric_name, peers in peer_values_by_metric.items():
+            if isinstance(mlb_percentiles, Mapping) and isinstance(mlb_peer_counts, Mapping):
+                mlb_percentile = mlb_percentiles.get(metric_name)
+                mlb_peers = mlb_peer_counts.get(metric_name)
+                if isinstance(mlb_percentile, (int, float)) and isinstance(mlb_peers, (int, float)):
+                    percentile_values[metric_name] = round(float(mlb_percentile), 2)
+                    peer_counts[metric_name] = int(mlb_peers)
+                    continue
+            if not peers:
+                continue
+            value = player_trait_metric(state.player, metric_name)
+            if not isinstance(value, (int, float)):
+                continue
+            peer_counts[metric_name] = len(peers)
+            percentile_values[metric_name] = round(percentile_rank(float(value), peers, higher_is_better=True), 2)
+        if percentile_values:
+            state.player.metadata.setdefault("trait_metric_percentiles", {}).update(percentile_values)
+            state.player.metadata.setdefault("trait_metric_percentile_peer_counts", {}).update(peer_counts)
+
+
 def trait_scope_matches_player(role_scope: str | None, player_role: str) -> bool:
     if role_scope == "pitcher":
         return player_role in {"pitcher", "two_way"}
@@ -1341,9 +1400,23 @@ def trait_rule_score(player: PlayerInput, rule: Mapping[str, object]) -> tuple[f
     numeric_value = float(stat_value)
     target_value = rule.get("value")
     if operator == ">=":
+        if stat_name.startswith("trait_metrics.pitch_quality_"):
+            metric_name = stat_name.removeprefix("trait_metrics.")
+            percentile_value = metadata_number(player.metadata, f"trait_metric_percentiles.{metric_name}")
+            percentile_peers = metadata_number(player.metadata, f"trait_metric_percentile_peer_counts.{metric_name}")
+            if percentile_value is not None and percentile_peers is not None and percentile_peers >= ELITE_PITCH_PERCENTILE_MIN_PEERS:
+                if not isinstance(target_value, (int, float)) or percentile_value < float(target_value):
+                    return None
+                score = (percentile_value - float(target_value) + 10.0) * weight_value
+                # Elite pitch traits need to compete with high-confidence pitcher traits after final trimming.
+                score += 20.0 * weight_value
+                return score, f"{metric_name} percentile {percentile_value:.2f} >= {target_value}"
         if not isinstance(target_value, (int, float)) or numeric_value < float(target_value):
             return None
         score = (numeric_value - float(target_value) + 10.0) * weight_value
+        if stat_name.startswith("trait_metrics.pitch_quality_"):
+            # Elite pitch traits need to compete with high-confidence pitcher traits after final trimming.
+            score += 20.0 * weight_value
         return score, f"{stat_name} >= {target_value}"
     if operator == "<=":
         if not isinstance(target_value, (int, float)) or numeric_value > float(target_value):
@@ -1649,6 +1722,8 @@ def final_trait_priority(
     *,
     explicit_names: set[str],
     personality_scores: dict[str, float],
+    player_role: str,
+    elite_trait_names: set[str],
 ) -> float:
     score = CONFIDENCE_WEIGHTS.get(trait.confidence, 0.4) * 100.0
     if trait.name in explicit_names:
@@ -1663,6 +1738,12 @@ def final_trait_priority(
         score += 10.0
     if "metadata" in trait.reason.lower() or "preprocessing" in trait.reason.lower():
         score += 4.0
+    # Keep elite pitch traits visible for pitcher outputs when capped selection trims to top traits.
+    if player_role in {"pitcher", "two_way"} and trait.name in elite_trait_names:
+        score += 22.0
+        # If both are elite, prefer breaking/offspeed elite traits over fastball elite traits.
+        if trait.name not in ELITE_FASTBALL_TRAIT_NAMES:
+            score += 7.0
     return score
 
 
@@ -1677,7 +1758,13 @@ def trim_traits_for_output(output: RatingOutput, player: PlayerInput) -> list[Tr
     ordered_traits = sorted(
         all_traits,
         key=lambda trait: (
-            final_trait_priority(trait, explicit_names=explicit_names, personality_scores=personality_scores),
+            final_trait_priority(
+                trait,
+                explicit_names=explicit_names,
+                personality_scores=personality_scores,
+                player_role=player.role,
+                elite_trait_names=elite_trait_names,
+            ),
             trait.name,
         ),
         reverse=True,
@@ -2187,6 +2274,10 @@ def rate_players(players: list[PlayerInput | dict], trim_final_traits: bool = Tr
                     for state in eligible_states:
                         if state.position_group == group:
                             state.review_flags.append(f"{spec.name}: peer group '{group}' is small ({count})")
+
+    # Elite pitch trait thresholds prefer MLB-wide percentile metadata when available,
+    # then fall back to percentiles within the active pitcher pool.
+    cache_elite_pitch_quality_percentiles(states)
 
     outputs: list[RatingOutput] = []
     for state in states:

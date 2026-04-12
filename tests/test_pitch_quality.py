@@ -115,7 +115,7 @@ class PitchQualityTests(unittest.TestCase):
                 "swings": 140.0,
                 "misses": 26.0,
                 "release_speed": 86.5,
-                "run_value_per_100": -5.0,
+                "run_value_per_100": 5.0,
             }
         }
 

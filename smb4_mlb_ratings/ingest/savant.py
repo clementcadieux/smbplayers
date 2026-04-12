@@ -72,6 +72,8 @@ from pathlib import Path
 from statistics import median
 from typing import Any
 
+from .pitch_quality import pitch_rv_per_100_score
+
 
 SEASON_KEYS = ("current", "previous", "two_years_ago")
 SUPPORTED_SOURCES = frozenset({"baseball_savant", "baseball_reference", "fangraphs", "mixed"})
@@ -190,6 +192,9 @@ PITCH_RUN_VALUE_METRIC_KEYS = {
     "SC": "pitch_quality_sb",
 }
 
+RUN_VALUE_BLEND_EXISTING_WEIGHT = 0.50
+RUN_VALUE_BLEND_RV_WEIGHT = 0.50
+
 PITCH_NAME_TO_CODE = {
     "4-SEAM FASTBALL": "FF",
     "FOUR-SEAM FASTBALL": "FF",
@@ -206,12 +211,6 @@ PITCH_NAME_TO_CODE = {
     "SWEEPER": "SV",
     "SCREWBALL": "SC",
 }
-
-DEFAULT_PITCH_RV_THRESHOLDS = {
-    "elite": -2.0,
-    "exceptional": -6.0,
-}
-
 
 def load_injury_threshold_config() -> dict[str, float]:
     try:
@@ -235,34 +234,6 @@ def load_injury_threshold_config() -> dict[str, float]:
 
 
 INJURY_THRESHOLD_CONFIG = load_injury_threshold_config()
-
-
-def load_pitch_rv_threshold_config() -> dict[str, float]:
-    try:
-        payload = json.loads(REFERENCE_PATH.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return dict(DEFAULT_PITCH_RV_THRESHOLDS)
-
-    elite_value = payload.get("pitch_rv_per_100_elite", DEFAULT_PITCH_RV_THRESHOLDS["elite"])
-    exceptional_value = payload.get("pitch_rv_per_100_exceptional", DEFAULT_PITCH_RV_THRESHOLDS["exceptional"])
-    try:
-        elite = float(elite_value)
-    except (TypeError, ValueError):
-        elite = DEFAULT_PITCH_RV_THRESHOLDS["elite"]
-    try:
-        exceptional = float(exceptional_value)
-    except (TypeError, ValueError):
-        exceptional = DEFAULT_PITCH_RV_THRESHOLDS["exceptional"]
-
-    if exceptional > elite:
-        elite, exceptional = exceptional, elite
-    return {
-        "elite": elite,
-        "exceptional": exceptional,
-    }
-
-
-PITCH_RV_THRESHOLDS = load_pitch_rv_threshold_config()
 
 
 def _normalized_key(value: str) -> str:
@@ -360,14 +331,6 @@ def parse_savant_pitch_run_value_csv(rows: list[dict[str, str]]) -> dict[tuple[s
     return values
 
 
-def _pitch_rv_per_100_score(run_value_per_100: float) -> float:
-    elite_rv = PITCH_RV_THRESHOLDS["elite"]
-    exceptional_rv = PITCH_RV_THRESHOLDS["exceptional"]
-    scale = max(elite_rv - exceptional_rv, 0.001)
-    normalized = _clamp((elite_rv - run_value_per_100) / scale, 0.0, 1.0)
-    return round(normalized * 99.0, 3)
-
-
 def _apply_pitch_run_values_to_trait_metrics(
     player: PlayerAccumulator,
     season_key: str,
@@ -377,13 +340,25 @@ def _apply_pitch_run_values_to_trait_metrics(
         metric_key = PITCH_RUN_VALUE_METRIC_KEYS.get(pitch_type)
         if metric_key is None:
             continue
-        rv_score = _pitch_rv_per_100_score(run_value_per_100)
+        rv_score = pitch_rv_per_100_score(run_value_per_100)
         existing = player.trait_metrics.get(metric_key, {}).get(season_key)
         if existing is None:
             merged_score = rv_score
         else:
-            merged_score = round((float(existing) * 0.75) + (rv_score * 0.25), 3)
+            merged_score = round(
+                (float(existing) * RUN_VALUE_BLEND_EXISTING_WEIGHT)
+                + (rv_score * RUN_VALUE_BLEND_RV_WEIGHT),
+                3,
+            )
         player.set_trait_metric(metric_key, season_key, merged_score)
+
+
+def _percentile_rank(value: float, peers: list[float]) -> float:
+    if not peers:
+        return 50.0
+    less_than = sum(peer < value for peer in peers)
+    equal_to = sum(peer == value for peer in peers)
+    return 100.0 * (less_than + 0.5 * equal_to) / len(peers)
 
 
 def _pick_percentage_points(row: dict[str, str], *aliases: str) -> float | None:
@@ -1248,6 +1223,8 @@ def ingest_from_manifest(manifest: IngestManifest | Path) -> list[dict[str, Any]
     if manifest_obj.source != "baseball_savant":
         raise ValueError("Baseball Savant adapter received a non-Savant manifest")
     players: dict[tuple[str, str], PlayerAccumulator] = {}
+    mlb_pitch_quality_scores_by_metric: dict[str, list[float]] = defaultdict(list)
+    mlb_pitch_quality_scores_by_player: dict[str, dict[str, float]] = defaultdict(dict)
 
     for season_key, season_inputs in manifest_obj.seasons.items():
         season_pitch_run_values: dict[str, dict[str, float]] = defaultdict(dict)
@@ -1256,6 +1233,14 @@ def ingest_from_manifest(manifest: IngestManifest | Path) -> list[dict[str, Any]
             parsed_pitch_run_values = parse_savant_pitch_run_value_csv(_read_csv(pitch_run_values_path))
             for (player_id, pitch_type), run_value_per_100 in parsed_pitch_run_values.items():
                 season_pitch_run_values[player_id][pitch_type] = run_value_per_100
+                metric_key = PITCH_RUN_VALUE_METRIC_KEYS.get(pitch_type)
+                if metric_key is None:
+                    continue
+                rv_score = pitch_rv_per_100_score(run_value_per_100)
+                mlb_pitch_quality_scores_by_metric[metric_key].append(rv_score)
+                existing = mlb_pitch_quality_scores_by_player[player_id].get(metric_key)
+                if existing is None or rv_score > existing:
+                    mlb_pitch_quality_scores_by_player[player_id][metric_key] = rv_score
 
         if season_inputs.year is not None:
             for player in players.values():
@@ -1347,5 +1332,30 @@ def ingest_from_manifest(manifest: IngestManifest | Path) -> list[dict[str, Any]
     _flag_injury_shortened_seasons(players)
     _finalize_active_status(players, roster_filter=manifest_obj.roster_filter)
     outputs = [player.to_player_dict() for player in players.values() if player.roles]
+
+    for output in outputs:
+        metadata = output.get("metadata")
+        if not isinstance(metadata, dict):
+            continue
+        source_player_id = metadata.get("source_player_id")
+        if not isinstance(source_player_id, str):
+            continue
+        player_scores = mlb_pitch_quality_scores_by_player.get(source_player_id)
+        if not player_scores:
+            continue
+
+        percentile_values: dict[str, float] = {}
+        peer_counts: dict[str, int] = {}
+        for metric_key, score in player_scores.items():
+            peers = mlb_pitch_quality_scores_by_metric.get(metric_key, [])
+            if not peers:
+                continue
+            percentile_values[metric_key] = round(_percentile_rank(score, peers), 2)
+            peer_counts[metric_key] = len(peers)
+
+        if percentile_values:
+            metadata.setdefault("mlb_trait_metric_percentiles", {}).update(percentile_values)
+            metadata.setdefault("mlb_trait_metric_percentile_peer_counts", {}).update(peer_counts)
+
     outputs.sort(key=lambda item: (item["role"], item["name"]))
     return outputs

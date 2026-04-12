@@ -76,8 +76,8 @@ ELITE_PITCH_SPECS = {
 
 REFERENCE_PATH = Path(__file__).resolve().parents[2] / "smb4_player_reference.json"
 DEFAULT_PITCH_RV_THRESHOLDS = {
-    "elite": -2.0,
-    "exceptional": -6.0,
+    "elite": 2.0,
+    "exceptional": 6.0,
 }
 
 
@@ -99,7 +99,7 @@ def _load_pitch_rv_thresholds() -> dict[str, float]:
     except (TypeError, ValueError):
         exceptional = DEFAULT_PITCH_RV_THRESHOLDS["exceptional"]
 
-    if exceptional > elite:
+    if exceptional < elite:
         elite, exceptional = exceptional, elite
     return {
         "elite": elite,
@@ -108,6 +108,14 @@ def _load_pitch_rv_thresholds() -> dict[str, float]:
 
 
 PITCH_RV_THRESHOLDS = _load_pitch_rv_thresholds()
+
+
+def pitch_rv_per_100_score(run_value_per_100: float) -> float:
+    elite_rv = PITCH_RV_THRESHOLDS["elite"]
+    exceptional_rv = PITCH_RV_THRESHOLDS["exceptional"]
+    scale = max(exceptional_rv - elite_rv, 0.001)
+    normalized = _bounded_score(run_value_per_100 - elite_rv, scale)
+    return round(normalized * 99.0, 3)
 
 
 def _as_float(value: Any) -> float | None:
@@ -313,6 +321,8 @@ def _pitch_quality_fastball_family(
     score += _pitch_usage_modifier(usage, primary_fastball_usage)
     if primary_fastball_usage and usage >= primary_fastball_usage * 0.9:
         score += 3.0
+    # Live-data calibration: keep elite cutoffs reachable without changing family ordering.
+    score += 8.0
     return round(max(0.0, min(99.0, score)), 3)
 
 
@@ -336,6 +346,8 @@ def _pitch_quality_secondary_family(
     fallback_quality = 22.0 + gap_bonus
     score = (quality_score * 0.8) + (fallback_quality * 0.2)
     score += _pitch_usage_modifier(usage, primary_fastball_usage)
+    # Live-data calibration: keep elite cutoffs reachable without changing family ordering.
+    score += 8.0
     return round(max(0.0, min(99.0, score)), 3)
 
 
@@ -388,10 +400,8 @@ def _savant_pitch_quality_score(pitch_detail: Mapping[str, float], *, pitch_code
     score += _bounded_score(whiff_percent - 15.0, 30.0) * 10.0
     score += _bounded_score(55.0 - hard_hit_percent, 35.0) * 7.0
     score += _bounded_score(12.0 - barrel_percent, 10.0) * 4.0
-    elite_rv = PITCH_RV_THRESHOLDS["elite"]
-    exceptional_rv = PITCH_RV_THRESHOLDS["exceptional"]
-    rv_scale = max(elite_rv - exceptional_rv, 0.001)
-    score += _bounded_score(elite_rv - run_value_per_100, rv_scale) * 27.0
+    rv_score = pitch_rv_per_100_score(run_value_per_100)
+    score += (rv_score / 99.0) * 27.0
     if pitch_code in {"FF", "SI", "FT", "FC"}:
         score += _bounded_score(release_speed - 92.0, 6.0) * 5.0
     return max(0.0, min(99.0, score))
