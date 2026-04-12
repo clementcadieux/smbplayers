@@ -1039,6 +1039,15 @@ class SurfaceBlendTests(unittest.TestCase):
         self.assertIsNotNone(weighted)
         self.assertGreater(weighted or 0, equal_weighted)
 
+    def test_pitcher_elite_component_mix_gets_elite_overall_boost(self) -> None:
+        ratings = {
+            "velocity": 87,
+            "junk": 84,
+            "accuracy": 95,
+        }
+        weighted = role_weighted_overall_numeric("pitcher", ratings)
+        self.assertGreaterEqual(weighted or 0, 95)
+
     def _build_power_players(self, *, sample: float) -> list[dict[str, object]]:
         return [
             self._player("Poor Surface", 0.390, sample),
