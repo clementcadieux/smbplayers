@@ -149,3 +149,50 @@ Replace raw seasonal volume totals with a **per-day rate metric** (PA per active
    - Add unit tests confirming that a player with known plate-discipline stats receives the expected traits (e.g. high `bb_pct` → *Eye*).
    - Add tests verifying the `trait_criteria` JSON is well-formed (all referenced `stat` fields exist in `PlayerInput`).
    - Confirm that missing optional stats do not crash the engine (graceful skip).
+
+---
+
+## Issue #34 – Fielding and Arm Strength Stats Almost Entirely Missing
+
+**Problem:** The engine already has infrastructure for defensive stats (`oaa`, `drs`, `uzr`, `arm_strength`, `catcher_throw_value`, `outfield_arm_runs`) and `_apply_fielding_row` in `savant.py` knows how to map those column names. However, the real-world CSV feeds rarely contain this data because it comes from specialised Statcast leaderboards rather than the standard batting/pitching export. As a result the fielding and arm ratings are almost always blank.
+
+### Recommended Data Sources
+
+| Stat | Source | Statcast Leaderboard / Export |
+|---|---|---|
+| OAA (Outs Above Average) | Baseball Savant | *Outs Above Average* leaderboard (position players) |
+| DRS (Defensive Runs Saved) | FanGraphs / Baseball Reference | Fielding leaderboard (advanced) |
+| UZR | FanGraphs | Fielding leaderboard (UZR) |
+| Arm Strength (avg mph) | Baseball Savant | *Arm Strength* leaderboard |
+| Catcher Throw Value | Baseball Savant | *Catcher Throwing* leaderboard |
+| Outfield Arm Runs | Baseball Savant / FanGraphs | *Outfield Jump* or *Arm Value* leaderboard |
+| Pop Time | Baseball Savant | *Pop Time* leaderboard (catchers) |
+| Framing Runs | Baseball Savant | *Catcher Framing* leaderboard |
+
+### Steps
+
+1. **Document expected CSV schemas for each source:**
+   - For each leaderboard above, note its public URL pattern, the columns it exports, and the canonical column names used in `_apply_fielding_row` (e.g. `oaa`, `arm_strength`, `catcher_throw_value`, `outfield_arm_runs`, `drs`, `uzr`).
+   - Add these URL patterns and expected schemas as comments inside `savant.py` and `baseball_reference.py` near the relevant `_apply_fielding_row` / `_apply_running_row` calls, so future data pulls know exactly which export to download.
+
+2. **Extend `_apply_fielding_row` for new columns:**
+   - Add parsing for `pop_time` (catchers) and `framing_runs` (catchers) using `_pick_number` aliases that match Statcast column headers.
+   - Store them via `player.set_metric("pop_time", ...)` and `player.set_metric("framing_runs", ...)`.
+   - Add the corresponding `PlayerInput` optional fields (`pop_time`, `framing_runs`) in `models.py`.
+
+3. **Wire `pop_time` and `framing_runs` into the arm/fielding composite in `engine.py`:**
+   - Add `ComponentSpec("pop_time", 0.20, position_groups=frozenset({"catcher"}))` to the `arm` composite.
+   - Add `ComponentSpec("framing_runs", 0.15, position_groups=frozenset({"catcher"}))` to the `fielding` composite.
+   - Adjust existing weights proportionally so the composites still sum to ≤ 1.0.
+
+4. **Add thresholds for `pop_time` and `framing_runs` to `smb4_player_reference.json`:**
+   - Add normalisation bounds (min/max) for the new metrics in the same location as existing metric bounds so no magic numbers appear in Python code.
+
+5. **Update the manifest schema and documentation:**
+   - Ensure the `IngestManifest` / `SeasonInputs` model accepts a `"fielding"` file entry pointing to any of the leaderboard CSVs (it already does via `SUPPORTED_FILE_TYPES`).
+   - Add a brief comment in the manifest JSON schema (or README section) listing which leaderboard CSV to download for each file type.
+
+6. **Update tests:**
+   - Add a test fixture with a realistic `fielding` CSV row containing `oaa`, `arm_strength`, `catcher_throw_value`, `outfield_arm_runs`, `pop_time`, and `framing_runs` columns, and verify they are stored in the player metrics.
+   - Add an engine test confirming that a catcher with high `pop_time` receives an elevated `arm` rating compared to the same catcher without it.
+   - Confirm rows with missing defensive columns are handled gracefully (no crash, metrics remain `None`).
