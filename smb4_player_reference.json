@@ -1126,14 +1126,14 @@
         "criteria": [{"stat": "trait_metrics.steal_suppression", "operator": "<=", "value": 35, "weight": 1.0}]
       },
       "Reverse Splits": {
-        "description": "Award when opposite-handed matchup performance is clearly above average.",
+        "description": "Award when opposite-handed matchup performance is meaningfully better than same-handed matchup performance.",
         "sources": ["baseball_savant", "baseball_reference"],
-        "criteria": [{"stat": "trait_metrics.opposite_handed_pitching", "operator": ">=", "value": 65, "weight": 1.0}]
+        "criteria": [{"stat": "trait_metrics.opposite_handed_pitching_gap", "operator": ">=", "value": 8, "weight": 1.0}]
       },
       "Specialist": {
-        "description": "Award when same-handed matchup performance is clearly above average.",
+        "description": "Award when same-handed matchup performance is meaningfully better than opposite-handed matchup performance.",
         "sources": ["baseball_savant", "baseball_reference"],
-        "criteria": [{"stat": "trait_metrics.same_handed_pitching", "operator": ">=", "value": 65, "weight": 1.0}]
+        "criteria": [{"stat": "trait_metrics.same_handed_pitching_gap", "operator": ">=", "value": 8, "weight": 1.0}]
       },
       "Meltdown": {
         "description": "Award when collapse-risk indicators are clearly above average.",

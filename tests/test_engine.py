@@ -391,6 +391,81 @@ class SurfaceBlendTests(unittest.TestCase):
         self.assertIn("Stimulated", {trait.name for trait in hitter.assigned_traits})
         self.assertIn("Stimulated", {trait.name for trait in pitcher.assigned_traits})
 
+    def test_pitcher_platoon_traits_use_relative_gap_metrics(self) -> None:
+        outputs = rate_players(
+            [
+                {
+                    "name": "Specialist Candidate",
+                    "role": "pitcher",
+                    "team": "NYM",
+                    "primary_position": "P",
+                    "metrics": {
+                        "avg_fastball_velocity": 95.2,
+                        "peak_fastball_velocity": 97.0,
+                        "fastball_usage": 0.50,
+                        "swinging_strike_rate": 0.12,
+                        "chase_rate": 0.29,
+                        "movement_quality": 23.0,
+                        "stuff_metric": 123.0,
+                        "arsenal_diversity": 0.76,
+                        "weak_contact_rate": 0.64,
+                        "walk_rate": 0.074,
+                        "strike_pct": 0.651,
+                        "zone_pct": 0.486,
+                        "first_pitch_strike_pct": 0.617,
+                        "command_error_rate": 0.349,
+                    },
+                    "samples": {"weighted_bf": 670, "tracked_pitches": 2680, "tracked_fastballs": 1313},
+                    "trait_metrics": {
+                        "same_handed_pitching": {"current": 76},
+                        "opposite_handed_pitching": {"current": 72},
+                        "same_handed_pitching_gap": {"current": 12},
+                        "opposite_handed_pitching_gap": {"current": -12},
+                    },
+                },
+                {
+                    "name": "Reverse Splits Candidate",
+                    "role": "pitcher",
+                    "team": "NYM",
+                    "primary_position": "P",
+                    "metrics": {
+                        "avg_fastball_velocity": 94.7,
+                        "peak_fastball_velocity": 96.8,
+                        "fastball_usage": 0.48,
+                        "swinging_strike_rate": 0.118,
+                        "chase_rate": 0.287,
+                        "movement_quality": 22.5,
+                        "stuff_metric": 120.0,
+                        "arsenal_diversity": 0.74,
+                        "weak_contact_rate": 0.63,
+                        "walk_rate": 0.078,
+                        "strike_pct": 0.646,
+                        "zone_pct": 0.482,
+                        "first_pitch_strike_pct": 0.612,
+                        "command_error_rate": 0.354,
+                    },
+                    "samples": {"weighted_bf": 650, "tracked_pitches": 2600, "tracked_fastballs": 1248},
+                    "trait_metrics": {
+                        "same_handed_pitching": {"current": 71},
+                        "opposite_handed_pitching": {"current": 77},
+                        "same_handed_pitching_gap": {"current": -13},
+                        "opposite_handed_pitching_gap": {"current": 13},
+                    },
+                },
+                self._pitcher_peer("Pitcher Peer 1", 95.0, 0.13, 0.30, 0.075),
+                self._pitcher_peer("Pitcher Peer 2", 93.5, 0.11, 0.28, 0.085),
+            ],
+            trim_final_traits=False,
+        )
+
+        specialist = next(output for output in outputs if output.name == "Specialist Candidate")
+        reverse_splits = next(output for output in outputs if output.name == "Reverse Splits Candidate")
+
+        self.assertIn("Specialist", {trait.name for trait in specialist.assigned_traits})
+        self.assertNotIn("Reverse Splits", {trait.name for trait in specialist.assigned_traits})
+        self.assertIn("Reverse Splits", {trait.name for trait in reverse_splits.assigned_traits})
+        self.assertNotIn("Specialist", {trait.name for trait in reverse_splits.assigned_traits})
+
     def test_trait_criteria_reference_known_player_input_roots(self) -> None:
         reference_path = Path(__file__).resolve().parents[1] / "smb4_player_reference.json"
         payload = json.loads(reference_path.read_text(encoding="utf-8"))

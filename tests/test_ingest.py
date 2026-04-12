@@ -178,6 +178,10 @@ class IngestFrameworkTests(unittest.TestCase):
                     "Runners On Pitching": 74,
                     "First Pitch Pitching": 73,
                     "Running Game Control": 68,
+                    "Same Handed Pitching": 72,
+                    "Same Handed Pitching Gap": 14,
+                    "Opposite Handed Pitching": 58,
+                    "Opposite Handed Pitching Gap": -14,
                     "Pitch Quality 4F": 80,
                     "Secondary Field Positions": "OF",
                 }
@@ -277,6 +281,9 @@ class IngestFrameworkTests(unittest.TestCase):
                     "Strikes": 1896,
                     "Pressure Pitching": 71,
                     "Same Handed Pitching": 69,
+                    "Same Handed Pitching Gap": 11,
+                    "Opposite Handed Pitching": 58,
+                    "Opposite Handed Pitching Gap": -11,
                 }
             ],
         )
@@ -481,6 +488,8 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertAlmostEqual(pitcher["pitch_mix"]["sl"], 0.27)
         self.assertEqual(pitcher["trait_metrics"]["pitch_quality_4f"]["current"], 80.0)
         self.assertEqual(pitcher["trait_metrics"]["steal_suppression"]["current"], 68.0)
+        self.assertEqual(pitcher["trait_metrics"]["same_handed_pitching_gap"]["current"], 14.0)
+        self.assertEqual(pitcher["trait_metrics"]["opposite_handed_pitching_gap"]["current"], -14.0)
         self.assertEqual(pitcher["trait_lists"]["secondary_field_positions"], ["OF"])
         self.assertIn("arsenal_diversity", pitcher["metadata"]["ingest"]["estimated_metrics"]["current"])
 
@@ -829,6 +838,8 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertAlmostEqual(pitcher["metrics"]["walk_rate"]["current"], 58 / 701, places=6)
         self.assertEqual(pitcher["trait_metrics"]["pressure_pitching"]["current"], 71.0)
         self.assertEqual(pitcher["trait_metrics"]["same_handed_pitching"]["current"], 69.0)
+        self.assertEqual(pitcher["trait_metrics"]["same_handed_pitching_gap"]["current"], 11.0)
+        self.assertEqual(pitcher["trait_metrics"]["opposite_handed_pitching_gap"]["current"], -11.0)
         self.assertIn("stuff_metric", pitcher["metadata"]["ingest"]["estimated_metrics"]["current"])
         self.assertIn("running", pitcher["metadata"]["ingest"]["missing_files"]["current"])
 

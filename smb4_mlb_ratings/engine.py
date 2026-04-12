@@ -108,6 +108,7 @@ TRAIT_CONFLICT_GROUPS = (
     frozenset({"Gets Ahead", "Falls Behind"}),
     frozenset({"Rally Stopper", "Surrounded"}),
     frozenset({"Pick Officer", "Easy Jumps"}),
+    frozenset({"Reverse Splits", "Specialist"}),
     frozenset({"Big Hack", "Little Hack"}),
     frozenset({"Two Way (C)", "Two Way (IF)", "Two Way (OF)"}),
 )

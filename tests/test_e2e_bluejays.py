@@ -5,6 +5,7 @@ import json
 import ssl
 import tempfile
 import unittest
+from collections import defaultdict
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -225,6 +226,7 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
         for player in self.players + [self._inactive_player()]:
             if player["type"] != "hitter":
                 continue
+            hitting_splits = player.get("hitting_handedness_splits") if isinstance(player.get("hitting_handedness_splits"), dict) else {}
             rows.append(
                 {
                     "player_id": player["player_id"],
@@ -246,6 +248,8 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
                     "BA": player["avg"],
                     "OBP": player["obp"],
                     "SLG": player["slg"],
+                    "Contact vs LHP Minus RHP": self._hitter_contact_platoon_delta(hitting_splits),
+                    "Power vs LHP Minus RHP": self._hitter_power_platoon_delta(hitting_splits),
                 }
             )
         return rows
@@ -256,6 +260,7 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
             if player["type"] != "hitter":
                 continue
             advanced = player.get("advanced_hitting") if isinstance(player.get("advanced_hitting"), dict) else {}
+            hitting_splits = player.get("hitting_handedness_splits") if isinstance(player.get("hitting_handedness_splits"), dict) else {}
             total_swings = self._as_int(advanced.get("totalSwings"))
             swing_and_misses = self._as_int(advanced.get("swingAndMisses"))
             contact_pct = None
@@ -283,6 +288,8 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
                     "BB": player["walks"],
                     "HBP": player["hit_by_pitch"],
                     "H": player["hits"],
+                    "Contact vs LHP Minus RHP": self._hitter_contact_platoon_delta(hitting_splits),
+                    "Power vs LHP Minus RHP": self._hitter_power_platoon_delta(hitting_splits),
                 }
             )
         return rows
@@ -318,6 +325,7 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
         for player in self.players:
             if player["type"] != "pitcher":
                 continue
+            pitching_splits = player.get("pitching_handedness_splits") if isinstance(player.get("pitching_handedness_splits"), dict) else {}
             rows.append(
                 {
                     "player_id": player["player_id"],
@@ -333,6 +341,10 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
                     "IP": player["innings_pitched"],
                     "Pitches": player["number_of_pitches"],
                     "Strikes": player["strikes"],
+                    "Same Handed Pitching": self._pitcher_handedness_score(player, pitching_splits, split_type="same"),
+                    "Same Handed Pitching Gap": self._pitcher_handedness_gap(player, pitching_splits, split_type="same"),
+                    "Opposite Handed Pitching": self._pitcher_handedness_score(player, pitching_splits, split_type="opposite"),
+                    "Opposite Handed Pitching Gap": self._pitcher_handedness_gap(player, pitching_splits, split_type="opposite"),
                 }
             )
         return rows
@@ -344,6 +356,7 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
                 continue
             advanced = player.get("advanced_pitching") if isinstance(player.get("advanced_pitching"), dict) else {}
             arsenal = player.get("pitch_arsenal") if isinstance(player.get("pitch_arsenal"), dict) else {}
+            pitching_splits = player.get("pitching_handedness_splits") if isinstance(player.get("pitching_handedness_splits"), dict) else {}
             rows.append(
                 {
                     "player_id": player["player_id"],
@@ -366,6 +379,10 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
                     "SwStr %": self._as_percentage_string(advanced.get("whiffPercentage")),
                     "BB %": self._percentage(player["walks"], player["batters_faced"]),
                     "Strike %": self._as_percentage_string(player.get("strike_percentage")),
+                    "Same Handed Pitching": self._pitcher_handedness_score(player, pitching_splits, split_type="same"),
+                    "Same Handed Pitching Gap": self._pitcher_handedness_gap(player, pitching_splits, split_type="same"),
+                    "Opposite Handed Pitching": self._pitcher_handedness_score(player, pitching_splits, split_type="opposite"),
+                    "Opposite Handed Pitching Gap": self._pitcher_handedness_gap(player, pitching_splits, split_type="opposite"),
                 }
             )
         return rows
@@ -422,6 +439,7 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
             if stats is None:
                 continue
             advanced_stats = self._fetch_stats(player_id, stat_group, stats_type="seasonAdvanced") or {}
+            handedness_splits = self._fetch_handedness_splits(player_id, stat_group)
 
             base_player = {
                 "player_id": player_id,
@@ -456,6 +474,7 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
                         "obp": self._as_str(stats.get("obp")) or "0.000",
                         "slg": self._as_str(stats.get("slg")) or "0.000",
                         "advanced_hitting": advanced_stats,
+                        "hitting_handedness_splits": handedness_splits,
                     }
                 )
             else:
@@ -475,6 +494,7 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
                         "strikes": self._as_int(stats.get("strikes")) or 0,
                         "strike_percentage": self._as_str(stats.get("strikePercentage")) or self._as_str(advanced_stats.get("strikePercentage")),
                         "advanced_pitching": advanced_stats,
+                        "pitching_handedness_splits": handedness_splits,
                         "pitch_arsenal": pitch_arsenal,
                     }
                 )
@@ -537,6 +557,157 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
             if arsenal:
                 return arsenal
         return {}
+
+    def _fetch_handedness_splits(self, player_id: int, group: str) -> dict[str, dict[str, float]]:
+        for season in (PRIMARY_STAT_SEASON, FALLBACK_STAT_SEASON):
+            splits_by_code: dict[str, dict[str, float]] = {}
+            for split_code in ("vl", "vr"):
+                payload = self._fetch_json(
+                    f"{MLB_STATS_API}/people/{player_id}/stats?stats=statSplits&group={group}&season={season}&sitCodes={split_code}"
+                )
+                stats = payload.get("stats", [])
+                if not isinstance(stats, list) or not stats:
+                    continue
+                first_stats = stats[0]
+                if not isinstance(first_stats, dict):
+                    continue
+                splits = first_stats.get("splits", [])
+                if not isinstance(splits, list) or not splits:
+                    continue
+                aggregated = self._aggregate_split_stats(group, splits)
+                if aggregated:
+                    splits_by_code[split_code] = aggregated
+            if splits_by_code:
+                return splits_by_code
+        return {}
+
+    def _aggregate_split_stats(self, group: str, splits: list[dict[str, Any]]) -> dict[str, float]:
+        totals: dict[str, float] = defaultdict(float)
+        for split in splits:
+            if not isinstance(split, dict):
+                continue
+            stat_line = split.get("stat", {})
+            if not isinstance(stat_line, dict):
+                continue
+            for key in (
+                "hits",
+                "atBats",
+                "baseOnBalls",
+                "hitByPitch",
+                "sacFlies",
+                "totalBases",
+                "strikeOuts",
+                "plateAppearances",
+                "battersFaced",
+            ):
+                value = self._as_float(stat_line.get(key))
+                if value is not None:
+                    totals[key] += value
+
+        if group == "hitting":
+            at_bats = totals.get("atBats", 0.0)
+            plate_appearances = totals.get("plateAppearances", 0.0)
+            hits = totals.get("hits", 0.0)
+            total_bases = totals.get("totalBases", 0.0)
+            walks = totals.get("baseOnBalls", 0.0)
+            hit_by_pitch = totals.get("hitByPitch", 0.0)
+            sac_flies = totals.get("sacFlies", 0.0)
+            strikeouts = totals.get("strikeOuts", 0.0)
+            avg = self._ratio(hits, at_bats)
+            obp = self._ratio(hits + walks + hit_by_pitch, at_bats + walks + hit_by_pitch + sac_flies)
+            slg = self._ratio(total_bases, at_bats)
+            iso = None if avg is None or slg is None else max(slg - avg, 0.0)
+            strikeout_rate = self._ratio(strikeouts, plate_appearances)
+            return {
+                "avg": avg or 0.0,
+                "obp": obp or 0.0,
+                "slg": slg or 0.0,
+                "iso": iso or 0.0,
+                "strikeout_rate": strikeout_rate or 0.0,
+            }
+
+        if group == "pitching":
+            at_bats = totals.get("atBats", 0.0)
+            batters_faced = totals.get("battersFaced", 0.0)
+            hits = totals.get("hits", 0.0)
+            total_bases = totals.get("totalBases", 0.0)
+            walks = totals.get("baseOnBalls", 0.0)
+            hit_by_pitch = totals.get("hitByPitch", 0.0)
+            sac_flies = totals.get("sacFlies", 0.0)
+            strikeouts = totals.get("strikeOuts", 0.0)
+            avg = self._ratio(hits, at_bats)
+            obp = self._ratio(hits + walks + hit_by_pitch, at_bats + walks + hit_by_pitch + sac_flies)
+            slg = self._ratio(total_bases, at_bats)
+            ops = None if obp is None or slg is None else obp + slg
+            strikeout_rate = self._ratio(strikeouts, batters_faced)
+            return {
+                "avg": avg or 0.0,
+                "obp": obp or 0.0,
+                "slg": slg or 0.0,
+                "ops": ops or 0.0,
+                "strikeout_rate": strikeout_rate or 0.0,
+            }
+        return {}
+
+    def _hitter_contact_platoon_delta(self, splits: dict[str, dict[str, float]]) -> float | None:
+        vs_left = splits.get("vl") if isinstance(splits.get("vl"), dict) else None
+        vs_right = splits.get("vr") if isinstance(splits.get("vr"), dict) else None
+        if not isinstance(vs_left, dict) or not isinstance(vs_right, dict):
+            return None
+        avg_delta = (vs_left.get("avg", 0.0) - vs_right.get("avg", 0.0)) * 1000.0
+        strikeout_delta = (vs_right.get("strikeout_rate", 0.0) - vs_left.get("strikeout_rate", 0.0)) * 100.0
+        return round(avg_delta + strikeout_delta, 3)
+
+    def _hitter_power_platoon_delta(self, splits: dict[str, dict[str, float]]) -> float | None:
+        vs_left = splits.get("vl") if isinstance(splits.get("vl"), dict) else None
+        vs_right = splits.get("vr") if isinstance(splits.get("vr"), dict) else None
+        if not isinstance(vs_left, dict) or not isinstance(vs_right, dict):
+            return None
+        return round((vs_left.get("iso", 0.0) - vs_right.get("iso", 0.0)) * 1000.0, 3)
+
+    def _pitcher_handedness_score(
+        self,
+        player: dict[str, Any],
+        splits: dict[str, dict[str, float]],
+        *,
+        split_type: str,
+    ) -> float | None:
+        throws = self._as_str(player.get("throws"))
+        if throws == "L":
+            key = "vl" if split_type == "same" else "vr"
+        elif throws == "R":
+            key = "vr" if split_type == "same" else "vl"
+        else:
+            return None
+        split = splits.get(key) if isinstance(splits.get(key), dict) else None
+        if not isinstance(split, dict):
+            return None
+        ops = split.get("ops", 0.0)
+        strikeout_rate = split.get("strikeout_rate", 0.0)
+        score = 100.0 - max((ops - 0.5) * 200.0, 0.0) + (strikeout_rate * 100.0 * 0.25)
+        return round(max(0.0, min(99.0, score)), 3)
+
+    def _pitcher_handedness_gap(
+        self,
+        player: dict[str, Any],
+        splits: dict[str, dict[str, float]],
+        *,
+        split_type: str,
+    ) -> float | None:
+        same_score = self._pitcher_handedness_score(player, splits, split_type="same")
+        opposite_score = self._pitcher_handedness_score(player, splits, split_type="opposite")
+        if same_score is None or opposite_score is None:
+            return None
+        if split_type == "same":
+            return round(same_score - opposite_score, 3)
+        if split_type == "opposite":
+            return round(opposite_score - same_score, 3)
+        return None
+
+    def _ratio(self, numerator: float, denominator: float) -> float | None:
+        if denominator == 0:
+            return None
+        return numerator / denominator
 
     def _fetch_days_on_roster(self, player_id: int, group: str) -> int | None:
         for season in (PRIMARY_STAT_SEASON, FALLBACK_STAT_SEASON):
