@@ -1085,6 +1085,7 @@ def apply_hitter_metadata_traits(state: PlayerState, suggestions: dict[str, Trai
 def apply_pitcher_metadata_traits(state: PlayerState, suggestions: dict[str, TraitSuggestion]) -> None:
     apply_configured_trait_criteria(state, suggestions, role_scope="pitcher")
     two_way_positions = set(player_trait_list(state.player, "secondary_field_positions"))
+    two_way_positions.update(player_trait_list(state.player, "two_way_positions"))
     for position_group, trait_name in (("C", "Two Way (C)"), ("IF", "Two Way (IF)"), ("OF", "Two Way (OF)")):
         if position_group in two_way_positions:
             add_catalog_trait(
