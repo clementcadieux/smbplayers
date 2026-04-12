@@ -80,6 +80,16 @@ class LiveTeamDataTests(unittest.TestCase):
                 "late_game_hitting": 64.5,
                 "trailing_bases_empty_hitting": 68.0,
             },
+            "pitch_type_hitting_metrics": {
+                "fastball_hitting": 73.2,
+                "offspeed_hitting": 66.8,
+            },
+            "zone_hitting_metrics": {
+                "zone_hitting_high": 69.1,
+                "zone_hitting_low": 63.4,
+                "zone_hitting_inside": 71.2,
+                "zone_hitting_outside": 64.0,
+            },
             "hitting_handedness_splits": {
                 "vl": {"avg": 0.300, "iso": 0.240, "strikeout_rate": 0.18},
                 "vr": {"avg": 0.260, "iso": 0.180, "strikeout_rate": 0.24},
@@ -161,6 +171,12 @@ class LiveTeamDataTests(unittest.TestCase):
         self.assertEqual(savant_hitter_rows[0]["pressure_hitting"], 67.0)
         self.assertEqual(savant_hitter_rows[0]["late_game_hitting"], 64.5)
         self.assertEqual(savant_hitter_rows[0]["trailing_bases_empty_hitting"], 68.0)
+        self.assertEqual(savant_hitter_rows[0]["fastball_hitting"], 73.2)
+        self.assertEqual(savant_hitter_rows[0]["offspeed_hitting"], 66.8)
+        self.assertEqual(savant_hitter_rows[0]["zone_hitting_high"], 69.1)
+        self.assertEqual(savant_hitter_rows[0]["zone_hitting_low"], 63.4)
+        self.assertEqual(savant_hitter_rows[0]["zone_hitting_inside"], 71.2)
+        self.assertEqual(savant_hitter_rows[0]["zone_hitting_outside"], 64.0)
         self.assertEqual(savant_fielding_rows[0]["Defensive Innings"], 812.0)
         self.assertEqual(savant_fielding_rows[0]["Fielding %"], 0.982)
         self.assertEqual(savant_fielding_rows[0]["PO"], 120.0)

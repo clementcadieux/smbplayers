@@ -4,7 +4,9 @@ import unittest
 
 from smb4_mlb_ratings.ingest.live_metrics import (
     aggregate_split_stats,
+    derive_hitter_pitch_type_metrics,
     derive_hitter_situational_metrics,
+    derive_hitter_zone_metrics,
     derive_pitcher_situational_metrics,
     game_log_days_on_roster,
     hitter_contact_platoon_delta,
@@ -83,6 +85,35 @@ class LiveMetricsTests(unittest.TestCase):
             ),
         )
         self.assertLessEqual(metrics["trailing_bases_empty_hitting"] or 0.0, metrics["first_pitch_hitting"] or 99.0)
+
+    def test_derive_hitter_pitch_type_metrics_combines_breaking_and_offspeed(self) -> None:
+        metrics = derive_hitter_pitch_type_metrics(
+            {
+                "fastball": {"obp": 0.380, "slg": 0.540, "iso": 0.210, "strikeout_rate": 0.16},
+                "offspeed": {"obp": 0.350, "slg": 0.470, "iso": 0.160, "strikeout_rate": 0.20},
+                "breaking": {"obp": 0.340, "slg": 0.460, "iso": 0.155, "strikeout_rate": 0.21},
+            }
+        )
+
+        self.assertIsNotNone(metrics["fastball_hitting"])
+        self.assertIsNotNone(metrics["offspeed_hitting"])
+        self.assertGreater(metrics["fastball_hitting"] or 0.0, metrics["offspeed_hitting"] or 0.0)
+
+    def test_derive_hitter_zone_metrics_scores_each_zone_family(self) -> None:
+        metrics = derive_hitter_zone_metrics(
+            {
+                "high": {"obp": 0.360, "slg": 0.500, "iso": 0.180, "strikeout_rate": 0.19},
+                "low": {"obp": 0.330, "slg": 0.430, "iso": 0.130, "strikeout_rate": 0.23},
+                "inside": {"obp": 0.375, "slg": 0.525, "iso": 0.205, "strikeout_rate": 0.17},
+                "outside": {"obp": 0.345, "slg": 0.460, "iso": 0.155, "strikeout_rate": 0.21},
+            }
+        )
+
+        self.assertIsNotNone(metrics["zone_hitting_high"])
+        self.assertIsNotNone(metrics["zone_hitting_low"])
+        self.assertIsNotNone(metrics["zone_hitting_inside"])
+        self.assertIsNotNone(metrics["zone_hitting_outside"])
+        self.assertGreater(metrics["zone_hitting_inside"] or 0.0, metrics["zone_hitting_outside"] or 0.0)
 
     def test_pitcher_handedness_metrics_are_relative_to_throwing_hand(self) -> None:
         splits = {

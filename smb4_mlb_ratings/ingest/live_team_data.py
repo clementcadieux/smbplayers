@@ -5,13 +5,15 @@ import io
 import json
 import re
 from ssl import SSLContext
-from typing import Any, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
 from .live_metrics import (
     aggregate_split_stats,
+    derive_hitter_pitch_type_metrics,
     derive_hitter_situational_metrics,
+    derive_hitter_zone_metrics,
     derive_pitcher_situational_metrics,
     game_log_days_on_roster,
     hitter_contact_platoon_delta,
@@ -219,6 +221,8 @@ def build_savant_hitter_rows(
         hitting_splits = player.get("hitting_handedness_splits") if isinstance(player.get("hitting_handedness_splits"), Mapping) else {}
         savant_hitting_summary = player.get("savant_hitting_summary") if isinstance(player.get("savant_hitting_summary"), Mapping) else {}
         situational_hitting_metrics = player.get("situational_hitting_metrics") if isinstance(player.get("situational_hitting_metrics"), Mapping) else {}
+        pitch_type_hitting_metrics = player.get("pitch_type_hitting_metrics") if isinstance(player.get("pitch_type_hitting_metrics"), Mapping) else {}
+        zone_hitting_metrics = player.get("zone_hitting_metrics") if isinstance(player.get("zone_hitting_metrics"), Mapping) else {}
         total_swings = _as_int(advanced.get("totalSwings"))
         swing_and_misses = _as_int(advanced.get("swingAndMisses"))
         contact_pct = None
@@ -249,6 +253,12 @@ def build_savant_hitter_rows(
                 "pressure_hitting": situational_hitting_metrics.get("pressure_hitting"),
                 "late_game_hitting": situational_hitting_metrics.get("late_game_hitting"),
                 "trailing_bases_empty_hitting": situational_hitting_metrics.get("trailing_bases_empty_hitting"),
+                "fastball_hitting": pitch_type_hitting_metrics.get("fastball_hitting"),
+                "offspeed_hitting": pitch_type_hitting_metrics.get("offspeed_hitting"),
+                "zone_hitting_high": zone_hitting_metrics.get("zone_hitting_high"),
+                "zone_hitting_low": zone_hitting_metrics.get("zone_hitting_low"),
+                "zone_hitting_inside": zone_hitting_metrics.get("zone_hitting_inside"),
+                "zone_hitting_outside": zone_hitting_metrics.get("zone_hitting_outside"),
                 "2B": player.get("doubles"),
                 "3B": player.get("triples"),
                 "SB": player.get("stolen_bases"),
@@ -1010,6 +1020,11 @@ def _fetch_roster_player(
             ssl_context=ssl_context,
             baseball_savant=baseball_savant,
         )
+        savant_hitter_pitch_details = _fetch_savant_hitter_pitch_details(
+            player_id,
+            ssl_context=ssl_context,
+            baseball_savant=baseball_savant,
+        )
         situational_hitting_splits = _fetch_situation_splits(
             player_id,
             stat_group,
@@ -1021,6 +1036,11 @@ def _fetch_roster_player(
         plate_appearances = _as_int(stats.get("plateAppearances")) or 0
         if plate_appearances == 0:
             return None
+        pitch_type_hitting_splits = _derive_hitter_pitch_type_splits(savant_hitter_pitch_details)
+        zone_hitting_splits = _derive_hitter_zone_splits(
+            savant_hitter_pitch_details,
+            bats=_nested_str(person, "batSide", "code"),
+        )
         base_player.update(
             {
                 "plate_appearances": plate_appearances,
@@ -1040,6 +1060,8 @@ def _fetch_roster_player(
                 "advanced_hitting": advanced_stats,
                 "savant_hitting_summary": savant_hitting_summary,
                 "situational_hitting_metrics": derive_hitter_situational_metrics(situational_hitting_splits),
+                "pitch_type_hitting_metrics": derive_hitter_pitch_type_metrics(pitch_type_hitting_splits),
+                "zone_hitting_metrics": derive_hitter_zone_metrics(zone_hitting_splits),
                 "hitting_handedness_splits": handedness_splits,
                 "fielding_stats": _fetch_stats(
                     player_id,
@@ -1207,6 +1229,118 @@ def _fetch_savant_pitch_details(
         },
     )
     return parse_savant_pitch_details(payload)
+
+
+def _fetch_savant_hitter_pitch_details(
+    player_id: int,
+    *,
+    ssl_context: SSLContext | None,
+    baseball_savant: str,
+) -> dict[str, dict[str, float]]:
+    payload = _fetch_text(
+        f"{baseball_savant}/player-services/statcast-pitches-breakdown?playerId={player_id}&position=0&pitchBreakdown=pitches",
+        ssl_context=ssl_context,
+        headers={
+            "User-Agent": "Mozilla/5.0",
+            "Referer": f"{baseball_savant}/",
+            "Accept": "application/json,text/plain,*/*",
+            "X-Requested-With": "XMLHttpRequest",
+        },
+    )
+    return parse_savant_pitch_details(payload)
+
+
+def _derive_hitter_pitch_type_splits(
+    pitch_details: Mapping[str, Mapping[str, float]],
+) -> dict[str, dict[str, float]]:
+    return {
+        "fastball": _weighted_hitter_split_from_pitch_details(pitch_details, pitch_codes=("FF", "FT", "SI", "FC")),
+        "offspeed": _weighted_hitter_split_from_pitch_details(pitch_details, pitch_codes=("CH", "FS", "FO")),
+        "breaking": _weighted_hitter_split_from_pitch_details(pitch_details, pitch_codes=("SL", "CU", "KC", "SV")),
+    }
+
+
+def _derive_hitter_zone_splits(
+    pitch_details: Mapping[str, Mapping[str, float]],
+    *,
+    bats: str | None,
+) -> dict[str, dict[str, float]]:
+    is_left_handed = (bats or "").upper() == "L"
+
+    def _avg_plate_x_is_inside(value: float) -> bool:
+        return value >= 0.0 if is_left_handed else value <= 0.0
+
+    return {
+        "high": _weighted_hitter_split_from_pitch_details(
+            pitch_details,
+            predicate=lambda row: (row.get("avg_plate_z") or 0.0) >= 2.75,
+        ),
+        "low": _weighted_hitter_split_from_pitch_details(
+            pitch_details,
+            predicate=lambda row: (row.get("avg_plate_z") or 0.0) <= 2.25,
+        ),
+        "inside": _weighted_hitter_split_from_pitch_details(
+            pitch_details,
+            predicate=lambda row: _avg_plate_x_is_inside(row.get("avg_plate_x") or 0.0),
+        ),
+        "outside": _weighted_hitter_split_from_pitch_details(
+            pitch_details,
+            predicate=lambda row: not _avg_plate_x_is_inside(row.get("avg_plate_x") or 0.0),
+        ),
+    }
+
+
+def _weighted_hitter_split_from_pitch_details(
+    pitch_details: Mapping[str, Mapping[str, float]],
+    *,
+    pitch_codes: tuple[str, ...] | None = None,
+    predicate: Callable[[Mapping[str, float]], bool] | None = None,
+) -> dict[str, float]:
+    rows: list[Mapping[str, float]] = []
+    for pitch_code, row in pitch_details.items():
+        if not isinstance(row, Mapping):
+            continue
+        if pitch_codes is not None and pitch_code not in pitch_codes:
+            continue
+        if predicate is not None and not predicate(row):
+            continue
+        rows.append(row)
+
+    if not rows:
+        return {}
+
+    def _weight(row: Mapping[str, float]) -> float:
+        return (row.get("pa") or 0.0) if (row.get("pa") or 0.0) > 0 else (row.get("pitches") or 0.0)
+
+    def _weighted_value(stat_key: str, *, percentage_to_rate: bool = False) -> float | None:
+        weighted_sum = 0.0
+        total_weight = 0.0
+        for row in rows:
+            raw_value = _as_float(row.get(stat_key))
+            weight = _weight(row)
+            if raw_value is None or weight <= 0:
+                continue
+            value = (raw_value / 100.0) if percentage_to_rate else raw_value
+            weighted_sum += value * weight
+            total_weight += weight
+        if total_weight <= 0:
+            return None
+        return round(weighted_sum / total_weight, 6)
+
+    obp = _weighted_value("obp")
+    slg = _weighted_value("slg")
+    iso = _weighted_value("iso")
+    strikeout_rate = _weighted_value("k_percent", percentage_to_rate=True)
+
+    if None in (obp, slg, iso, strikeout_rate):
+        return {}
+
+    return {
+        "obp": float(obp),
+        "slg": float(slg),
+        "iso": float(iso),
+        "strikeout_rate": float(strikeout_rate),
+    }
 
 
 def _fetch_savant_hitter_summary(
