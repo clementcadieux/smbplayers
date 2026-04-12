@@ -845,6 +845,64 @@ def build_savant_pitcher_rows(
         savant_pitch_details = player.get("savant_pitch_details") if isinstance(player.get("savant_pitch_details"), Mapping) else {}
         pitch_quality = derive_pitch_quality_metrics(arsenal_data, savant_pitch_details)
         throws = _as_str(player.get("throws"))
+        chase_rate = _pick_mapping_percentage(
+            advanced,
+            "chasePercentage",
+            "chasePercent",
+            "chase_rate",
+            "chase_pct",
+            "oz_swing_pct",
+            "o_swing_pct",
+            "out_of_zone_swing_pct",
+        )
+        zone_pct = _pick_mapping_percentage(
+            advanced,
+            "zonePercentage",
+            "zonePercent",
+            "zone_pct",
+            "zone_percentage",
+        )
+        first_pitch_strike_pct = _pick_mapping_percentage(
+            advanced,
+            "firstPitchStrikePercentage",
+            "firstPitchStrikePercent",
+            "first_pitch_strike_pct",
+            "first_pitch_strike_percentage",
+            "f_strike_pct",
+            "fps_pct",
+        )
+        movement_quality = _pick_mapping_float(
+            advanced,
+            "movementQuality",
+            "movement_quality",
+            "movementPlus",
+            "movement_plus",
+            "movementGrade",
+            "movement_grade",
+        )
+        horizontal_break = _weighted_arsenal_metric(
+            arsenal_data,
+            "horizontalBreak",
+            "horizontal_break",
+            "horizontalMovement",
+            "horizontal_movement",
+            "breakX",
+            "break_x",
+            "pfxX",
+            "pfx_x",
+        )
+        induced_vertical_break = _weighted_arsenal_metric(
+            arsenal_data,
+            "inducedVerticalBreak",
+            "induced_vertical_break",
+            "verticalBreak",
+            "vertical_break",
+            "breakZ",
+            "break_z",
+            "pfxZ",
+            "pfx_z",
+            "ivb",
+        )
         rows.append(
             {
                 "player_id": player.get("player_id"),
@@ -868,8 +926,14 @@ def build_savant_pitcher_rows(
                 "SC %": arsenal_percentage(arsenal_data, "SC"),
                 "SV %": arsenal_percentage(arsenal_data, "SV"),
                 "SwStr %": _as_percentage_string(advanced.get("whiffPercentage")),
+                "Chase %": chase_rate,
                 "BB %": _percentage(player.get("walks"), player.get("batters_faced")),
                 "Strike %": _as_percentage_string(player.get("strike_percentage")),
+                "Zone %": zone_pct,
+                "First Pitch Strike %": first_pitch_strike_pct,
+                "Movement Quality": movement_quality,
+                "Horizontal Break": horizontal_break,
+                "Induced Vertical Break": induced_vertical_break,
                 "first_pitch_pitching": situational_pitching_metrics.get("first_pitch_pitching"),
                 "runners_on_pitching": situational_pitching_metrics.get("runners_on_pitching"),
                 "pressure_pitching": situational_pitching_metrics.get("pressure_pitching"),
@@ -1876,6 +1940,43 @@ def _as_percentage_string(value: Any) -> float | None:
     if numeric is None:
         return None
     return round(numeric * 100.0 if numeric <= 1.0 else numeric, 3)
+
+
+def _pick_mapping_float(mapping: Mapping[str, Any], *keys: str) -> float | None:
+    for key in keys:
+        if key in mapping:
+            value = _as_float(mapping.get(key))
+            if value is not None:
+                return value
+    return None
+
+
+def _pick_mapping_percentage(mapping: Mapping[str, Any], *keys: str) -> float | None:
+    for key in keys:
+        if key in mapping:
+            value = _as_percentage_string(mapping.get(key))
+            if value is not None:
+                return value
+    return None
+
+
+def _weighted_arsenal_metric(arsenal: Mapping[str, Mapping[str, Any]], *keys: str) -> float | None:
+    total_percentage = 0.0
+    weighted_value = 0.0
+    for stat_line in arsenal.values():
+        if not isinstance(stat_line, Mapping):
+            continue
+        percentage = _as_float(stat_line.get("percentage"))
+        if percentage is None or percentage <= 0:
+            continue
+        metric_value = _pick_mapping_float(stat_line, *keys)
+        if metric_value is None:
+            continue
+        weighted_value += percentage * metric_value
+        total_percentage += percentage
+    if total_percentage <= 0:
+        return None
+    return round(weighted_value / total_percentage, 3)
 
 
 def _format_decimal(value: float) -> str:

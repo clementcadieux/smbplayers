@@ -568,6 +568,10 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertEqual(pitcher["role"], "pitcher")
         self.assertEqual(pitcher["primary_position"], "P")
         self.assertAlmostEqual(pitcher["metrics"]["avg_fastball_velocity"]["current"], 96.3)
+        self.assertAlmostEqual(pitcher["metrics"]["chase_rate"]["current"], 0.324)
+        self.assertAlmostEqual(pitcher["metrics"]["zone_pct"]["current"], 0.498)
+        self.assertAlmostEqual(pitcher["metrics"]["first_pitch_strike_pct"]["current"], 0.621)
+        self.assertAlmostEqual(pitcher["metrics"]["movement_quality"]["current"], 33.0)
         self.assertEqual(pitcher["days_on_roster"]["current"], 176.0)
         self.assertIn("tracked_pitches", pitcher["samples"])
         self.assertAlmostEqual(pitcher["pitch_mix"]["ff"], 0.48)
@@ -971,6 +975,26 @@ class IngestFrameworkTests(unittest.TestCase):
                             "samples": {"weighted_pa": {"current": 480}},
                             "metadata": {},
                         },
+                        {
+                            "name": "Inactive Same Team",
+                            "role": "hitter",
+                            "active": False,
+                            "team": "NYM",
+                            "primary_position": "LF",
+                            "metrics": {
+                                "iso": {"current": 0.185},
+                                "hr_per_pa": {"current": 0.039},
+                                "barrel_rate": {"current": 0.095},
+                                "slugging": {"current": 0.455},
+                                "avg_exit_velocity": {"current": 89.2},
+                                "strikeout_rate": {"current": 0.215},
+                                "contact_rate": {"current": 0.772},
+                                "batting_average": {"current": 0.268},
+                                "adjusted_obp": {"current": 0.336}
+                            },
+                            "samples": {"weighted_pa": {"current": 470}},
+                            "metadata": {},
+                        },
                     ]
                 },
                 indent=2,
@@ -1161,6 +1185,9 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertAlmostEqual(pitcher["metrics"]["walk_rate"]["current"], 54 / 684, places=6)
         self.assertAlmostEqual(pitcher["metrics"]["avg_fastball_velocity"]["current"], 97.1)
         self.assertAlmostEqual(pitcher["metrics"]["swinging_strike_rate"]["current"], 0.144)
+        self.assertAlmostEqual(pitcher["metrics"]["chase_rate"]["current"], 0.331)
+        self.assertAlmostEqual(pitcher["metrics"]["zone_pct"]["current"], 0.502)
+        self.assertAlmostEqual(pitcher["metrics"]["first_pitch_strike_pct"]["current"], 0.63)
         self.assertEqual(pitcher["days_on_roster"]["current"], 168.0)
         self.assertAlmostEqual(pitcher["pitch_mix"]["ff"], 0.565217, places=6)
         self.assertAlmostEqual(pitcher["pitch_mix"]["sl"], 0.304348, places=6)
@@ -1169,6 +1196,170 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertEqual(pitcher["trait_metrics"]["pressure_pitching"]["current"], 69.0)
         self.assertEqual(pitcher["trait_lists"]["secondary_field_positions"], ["OF"])
         self.assertIn("baseball_reference:running", pitcher["metadata"]["ingest"]["missing_files"]["current"])
+
+    def test_pitcher_metric_aliases_are_parsed_from_savant_csv(self) -> None:
+        roster_path = self.root / "alias_pitcher_roster.csv"
+        pitchers_path = self.root / "alias_pitcher_metrics.csv"
+        manifest_path = self.root / "alias_pitcher_manifest.json"
+
+        self._write_csv(
+            roster_path,
+            [
+                {
+                    "player_id": 920,
+                    "player_name": "Alias Pitcher",
+                    "team": "CLE",
+                    "age": 29,
+                    "position": "P",
+                    "bats": "R",
+                    "throws": "R",
+                }
+            ],
+        )
+        self._write_csv(
+            pitchers_path,
+            [
+                {
+                    "player_id": 920,
+                    "player_name": "Alias Pitcher",
+                    "team": "CLE",
+                    "position": "P",
+                    "BF": 640,
+                    "Pitches": 2540,
+                    "Avg Fastball Velocity": 95.8,
+                    "oz_swing_pct": 31.8,
+                    "zone_percentage": 48.4,
+                    "f_strike_pct": 61.3,
+                    "horizontal_movement": 14.2,
+                    "induced_vertical_break": 16.7,
+                    "SwStr %": 13.8,
+                    "Strike %": 64.9,
+                    "BB %": 7.4,
+                }
+            ],
+        )
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "source": "baseball_savant",
+                    "seasons": {
+                        "current": {
+                            "year": 2025,
+                            "files": {
+                                "roster": roster_path.name,
+                                "pitchers": pitchers_path.name,
+                            },
+                        }
+                    },
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        players = ingest_from_manifest(load_manifest(manifest_path))
+        pitcher = next(player for player in players if player["name"] == "Alias Pitcher")
+
+        self.assertAlmostEqual(pitcher["metrics"]["chase_rate"]["current"], 0.318)
+        self.assertAlmostEqual(pitcher["metrics"]["zone_pct"]["current"], 0.484)
+        self.assertAlmostEqual(pitcher["metrics"]["first_pitch_strike_pct"]["current"], 0.613)
+        self.assertAlmostEqual(pitcher["metrics"]["movement_quality"]["current"], 30.9)
+
+    def test_mixed_manifest_backfills_accuracy_metrics_from_br_when_savant_missing(self) -> None:
+        roster_path = self.root / "fallback_roster.csv"
+        savant_pitchers_path = self.root / "fallback_savant_pitchers.csv"
+        br_pitchers_path = self.root / "fallback_br_pitchers.csv"
+        manifest_path = self.root / "fallback_mixed_manifest.json"
+
+        self._write_csv(
+            roster_path,
+            [
+                {
+                    "player_id": 930,
+                    "player_name": "Fallback Pitcher",
+                    "team": "MIN",
+                    "age": 30,
+                    "position": "P",
+                    "bats": "R",
+                    "throws": "R",
+                }
+            ],
+        )
+        self._write_csv(
+            savant_pitchers_path,
+            [
+                {
+                    "player_id": 930,
+                    "player_name": "Fallback Pitcher",
+                    "team": "MIN",
+                    "position": "P",
+                    "Days On Roster": 165,
+                    "BF": 655,
+                    "Pitches": 2520,
+                    "Avg Fastball Velocity": 95.5,
+                    "SwStr %": 13.1,
+                    "BB %": 7.0,
+                    "FF %": 51.0,
+                    "SL %": 29.0,
+                    "CH %": 12.0,
+                }
+            ],
+        )
+        self._write_csv(
+            br_pitchers_path,
+            [
+                {
+                    "player_id": 930,
+                    "player_name": "Fallback Pitcher",
+                    "team": "MIN",
+                    "position": "P",
+                    "Days On Roster": 168,
+                    "BF": 660,
+                    "BB": 50,
+                    "SO": 181,
+                    "HR": 17,
+                    "H": 136,
+                    "IP": "176.0",
+                    "Pitches": 2530,
+                    "Strikes": 1657,
+                }
+            ],
+        )
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "source": "mixed",
+                    "seasons": {
+                        "current": {
+                            "year": 2025,
+                            "sources": {
+                                "baseball_reference": {
+                                    "files": {
+                                        "pitchers": br_pitchers_path.name,
+                                    }
+                                },
+                                "baseball_savant": {
+                                    "files": {
+                                        "roster": roster_path.name,
+                                        "pitchers": savant_pitchers_path.name,
+                                    }
+                                },
+                            },
+                        }
+                    },
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        players = ingest_from_manifest(load_manifest(manifest_path))
+        pitcher = next(player for player in players if player["name"] == "Fallback Pitcher")
+
+        self.assertAlmostEqual(pitcher["metrics"]["zone_pct"]["current"], 0.5049407, places=6)
+        self.assertAlmostEqual(pitcher["metrics"]["first_pitch_strike_pct"]["current"], 0.6349407, places=6)
+        self.assertIn("baseball_reference:zone_pct", pitcher["metadata"]["ingest"]["estimated_metrics"]["current"])
+        self.assertIn("baseball_reference:first_pitch_strike_pct", pitcher["metadata"]["ingest"]["estimated_metrics"]["current"])
 
     def test_fangraphs_manifest_builds_fielding_input(self) -> None:
         manifest = load_manifest(self.root / "fg_manifest.json")

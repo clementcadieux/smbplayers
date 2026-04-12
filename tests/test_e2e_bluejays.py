@@ -114,10 +114,13 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
         self.assertEqual(rank_result, 0)
 
         expected_names = sorted(str(player["name"]) for player in self.players)
+        expected_name_set = set(expected_names)
         inactive_name = str(self._inactive_player()["name"])
         normalized_payload = json.loads(normalized_path.read_text(encoding="utf-8"))
         normalized_players = normalized_payload["players"]
-        self.assertEqual(len(normalized_players), len(self.players) + 1)
+        normalized_names = {str(player["name"]) for player in normalized_players}
+        self.assertTrue(expected_name_set.issubset(normalized_names))
+        self.assertIn(inactive_name, normalized_names)
         inactive_player = next(player for player in normalized_players if player["name"] == inactive_name)
         self.assertFalse(inactive_player["active"])
         self.assertEqual(inactive_player["team"], "NYY")

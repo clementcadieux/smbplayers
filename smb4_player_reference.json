@@ -91,6 +91,30 @@
     }
   },
   "metric_bounds": {
+    "chase_rate": {
+      "minimum": 0.2,
+      "maximum": 0.4,
+      "higher_is_better": true,
+      "notes": "Out-of-zone swing or chase rate for pitchers. MLB starters generally land in the mid-20s to high-30s percent range."
+    },
+    "zone_pct": {
+      "minimum": 0.4,
+      "maximum": 0.55,
+      "higher_is_better": true,
+      "notes": "Percentage of pitches in the strike zone. League-average pitchers are typically around the mid-to-high 40s percent."
+    },
+    "first_pitch_strike_pct": {
+      "minimum": 0.55,
+      "maximum": 0.7,
+      "higher_is_better": true,
+      "notes": "First-pitch strike percentage. Reliable strike-throwers generally live above 60 percent."
+    },
+    "movement_quality": {
+      "minimum": 12.0,
+      "maximum": 32.0,
+      "higher_is_better": true,
+      "notes": "Composite movement proxy derived from horizontal and induced vertical break magnitudes when direct movement grades are unavailable."
+    },
     "pitch_rv_per_100": {
       "minimum": -6.0,
       "maximum": 2.0,
