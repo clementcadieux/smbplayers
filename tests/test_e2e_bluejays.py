@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import csv
 import json
-import re
 import ssl
 import tempfile
 import unittest
@@ -14,6 +13,13 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from smb4_mlb_ratings.cli import main
+from smb4_mlb_ratings.ingest.pitch_quality import (
+    arsenal_percentage as resolve_arsenal_percentage,
+    derive_pitch_quality_metrics,
+    fastball_velocity as resolve_fastball_velocity,
+    parse_savant_pitch_details,
+    pitch_quality_columns,
+)
 
 try:
     import pytest  # type: ignore[import-not-found]
@@ -33,72 +39,6 @@ MLB_STATS_API = "https://statsapi.mlb.com/api/v1"
 BASEBALL_SAVANT = "https://baseballsavant.mlb.com"
 INFIELD_POSITIONS = {"1B", "2B", "3B", "SS", "IF"}
 OUTFIELD_POSITIONS = {"LF", "CF", "RF", "OF"}
-ELITE_PITCH_SPECS = {
-    "4F": {
-        "metric_key": "pitch_quality_4f",
-        "column": "Pitch Quality 4F",
-        "arsenal_codes": ("FF",),
-        "savant_codes": ("FF",),
-        "kind": "fastball",
-        "velocity_baseline": 90.0,
-    },
-    "2F": {
-        "metric_key": "pitch_quality_2f",
-        "column": "Pitch Quality 2F",
-        "arsenal_codes": ("SI", "FT"),
-        "savant_codes": ("SI", "FT"),
-        "kind": "fastball",
-        "velocity_baseline": 89.0,
-    },
-    "CF": {
-        "metric_key": "pitch_quality_cf",
-        "column": "Pitch Quality CF",
-        "arsenal_codes": ("FC",),
-        "savant_codes": ("FC",),
-        "kind": "fastball",
-        "velocity_baseline": 87.0,
-    },
-    "CB": {
-        "metric_key": "pitch_quality_cb",
-        "column": "Pitch Quality CB",
-        "arsenal_codes": ("CU", "KC"),
-        "savant_codes": ("CU", "KC"),
-        "kind": "secondary",
-        "target_gap": 15.0,
-    },
-    "CH": {
-        "metric_key": "pitch_quality_ch",
-        "column": "Pitch Quality CH",
-        "arsenal_codes": ("CH",),
-        "savant_codes": ("CH",),
-        "kind": "secondary",
-        "target_gap": 9.0,
-    },
-    "FK": {
-        "metric_key": "pitch_quality_fk",
-        "column": "Pitch Quality FK",
-        "arsenal_codes": ("FS", "FO"),
-        "savant_codes": ("FS", "FO"),
-        "kind": "secondary",
-        "target_gap": 10.0,
-    },
-    "SL": {
-        "metric_key": "pitch_quality_sl",
-        "column": "Pitch Quality SL",
-        "arsenal_codes": ("SL", "SV"),
-        "savant_codes": ("SL", "SV"),
-        "kind": "secondary",
-        "target_gap": 11.0,
-    },
-    "SB": {
-        "metric_key": "pitch_quality_sb",
-        "column": "Pitch Quality SB",
-        "arsenal_codes": ("SC",),
-        "savant_codes": ("SC",),
-        "kind": "secondary",
-        "target_gap": 13.0,
-    },
-}
 
 
 class BlueJaysPipelineIntegrationTests(unittest.TestCase):
@@ -246,7 +186,6 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
         self._write_csv(self.exports / "bluejays_savant_pitchers_2025.csv", self._savant_pitcher_rows())
         self._write_csv(self.exports / "bluejays_bref_hitters_2025.csv", self._bref_hitter_rows())
         self._write_csv(self.exports / "bluejays_bref_pitchers_2025.csv", self._bref_pitcher_rows())
-
         manifest = {
             "source": "mixed",
             "roster_filter": {"team": TEAM_ABBREVIATION, "year": ROSTER_SEASON},
@@ -452,10 +391,7 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
                     "SwStr %": self._as_percentage_string(advanced.get("whiffPercentage")),
                     "BB %": self._percentage(player["walks"], player["batters_faced"]),
                     "Strike %": self._as_percentage_string(player.get("strike_percentage")),
-                    **{
-                        spec["column"]: pitch_quality.get(spec["metric_key"])
-                        for spec in ELITE_PITCH_SPECS.values()
-                    },
+                    **pitch_quality_columns(pitch_quality),
                     "Same Handed Pitching": self._pitcher_handedness_score(player, pitching_splits, split_type="same"),
                     "Same Handed Pitching Gap": self._pitcher_handedness_gap(player, pitching_splits, split_type="same"),
                     "Opposite Handed Pitching": self._pitcher_handedness_score(player, pitching_splits, split_type="opposite"),
@@ -654,37 +590,7 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
             )
         except (HTTPError, URLError, TimeoutError, OSError):
             return {}
-
-        match = re.search(r"window\.serverVals\.pitchDetails\s*=\s*(\[.*?\]);", payload, re.DOTALL)
-        if not match:
-            return {}
-        try:
-            raw_rows = json.loads(match.group(1))
-        except json.JSONDecodeError:
-            return {}
-        if not isinstance(raw_rows, list):
-            return {}
-
-        details: dict[str, dict[str, float]] = {}
-        for row in raw_rows:
-            if not isinstance(row, dict):
-                continue
-            pitch_code = self._as_str(row.get("api_pitch_type"))
-            if not pitch_code:
-                continue
-            details[pitch_code.upper()] = {
-                "xba": self._as_float(row.get("xba")) or 0.0,
-                "xwoba": self._as_float(row.get("xwoba")) or 0.0,
-                "xslg": self._as_float(row.get("xslg")) or 0.0,
-                "hard_hit_percent": self._as_float(row.get("hard_hit_percent")) or 0.0,
-                "brl_percent": self._as_float(row.get("brl_percent")) or 0.0,
-                "swings": self._as_float(row.get("swings")) or 0.0,
-                "misses": self._as_float(row.get("misses")) or 0.0,
-                "release_speed": self._as_float(row.get("release_speed")) or 0.0,
-                "pitches": self._as_float(row.get("pitches")) or 0.0,
-                "total_pitches": self._as_float(row.get("total_pitches")) or 0.0,
-            }
-        return details
+        return parse_savant_pitch_details(payload)
 
     def _fetch_handedness_splits(self, player_id: int, group: str) -> dict[str, dict[str, float]]:
         for season in (PRIMARY_STAT_SEASON, FALLBACK_STAT_SEASON):
@@ -837,158 +743,7 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
         arsenal: dict[str, dict[str, Any]],
         savant_pitch_details: dict[str, dict[str, float]] | None = None,
     ) -> dict[str, float | None]:
-        fastball_velocity = self._fastball_velocity(arsenal, mode="average") or 0.0
-        primary_fastball_usage = max(
-            (
-                self._arsenal_percentage_for_codes(arsenal, spec["arsenal_codes"]) or 0.0
-                for spec in ELITE_PITCH_SPECS.values()
-                if spec["kind"] == "fastball"
-            ),
-            default=0.0,
-        )
-        metrics: dict[str, float | None] = {}
-        for spec in ELITE_PITCH_SPECS.values():
-            metric_key = str(spec["metric_key"])
-            if spec["kind"] == "fastball":
-                metrics[metric_key] = self._pitch_quality_fastball_family(
-                    arsenal,
-                    savant_pitch_details or {},
-                    arsenal_codes=tuple(spec["arsenal_codes"]),
-                    savant_codes=tuple(spec["savant_codes"]),
-                    primary_fastball_usage=primary_fastball_usage,
-                    velocity_baseline=float(spec["velocity_baseline"]),
-                )
-                continue
-            metrics[metric_key] = self._pitch_quality_secondary_family(
-                arsenal,
-                savant_pitch_details or {},
-                arsenal_codes=tuple(spec["arsenal_codes"]),
-                savant_codes=tuple(spec["savant_codes"]),
-                fastball_velocity=fastball_velocity,
-                primary_fastball_usage=primary_fastball_usage,
-                target_gap=float(spec["target_gap"]),
-            )
-        return metrics
-
-    def _pitch_quality_fastball_family(
-        self,
-        arsenal: dict[str, dict[str, Any]],
-        savant_pitch_details: dict[str, dict[str, float]],
-        *,
-        arsenal_codes: tuple[str, ...],
-        savant_codes: tuple[str, ...],
-        primary_fastball_usage: float,
-        velocity_baseline: float,
-    ) -> float | None:
-        usage = self._arsenal_percentage_for_codes(arsenal, arsenal_codes)
-        velocity = self._pitch_average_speed_for_codes(arsenal, arsenal_codes)
-        if usage is None or velocity is None:
-            return None
-        quality_score = self._family_savant_pitch_quality_score(savant_pitch_details, savant_codes)
-        fallback_quality = max((velocity - velocity_baseline) * 5.0, 0.0)
-        score = (quality_score * 0.8) + (fallback_quality * 0.2)
-        score += self._pitch_usage_modifier(usage, primary_fastball_usage)
-        if primary_fastball_usage and usage >= primary_fastball_usage * 0.9:
-            score += 3.0
-        return round(max(0.0, min(99.0, score)), 3)
-
-    def _pitch_quality_secondary_family(
-        self,
-        arsenal: dict[str, dict[str, Any]],
-        savant_pitch_details: dict[str, dict[str, float]],
-        *,
-        arsenal_codes: tuple[str, ...],
-        savant_codes: tuple[str, ...],
-        fastball_velocity: float,
-        primary_fastball_usage: float,
-        target_gap: float,
-    ) -> float | None:
-        usage = self._arsenal_percentage_for_codes(arsenal, arsenal_codes)
-        velocity = self._pitch_average_speed_for_codes(arsenal, arsenal_codes)
-        if usage is None or velocity is None or fastball_velocity <= 0:
-            return None
-        velocity_gap = fastball_velocity - velocity
-        gap_bonus = max(18.0 - abs(velocity_gap - target_gap) * 2.0, 0.0)
-        quality_score = self._family_savant_pitch_quality_score(savant_pitch_details, savant_codes)
-        fallback_quality = 22.0 + gap_bonus
-        score = (quality_score * 0.8) + (fallback_quality * 0.2)
-        score += self._pitch_usage_modifier(usage, primary_fastball_usage)
-        return round(max(0.0, min(99.0, score)), 3)
-
-    def _family_savant_pitch_quality_score(
-        self,
-        savant_pitch_details: dict[str, dict[str, float]],
-        pitch_codes: tuple[str, ...],
-    ) -> float:
-        weighted_score = 0.0
-        total_weight = 0.0
-        for pitch_code in pitch_codes:
-            pitch_detail = savant_pitch_details.get(pitch_code)
-            if not isinstance(pitch_detail, dict):
-                continue
-            weight = pitch_detail.get("pitches", 0.0) or 1.0
-            weighted_score += self._savant_pitch_quality_score(pitch_detail, pitch_code=pitch_code) * weight
-            total_weight += weight
-        if total_weight <= 0:
-            return 0.0
-        return weighted_score / total_weight
-
-    def _savant_pitch_quality_score(self, pitch_detail: dict[str, float] | None, *, pitch_code: str) -> float:
-        if not isinstance(pitch_detail, dict):
-            return 0.0
-        xwoba = pitch_detail.get("xwoba", 0.0)
-        xba = pitch_detail.get("xba", 0.0)
-        xslg = pitch_detail.get("xslg", 0.0)
-        hard_hit_percent = pitch_detail.get("hard_hit_percent", 0.0)
-        barrel_percent = pitch_detail.get("brl_percent", 0.0)
-        swings = pitch_detail.get("swings", 0.0)
-        misses = pitch_detail.get("misses", 0.0)
-        whiff_percent = (misses / swings) * 100.0 if swings > 0 else 0.0
-        release_speed = pitch_detail.get("release_speed", 0.0)
-
-        score = 0.0
-        score += self._bounded_score(0.420 - xwoba, 0.220) * 35.0
-        score += self._bounded_score(0.300 - xba, 0.160) * 15.0
-        score += self._bounded_score(0.650 - xslg, 0.350) * 20.0
-        score += self._bounded_score(whiff_percent - 15.0, 30.0) * 15.0
-        score += self._bounded_score(55.0 - hard_hit_percent, 35.0) * 10.0
-        score += self._bounded_score(12.0 - barrel_percent, 10.0) * 5.0
-        if pitch_code == "FF":
-            score += self._bounded_score(release_speed - 92.0, 6.0) * 8.0
-        return max(0.0, min(99.0, score))
-
-    def _pitch_usage_modifier(self, usage: float, primary_fastball_usage: float) -> float:
-        modifier = self._bounded_score(usage - 8.0, 24.0) * 6.0
-        if primary_fastball_usage > 0:
-            if usage >= primary_fastball_usage:
-                modifier += 10.0
-            elif usage >= primary_fastball_usage * 0.75:
-                modifier += 6.0
-            elif usage >= primary_fastball_usage * 0.5:
-                modifier += 3.0
-        return modifier
-
-    def _bounded_score(self, value: float, scale: float) -> float:
-        if scale <= 0:
-            return 0.0
-        return max(0.0, min(1.0, value / scale))
-
-    def _pitch_average_speed_for_codes(self, arsenal: dict[str, dict[str, Any]], pitch_codes: tuple[str, ...]) -> float | None:
-        weighted_velocity = 0.0
-        total_percentage = 0.0
-        for pitch_code in pitch_codes:
-            stat_line = arsenal.get(pitch_code)
-            if not isinstance(stat_line, dict):
-                continue
-            percentage = self._as_float(stat_line.get("percentage"))
-            velocity = self._as_float(stat_line.get("averageSpeed"))
-            if percentage is None or velocity is None:
-                continue
-            weighted_velocity += percentage * velocity
-            total_percentage += percentage
-        if total_percentage <= 0:
-            return None
-        return round(weighted_velocity / total_percentage, 3)
+        return derive_pitch_quality_metrics(arsenal, savant_pitch_details)
 
     def _ratio(self, numerator: float, denominator: float) -> float | None:
         if denominator == 0:
@@ -1015,55 +770,10 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
         return None
 
     def _arsenal_percentage(self, arsenal: dict[str, dict[str, Any]], pitch_code: str) -> float | None:
-        stat_line = arsenal.get(pitch_code)
-        if not isinstance(stat_line, dict):
-            return None
-        raw_percentage = self._as_float(stat_line.get("percentage"))
-        if raw_percentage is None:
-            return None
-        return round(raw_percentage * 100.0, 3)
-
-    def _arsenal_percentage_for_codes(self, arsenal: dict[str, dict[str, Any]], pitch_codes: tuple[str, ...]) -> float | None:
-        total_percentage = 0.0
-        found_code = False
-        for pitch_code in pitch_codes:
-            stat_line = arsenal.get(pitch_code)
-            if not isinstance(stat_line, dict):
-                continue
-            raw_percentage = self._as_float(stat_line.get("percentage"))
-            if raw_percentage is None:
-                continue
-            total_percentage += raw_percentage
-            found_code = True
-        if not found_code:
-            return None
-        return round(total_percentage * 100.0, 3)
+        return resolve_arsenal_percentage(arsenal, pitch_code)
 
     def _fastball_velocity(self, arsenal: dict[str, dict[str, Any]], *, mode: str) -> float | None:
-        fastball_codes = ("FF", "SI", "FC")
-        if mode == "peak":
-            velocities = [
-                velocity
-                for code in fastball_codes
-                if code in arsenal and (velocity := self._as_float(arsenal[code].get("averageSpeed"))) is not None
-            ]
-            return round(max(velocities), 3) if velocities else None
-
-        weighted_velocity = 0.0
-        total_percentage = 0.0
-        for code in fastball_codes:
-            stat_line = arsenal.get(code)
-            if not isinstance(stat_line, dict):
-                continue
-            percentage = self._as_float(stat_line.get("percentage"))
-            velocity = self._as_float(stat_line.get("averageSpeed"))
-            if percentage is None or velocity is None:
-                continue
-            weighted_velocity += percentage * velocity
-            total_percentage += percentage
-        if total_percentage <= 0:
-            return None
-        return round(weighted_velocity / total_percentage, 3)
+        return resolve_fastball_velocity(arsenal, mode=mode)
 
     def _output_sort_key(self, player: dict[str, Any]) -> tuple[float, int, int, str]:
         projected_ip = player.get("projected_ip")
@@ -1253,84 +963,6 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
             return date.fromisoformat(value)
         except ValueError:
             return None
-
-    def test_pitch_quality_derivation_boosts_prominent_secondary_pitch(self) -> None:
-        arsenal = {
-            "FF": {"percentage": 0.36, "count": 360, "totalPitches": 1000, "averageSpeed": 95.0, "type": {"code": "FF"}},
-            "SL": {"percentage": 0.34, "count": 340, "totalPitches": 1000, "averageSpeed": 84.0, "type": {"code": "SL"}},
-            "CH": {"percentage": 0.12, "count": 120, "totalPitches": 1000, "averageSpeed": 86.5, "type": {"code": "CH"}},
-        }
-        savant_pitch_details = {
-            "FF": {"xwoba": 0.305, "xba": 0.235, "xslg": 0.420, "hard_hit_percent": 37.0, "brl_percent": 7.0, "swings": 220.0, "misses": 45.0, "release_speed": 95.0},
-            "SL": {"xwoba": 0.215, "xba": 0.170, "xslg": 0.280, "hard_hit_percent": 24.0, "brl_percent": 3.0, "swings": 190.0, "misses": 78.0, "release_speed": 84.0},
-            "CH": {"xwoba": 0.290, "xba": 0.220, "xslg": 0.410, "hard_hit_percent": 34.0, "brl_percent": 6.0, "swings": 80.0, "misses": 20.0, "release_speed": 86.5},
-        }
-
-        metrics = self._derived_pitch_quality_metrics(arsenal, savant_pitch_details)
-
-        self.assertIsNotNone(metrics["pitch_quality_4f"])
-        self.assertIsNotNone(metrics["pitch_quality_sl"])
-        self.assertGreater(metrics["pitch_quality_sl"], 65.0)
-        self.assertGreater(metrics["pitch_quality_sl"], metrics["pitch_quality_ch"] or 0.0)
-
-    def test_pitch_quality_derivation_supports_all_smb_pitch_families(self) -> None:
-        arsenal = {
-            "FF": {"percentage": 0.22, "count": 220, "totalPitches": 1000, "averageSpeed": 95.5, "type": {"code": "FF"}},
-            "SI": {"percentage": 0.16, "count": 160, "totalPitches": 1000, "averageSpeed": 94.0, "type": {"code": "SI"}},
-            "FC": {"percentage": 0.11, "count": 110, "totalPitches": 1000, "averageSpeed": 90.5, "type": {"code": "FC"}},
-            "CU": {"percentage": 0.10, "count": 100, "totalPitches": 1000, "averageSpeed": 80.0, "type": {"code": "CU"}},
-            "CH": {"percentage": 0.12, "count": 120, "totalPitches": 1000, "averageSpeed": 85.8, "type": {"code": "CH"}},
-            "FS": {"percentage": 0.10, "count": 100, "totalPitches": 1000, "averageSpeed": 84.7, "type": {"code": "FS"}},
-            "SV": {"percentage": 0.11, "count": 110, "totalPitches": 1000, "averageSpeed": 83.4, "type": {"code": "SV"}},
-            "SC": {"percentage": 0.08, "count": 80, "totalPitches": 1000, "averageSpeed": 81.6, "type": {"code": "SC"}},
-        }
-        savant_pitch_details = {
-            "FF": {"xwoba": 0.245, "xba": 0.190, "xslg": 0.320, "hard_hit_percent": 28.0, "brl_percent": 4.0, "swings": 140.0, "misses": 38.0, "release_speed": 95.5, "pitches": 220.0},
-            "SI": {"xwoba": 0.255, "xba": 0.205, "xslg": 0.340, "hard_hit_percent": 30.0, "brl_percent": 4.5, "swings": 95.0, "misses": 22.0, "release_speed": 94.0, "pitches": 160.0},
-            "FC": {"xwoba": 0.235, "xba": 0.185, "xslg": 0.305, "hard_hit_percent": 26.0, "brl_percent": 3.5, "swings": 88.0, "misses": 27.0, "release_speed": 90.5, "pitches": 110.0},
-            "CU": {"xwoba": 0.210, "xba": 0.165, "xslg": 0.270, "hard_hit_percent": 23.0, "brl_percent": 2.5, "swings": 82.0, "misses": 34.0, "release_speed": 80.0, "pitches": 100.0},
-            "CH": {"xwoba": 0.225, "xba": 0.175, "xslg": 0.290, "hard_hit_percent": 25.0, "brl_percent": 3.0, "swings": 96.0, "misses": 36.0, "release_speed": 85.8, "pitches": 120.0},
-            "FS": {"xwoba": 0.205, "xba": 0.160, "xslg": 0.255, "hard_hit_percent": 22.0, "brl_percent": 2.0, "swings": 78.0, "misses": 31.0, "release_speed": 84.7, "pitches": 100.0},
-            "SV": {"xwoba": 0.215, "xba": 0.168, "xslg": 0.275, "hard_hit_percent": 24.0, "brl_percent": 2.8, "swings": 89.0, "misses": 35.0, "release_speed": 83.4, "pitches": 110.0},
-            "SC": {"xwoba": 0.220, "xba": 0.172, "xslg": 0.285, "hard_hit_percent": 24.5, "brl_percent": 2.7, "swings": 62.0, "misses": 22.0, "release_speed": 81.6, "pitches": 80.0},
-        }
-
-        metrics = self._derived_pitch_quality_metrics(arsenal, savant_pitch_details)
-
-        for spec in ELITE_PITCH_SPECS.values():
-            self.assertIsNotNone(metrics[str(spec["metric_key"])])
-
-    def test_pitch_quality_derivation_prioritizes_quality_over_usage(self) -> None:
-        arsenal = {
-            "FF": {"percentage": 0.45, "count": 450, "totalPitches": 1000, "averageSpeed": 95.0, "type": {"code": "FF"}},
-            "SL": {"percentage": 0.30, "count": 300, "totalPitches": 1000, "averageSpeed": 84.5, "type": {"code": "SL"}},
-            "CH": {"percentage": 0.22, "count": 220, "totalPitches": 1000, "averageSpeed": 86.0, "type": {"code": "CH"}},
-        }
-        savant_pitch_details = {
-            "SL": {"xwoba": 0.195, "xba": 0.145, "xslg": 0.240, "hard_hit_percent": 20.0, "brl_percent": 2.0, "swings": 210.0, "misses": 92.0, "release_speed": 84.5},
-            "CH": {"xwoba": 0.330, "xba": 0.255, "xslg": 0.500, "hard_hit_percent": 42.0, "brl_percent": 9.0, "swings": 160.0, "misses": 32.0, "release_speed": 86.0},
-        }
-
-        metrics = self._derived_pitch_quality_metrics(arsenal, savant_pitch_details)
-
-        self.assertGreater(metrics["pitch_quality_sl"], metrics["pitch_quality_ch"] or 0.0)
-
-    def test_pitch_quality_derivation_handles_missing_arsenal_data(self) -> None:
-        metrics = self._derived_pitch_quality_metrics({})
-
-        self.assertEqual(
-            metrics,
-            {
-                "pitch_quality_4f": None,
-                "pitch_quality_2f": None,
-                "pitch_quality_cf": None,
-                "pitch_quality_cb": None,
-                "pitch_quality_ch": None,
-                "pitch_quality_fk": None,
-                "pitch_quality_sl": None,
-                "pitch_quality_sb": None,
-            },
-        )
 
 
 if __name__ == "__main__":
