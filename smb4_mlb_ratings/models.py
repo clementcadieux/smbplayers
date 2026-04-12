@@ -22,6 +22,8 @@ class PlayerInput:
     projected_ip: float | None = None
     days_on_roster: dict[str, float] = field(default_factory=dict)
     pitch_mix: dict[str, float] = field(default_factory=dict)
+    trait_metrics: dict[str, SeasonValue] | None = None
+    trait_lists: dict[str, list[str]] | None = None
     metrics: dict[str, SeasonValue] = field(default_factory=dict)
     samples: dict[str, SeasonValue] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -42,6 +44,12 @@ class PlayerInput:
             projected_ip=data.get("projected_ip"),
             days_on_roster={str(key): float(value) for key, value in data.get("days_on_roster", {}).items()},
             pitch_mix={str(key): float(value) for key, value in data.get("pitch_mix", {}).items()},
+            trait_metrics=data.get("trait_metrics"),
+            trait_lists={
+                str(key): [str(item) for item in value]
+                for key, value in data.get("trait_lists", {}).items()
+                if isinstance(value, list)
+            } or None,
             metrics=data.get("metrics", {}),
             samples=data.get("samples", {}),
             metadata=data.get("metadata", {}),

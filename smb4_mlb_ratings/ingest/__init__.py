@@ -33,6 +33,33 @@ SAVANT_TOOL_METRICS = frozenset(
 SAVANT_SAMPLE_KEYS = frozenset({"tracked_fastballs", "tracked_pitches"})
 
 
+def _merge_trait_metric_map(
+	baseball_reference: dict[str, dict[str, Any]],
+	savant: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+	merged: dict[str, dict[str, Any]] = {}
+	for metric_name in sorted(set(baseball_reference) | set(savant)):
+		merged_values = _union_season_values(savant.get(metric_name, {}), baseball_reference.get(metric_name, {}))
+		if merged_values:
+			merged[metric_name] = merged_values
+	return merged
+
+
+def _merge_trait_lists(
+	baseball_reference: dict[str, list[Any]],
+	savant: dict[str, list[Any]],
+) -> dict[str, list[str]]:
+	merged: dict[str, list[str]] = {}
+	for list_name in sorted(set(baseball_reference) | set(savant)):
+		values: set[str] = set()
+		for source_values in (baseball_reference.get(list_name, []), savant.get(list_name, [])):
+			if isinstance(source_values, list):
+				values.update(str(item) for item in source_values if item is not None and str(item))
+		if values:
+			merged[list_name] = sorted(values)
+	return merged
+
+
 def _normalized_name(value: str) -> str:
 	return " ".join(value.lower().split())
 
@@ -163,6 +190,14 @@ def _merge_player_records(
 		baseball_reference.get("samples", {}) if isinstance(baseball_reference.get("samples"), dict) else {},
 		savant.get("samples", {}) if isinstance(savant.get("samples"), dict) else {},
 	)
+	trait_metrics = _merge_trait_metric_map(
+		baseball_reference.get("trait_metrics", {}) if isinstance(baseball_reference.get("trait_metrics"), dict) else {},
+		savant.get("trait_metrics", {}) if isinstance(savant.get("trait_metrics"), dict) else {},
+	)
+	trait_lists = _merge_trait_lists(
+		baseball_reference.get("trait_lists", {}) if isinstance(baseball_reference.get("trait_lists"), dict) else {},
+		savant.get("trait_lists", {}) if isinstance(savant.get("trait_lists"), dict) else {},
+	)
 	merged_years = {}
 	for metadata in (br_metadata, sv_metadata):
 		years = metadata.get("source_years", {}) if isinstance(metadata, dict) else {}
@@ -235,6 +270,10 @@ def _merge_player_records(
 		"samples": samples,
 		"metadata": metadata,
 	}
+	if trait_metrics:
+		merged_player["trait_metrics"] = trait_metrics
+	if trait_lists:
+		merged_player["trait_lists"] = trait_lists
 	if days_on_roster:
 		merged_player["days_on_roster"] = {str(key): float(value) for key, value in sorted(days_on_roster.items())}
 	if pitch_mix:

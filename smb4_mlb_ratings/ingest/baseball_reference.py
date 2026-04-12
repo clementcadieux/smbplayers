@@ -3,8 +3,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+# Baseball Reference result files can carry some of the situational trait columns directly,
+# but deeper plate-discipline and batted-ball split gaps may still need Fangraphs-style exports.
+# Keep those future source additions aligned to the shared trait metric keys used by issue 31.
+
 from .savant import (
+    HITTER_TRAIT_METRIC_COLUMNS,
     IngestManifest,
+    PITCHER_TRAIT_METRIC_COLUMNS,
     PlayerAccumulator,
     _apply_fielding_row,
     _apply_identity,
@@ -17,6 +23,7 @@ from .savant import (
     _pick_first,
     _pick_number,
     _row_days_on_roster,
+    _row_trait_metrics,
     _read_csv,
     _safe_divide,
     load_manifest,
@@ -27,6 +34,7 @@ def _apply_hitter_row(player: PlayerAccumulator, season_key: str, row: dict[str,
     player.roles.add("hitter")
     _apply_identity(player, row)
     player.set_days_on_roster(season_key, _row_days_on_roster(row))
+    player.set_trait_metrics(season_key, _row_trait_metrics(row, HITTER_TRAIT_METRIC_COLUMNS))
 
     plate_appearances = _pick_number(row, "pa", "plate_appearances")
     at_bats = _pick_number(row, "ab", "at_bats")
@@ -120,6 +128,7 @@ def _apply_pitcher_row(player: PlayerAccumulator, season_key: str, row: dict[str
     player.roles.add("pitcher")
     _apply_identity(player, row, default_position="P")
     player.set_days_on_roster(season_key, _row_days_on_roster(row))
+    player.set_trait_metrics(season_key, _row_trait_metrics(row, PITCHER_TRAIT_METRIC_COLUMNS))
 
     batters_faced = _pick_number(row, "bf", "tbf", "batters_faced")
     pitches = _pick_number(row, "pitches", "pit", "pitch_count")

@@ -155,8 +155,31 @@ def load_volume_projection_config() -> dict[str, float]:
         return dict(DEFAULT_VOLUME_PROJECTION)
 
 
+def load_trait_criteria_config() -> dict[str, object]:
+    try:
+        payload = json.loads(REFERENCE_PATH.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {"minimum_score": 10.0, "traits": {}}
+
+    trait_payload = payload.get("trait_criteria", {})
+    if not isinstance(trait_payload, dict):
+        return {"minimum_score": 10.0, "traits": {}}
+
+    minimum_score = trait_payload.get("minimum_score", 10.0)
+    traits = trait_payload.get("traits", {})
+    try:
+        parsed_minimum = float(minimum_score)
+    except (TypeError, ValueError):
+        parsed_minimum = 10.0
+    return {
+        "minimum_score": parsed_minimum,
+        "traits": traits if isinstance(traits, dict) else {},
+    }
+
+
 CHEMISTRY_TYPES, TRAIT_CATALOG = load_trait_catalog()
 VOLUME_PROJECTION_CONFIG = load_volume_projection_config()
+TRAIT_CRITERIA_CONFIG = load_trait_criteria_config()
 
 
 @dataclass(frozen=True)
@@ -747,6 +770,155 @@ def metadata_list(metadata: Mapping[str, object], *keys: str) -> list[str]:
     return []
 
 
+def player_trait_metric(player: PlayerInput, metric_name: str) -> float | None:
+    if isinstance(player.trait_metrics, Mapping):
+        value = player.trait_metrics.get(metric_name)
+        if (weighted := weighted_value(value)) is not None:
+            return weighted
+    return metadata_number(player.metadata, metric_name, f"trait_metrics.{metric_name}")
+
+
+def player_trait_list(player: PlayerInput, list_name: str) -> list[str]:
+    if isinstance(player.trait_lists, Mapping):
+        values = player.trait_lists.get(list_name)
+        if isinstance(values, list):
+            return [str(item) for item in values if item is not None]
+    return metadata_list(player.metadata, list_name, f"trait_lists.{list_name}")
+
+
+def player_trait_stat(player: PlayerInput, stat_name: str) -> float | list[str] | None:
+    if stat_name.startswith("trait_metrics."):
+        return player_trait_metric(player, stat_name.removeprefix("trait_metrics."))
+    if stat_name.startswith("trait_lists."):
+        return player_trait_list(player, stat_name.removeprefix("trait_lists."))
+    if stat_name.startswith("metrics."):
+        return weighted_value(player.metrics.get(stat_name.removeprefix("metrics.")))
+    if stat_name.startswith("samples."):
+        return weighted_value(player.samples.get(stat_name.removeprefix("samples.")))
+    if stat_name.startswith("metadata."):
+        value = metadata_lookup(player.metadata, stat_name.removeprefix("metadata."))
+        if isinstance(value, list):
+            return [str(item) for item in value if item is not None]
+        if isinstance(value, (int, float)):
+            return float(value)
+        return None
+    if (metric_value := player_trait_metric(player, stat_name)) is not None:
+        return metric_value
+    if (metadata_value := metadata_number(player.metadata, stat_name)) is not None:
+        return metadata_value
+    return metadata_list(player.metadata, stat_name) or None
+
+
+def trait_scope_matches_player(role_scope: str | None, player_role: str) -> bool:
+    if role_scope == "pitcher":
+        return player_role in {"pitcher", "two_way"}
+    if role_scope == "non_pitcher":
+        return player_role in {"hitter", "two_way"}
+    return True
+
+
+def trait_rule_score(player: PlayerInput, rule: Mapping[str, object]) -> tuple[float, str] | None:
+    stat_name = rule.get("stat")
+    operator = rule.get("operator")
+    weight = rule.get("weight", 1.0)
+    if not isinstance(stat_name, str) or not isinstance(operator, str):
+        return None
+    try:
+        weight_value = float(weight)
+    except (TypeError, ValueError):
+        return None
+    stat_value = player_trait_stat(player, stat_name)
+    if operator == "contains":
+        if not isinstance(stat_value, list):
+            return None
+        target = rule.get("value")
+        if target in stat_value:
+            base_score = rule.get("base_score", 35.0)
+            try:
+                score = float(base_score) * weight_value
+            except (TypeError, ValueError):
+                return None
+            return score, f"{stat_name} contains {target}"
+        return None
+    if not isinstance(stat_value, (int, float)):
+        return None
+    numeric_value = float(stat_value)
+    target_value = rule.get("value")
+    if operator == ">=":
+        if not isinstance(target_value, (int, float)) or numeric_value < float(target_value):
+            return None
+        score = (numeric_value - float(target_value) + 10.0) * weight_value
+        return score, f"{stat_name} >= {target_value}"
+    if operator == "<=":
+        if not isinstance(target_value, (int, float)) or numeric_value > float(target_value):
+            return None
+        score = (float(target_value) - numeric_value + 10.0) * weight_value
+        return score, f"{stat_name} <= {target_value}"
+    if operator == "between":
+        if not isinstance(target_value, list) or len(target_value) != 2:
+            return None
+        low, high = target_value
+        if not isinstance(low, (int, float)) or not isinstance(high, (int, float)):
+            return None
+        low_value = float(low)
+        high_value = float(high)
+        if numeric_value < low_value or numeric_value > high_value:
+            return None
+        score = (10.0 + min(numeric_value - low_value, high_value - numeric_value)) * weight_value
+        return score, f"{low_value} <= {stat_name} <= {high_value}"
+    return None
+
+
+def apply_configured_trait_criteria(
+    state: PlayerState,
+    suggestions: dict[str, TraitSuggestion],
+    *,
+    role_scope: str,
+) -> None:
+    traits = TRAIT_CRITERIA_CONFIG.get("traits", {})
+    if not isinstance(traits, Mapping):
+        return
+    default_minimum = TRAIT_CRITERIA_CONFIG.get("minimum_score", 10.0)
+    for trait_name, payload in traits.items():
+        if not isinstance(trait_name, str) or not isinstance(payload, Mapping):
+            continue
+        metadata = trait_metadata(trait_name)
+        if metadata is None:
+            continue
+        configured_scope = payload.get("role_scope", metadata.get("role_scope"))
+        if configured_scope not in {role_scope, "all"}:
+            continue
+        if not trait_scope_matches_player(str(configured_scope), state.player.role):
+            continue
+        criteria = payload.get("criteria")
+        if not isinstance(criteria, list) or not criteria:
+            continue
+        minimum_score = payload.get("minimum_score", default_minimum)
+        try:
+            minimum_value = float(minimum_score)
+        except (TypeError, ValueError):
+            minimum_value = 10.0
+        total_score = 0.0
+        matched_rules: list[str] = []
+        for rule in criteria:
+            if not isinstance(rule, Mapping):
+                continue
+            result = trait_rule_score(state.player, rule)
+            if result is None:
+                continue
+            score, summary = result
+            total_score += score
+            matched_rules.append(summary)
+        if total_score < minimum_value:
+            continue
+        reason = payload.get("description")
+        if not isinstance(reason, str) or not reason:
+            reason = f"Configured trait criteria matched: {', '.join(matched_rules)}."
+        elif matched_rules:
+            reason = f"{reason} Matched criteria: {', '.join(matched_rules)}."
+        add_catalog_trait(suggestions, name=trait_name, score=total_score, reason=reason)
+
+
 def catalog_trait_polarity(trait_name: str) -> str:
     metadata = trait_metadata(trait_name)
     polarity = metadata.get("polarity") if metadata else None
@@ -906,272 +1078,12 @@ def hinted_catalog_traits(player: PlayerInput) -> list[TraitSuggestion]:
 
 
 def apply_hitter_metadata_traits(state: PlayerState, suggestions: dict[str, TraitSuggestion]) -> None:
-    metadata = state.player.metadata
-    add_signal_pair(
-        suggestions,
-        positive_trait="First Pitch Slayer",
-        negative_trait="First Pitch Prayer",
-        signal=metadata_number(metadata, "first_pitch_hitting", "splits.first_pitch_hitting", "trait_metrics.first_pitch_hitting"),
-        positive_reason="First-pitch hitting results are strong enough to warrant a first-pitch offensive trait.",
-        negative_reason="First-pitch hitting performance is weak enough to warrant a first-pitch negative trait.",
-    )
-    add_signal_pair(
-        suggestions,
-        positive_trait="CON vs LHP",
-        negative_trait="CON vs RHP",
-        signal=metadata_number(metadata, "splits.contact_vs_lhp_minus_rhp", "contact_vs_lhp_minus_rhp"),
-        positive_reason="Contact production improves meaningfully against left-handed pitching.",
-        negative_reason="Contact production improves much more against right-handed pitching.",
-        high_threshold=8.0,
-        low_threshold=-8.0,
-    )
-    add_signal_pair(
-        suggestions,
-        positive_trait="POW vs LHP",
-        negative_trait="POW vs RHP",
-        signal=metadata_number(metadata, "splits.power_vs_lhp_minus_rhp", "power_vs_lhp_minus_rhp"),
-        positive_reason="Power plays much better against left-handed pitching.",
-        negative_reason="Power plays much better against right-handed pitching.",
-        high_threshold=8.0,
-        low_threshold=-8.0,
-    )
-    add_signal_pair(
-        suggestions,
-        positive_trait="Dive Wizard",
-        negative_trait="Butter Fingers",
-        signal=metadata_number(metadata, "fielding.dive_recovery", "dive_recovery", "trait_metrics.dive_recovery"),
-        positive_reason="Dive and recovery performance supports a diving-defense trait.",
-        negative_reason="Poor recovery and handling on difficult plays supports a negative fielding trait.",
-    )
-    add_signal_pair(
-        suggestions,
-        positive_trait="Rally Starter",
-        negative_trait="RBI Zero",
-        signal=metadata_number(metadata, "splits.trailing_bases_empty_hitting", "trailing_bases_empty_hitting"),
-        positive_reason="Batting with empty bases while trailing is a meaningful strength.",
-        negative_reason="Run-producing situations are a meaningful offensive weakness.",
-    )
-    add_signal_pair(
-        suggestions,
-        positive_trait="RBI Hero",
-        negative_trait="RBI Zero",
-        signal=metadata_number(metadata, "splits.risp_hitting", "risp_hitting"),
-        positive_reason="Production with runners in scoring position warrants a run-production trait.",
-        negative_reason="Production with runners in scoring position is poor enough for a negative clutch-hit trait.",
-    )
-    add_signal_pair(
-        suggestions,
-        positive_trait="Fastball Hitter",
-        negative_trait="First Pitch Prayer",
-        signal=metadata_number(metadata, "pitch_type_hitting.fastball", "fastball_hitting"),
-        positive_reason="The hitter handles fastballs well enough for a pitch-type trait.",
-        negative_reason="Fastball handling is weak enough to show up as a first-pitch vulnerability.",
-    )
-    add_catalog_trait(
-        suggestions,
-        name="Off-Speed Hitter",
-        score=max((metadata_number(metadata, "pitch_type_hitting.offspeed", "offspeed_hitting") or 0) - 55, 0),
-        reason="Off-speed pitch performance warrants a pitch-type trait.",
-    )
-    for trait_name, key in (
-        ("High Pitch", "zone_hitting.high"),
-        ("Low Pitch", "zone_hitting.low"),
-        ("Inside Pitch", "zone_hitting.inside"),
-        ("Outside Pitch", "zone_hitting.outside"),
-    ):
-        zone_signal = metadata_number(metadata, key, key.replace("zone_hitting.", ""))
-        add_catalog_trait(
-            suggestions,
-            name=trait_name,
-            score=max((zone_signal or 0) - 55, 0),
-            reason=f"Zone-split hitting supports the {trait_name} trait.",
-        )
-    add_signal_pair(
-        suggestions,
-        positive_trait="Consistent",
-        negative_trait="Volatile",
-        signal=metadata_number(metadata, "performance.consistency", "consistency", "trait_metrics.consistency"),
-        positive_reason="Game-to-game performance is stable enough to support a consistency trait.",
-        negative_reason="Game-to-game volatility is strong enough to support a volatile trait.",
-    )
-    add_catalog_trait(
-        suggestions,
-        name="Ace Exterminator",
-        score=max((metadata_number(metadata, "splits.vs_ace_hitting", "vs_ace_hitting") or 0) - 55, 0),
-        reason="Performance against top pitchers is strong enough for an ace-killer trait.",
-    )
-    add_catalog_trait(
-        suggestions,
-        name="Bunter",
-        score=max((metadata_number(metadata, "bunt_value", "small_ball.bunt_value") or 0) - 55, 0),
-        reason="Bunt skill and outcomes support a bunting trait.",
-    )
-    add_catalog_trait(
-        suggestions,
-        name="Pinch Perfect",
-        score=max((metadata_number(metadata, "pinch_hitting", "splits.pinch_hitting") or 0) - 55, 0),
-        reason="Pinch-hitting production supports a bench bat trait.",
-    )
-    add_signal_pair(
-        suggestions,
-        positive_trait="Clutch",
-        negative_trait="Choker",
-        signal=metadata_number(metadata, "pressure_hitting", "splits.high_leverage_hitting", "clutch_hitting"),
-        positive_reason="High-pressure hitting results support a clutch trait.",
-        negative_reason="High-pressure hitting struggles support a choker trait.",
-    )
-    add_catalog_trait(
-        suggestions,
-        name="Distractor",
-        score=max((metadata_number(metadata, "baserunning_pressure", "distraction_value") or 0) - 55, 0),
-        reason="The player's baserunning pressure disrupts pitchers enough for a distraction trait.",
-    )
-    add_catalog_trait(
-        suggestions,
-        name="Mind Gamer",
-        score=max((metadata_number(metadata, "mind_games", "plate_presence", "trait_metrics.mind_gamer") or 0) - 55, 0),
-        reason="Pitcher-disruption signals support a mind-game batting trait.",
-    )
-    add_catalog_trait(
-        suggestions,
-        name="Sign Stealer",
-        score=max((metadata_number(metadata, "sign_stealing", "pitch_pickup", "trait_metrics.sign_stealer") or 0) - 55, 0),
-        reason="Pitch recognition and anticipation indicators support a sign-stealing trait.",
-    )
-    add_catalog_trait(
-        suggestions,
-        name="Stimulated",
-        score=max((metadata_number(metadata, "late_game_hitting", "late_game_mojo") or 0) - 55, 0),
-        reason="Late-game performance supports a stimulated/mojo trait.",
-    )
-    add_signal_pair(
-        suggestions,
-        positive_trait="Durable",
-        negative_trait="Injury Prone",
-        signal=metadata_number(metadata, "durability", "health.durability", "availability"),
-        positive_reason="Health and availability support a durable trait.",
-        negative_reason="Injury risk and missed time support an injury-prone trait.",
-    )
+    apply_configured_trait_criteria(state, suggestions, role_scope="non_pitcher")
 
 
 def apply_pitcher_metadata_traits(state: PlayerState, suggestions: dict[str, TraitSuggestion]) -> None:
-    metadata = state.player.metadata
-    add_signal_pair(
-        suggestions,
-        positive_trait="Durable",
-        negative_trait="Injury Prone",
-        signal=metadata_number(metadata, "durability", "health.durability", "availability"),
-        positive_reason="Pitcher workload durability supports a durable trait.",
-        negative_reason="Pitcher injury risk supports an injury-prone trait.",
-    )
-    add_catalog_trait(
-        suggestions,
-        name="Workhouse",
-        score=max((metadata_number(metadata, "workhorse", "stamina_workload", "innings_capacity") or 0) - 55, 0),
-        reason="Workload and stamina indicators support a workhorse trait.",
-    )
-    add_signal_pair(
-        suggestions,
-        positive_trait="Clutch",
-        negative_trait="Choker",
-        signal=metadata_number(metadata, "pressure_pitching", "splits.high_leverage_pitching", "clutch_pitching"),
-        positive_reason="Pitching under pressure is strong enough for a clutch trait.",
-        negative_reason="Pitching under pressure is weak enough for a choker trait.",
-    )
-    add_signal_pair(
-        suggestions,
-        positive_trait="Rally Stopper",
-        negative_trait="Surrounded",
-        signal=metadata_number(metadata, "splits.runners_on_pitching", "runners_on_pitching"),
-        positive_reason="Pitching with traffic on base is strong enough for a rally-stopper trait.",
-        negative_reason="Pitching with traffic on base collapses enough for a surrounded trait.",
-    )
-    add_signal_pair(
-        suggestions,
-        positive_trait="Composed",
-        negative_trait="BB Prone",
-        signal=metadata_number(metadata, "three_ball_accuracy", "splits.three_ball_accuracy"),
-        positive_reason="Three-ball command is strong enough for a composed trait.",
-        negative_reason="Three-ball command is weak enough for a walk-prone trait.",
-    )
-    add_signal_pair(
-        suggestions,
-        positive_trait="Consistent",
-        negative_trait="Volatile",
-        signal=metadata_number(metadata, "performance.consistency", "consistency", "trait_metrics.consistency"),
-        positive_reason="Pitch-to-pitch or outing-to-outing stability supports a consistent trait.",
-        negative_reason="Pitch-to-pitch or outing-to-outing volatility supports a volatile trait.",
-    )
-    add_catalog_trait(
-        suggestions,
-        name="Metal Head",
-        score=max((metadata_number(metadata, "metal_head", "comeback_recovery") or 0) - 55, 0),
-        reason="Recovery and resilience signals support a metal-head trait.",
-    )
-    pitch_quality = metadata_lookup(metadata, "pitch_quality")
-    if isinstance(pitch_quality, Mapping):
-        for pitch_code, trait_name in (("4F", "Elite 4F"), ("CB", "Elite CB"), ("CH", "Elite CH"), ("SL", "Elite SL")):
-            raw_score = pitch_quality.get(pitch_code)
-            if isinstance(raw_score, (int, float)):
-                add_catalog_trait(
-                    suggestions,
-                    name=trait_name,
-                    score=max(float(raw_score) - 55, 0),
-                    reason=f"Pitch-quality metrics support the {trait_name} trait.",
-                )
-    add_signal_pair(
-        suggestions,
-        positive_trait="Gets Ahead",
-        negative_trait="Falls Behind",
-        signal=metadata_number(metadata, "first_pitch_pitching", "splits.first_pitch_pitching"),
-        positive_reason="0-0 count command supports a gets-ahead trait.",
-        negative_reason="0-0 count command struggles support a falls-behind trait.",
-    )
-    add_signal_pair(
-        suggestions,
-        positive_trait="Pick Officer",
-        negative_trait="Easy Jumps",
-        signal=metadata_number(metadata, "steal_suppression", "running_game_control"),
-        positive_reason="The pitcher controls the running game well enough for a pickoff trait.",
-        negative_reason="The running game exploits this pitcher enough for an easy-jumps trait.",
-    )
-    add_catalog_trait(
-        suggestions,
-        name="Reverse Splits",
-        score=max((metadata_number(metadata, "splits.opposite_handed_pitching", "opposite_handed_pitching") or 0) - 55, 0),
-        reason="Opposite-handed matchup performance supports reverse splits.",
-    )
-    add_catalog_trait(
-        suggestions,
-        name="Specialist",
-        score=max((metadata_number(metadata, "splits.same_handed_pitching", "same_handed_pitching") or 0) - 55, 0),
-        reason="Same-handed matchup dominance supports a specialist trait.",
-    )
-    add_catalog_trait(
-        suggestions,
-        name="Stimulated",
-        score=max((metadata_number(metadata, "late_game_pitching", "late_game_mojo") or 0) - 55, 0),
-        reason="Late-game pitching performance supports a stimulated trait.",
-    )
-    add_catalog_trait(
-        suggestions,
-        name="Meltdown",
-        score=max((metadata_number(metadata, "meltdown_risk", "collapse_risk") or 0) - 55, 0),
-        reason="Traffic-induced collapse risk supports a meltdown trait.",
-    )
-    add_catalog_trait(
-        suggestions,
-        name="Wild Thing",
-        score=max((metadata_number(metadata, "wildness", "power_pitch_wildness") or 0) - 55, 0),
-        reason="Pitch-location variance supports a wild-thing trait.",
-    )
-    add_catalog_trait(
-        suggestions,
-        name="Crossed Up",
-        score=max((metadata_number(metadata, "crossed_up_risk", "catcher_handling_risk") or 0) - 55, 0),
-        reason="Catcher-handling or sequencing risk supports a crossed-up trait.",
-    )
-    two_way_positions = set(metadata_list(metadata, "two_way_positions", "secondary_field_positions"))
+    apply_configured_trait_criteria(state, suggestions, role_scope="pitcher")
+    two_way_positions = set(player_trait_list(state.player, "secondary_field_positions"))
     for position_group, trait_name in (("C", "Two Way (C)"), ("IF", "Two Way (IF)"), ("OF", "Two Way (OF)")):
         if position_group in two_way_positions:
             add_catalog_trait(

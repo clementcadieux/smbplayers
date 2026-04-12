@@ -4,6 +4,62 @@ import csv
 import json
 import math
 from collections import defaultdict
+HITTER_TRAIT_METRIC_COLUMNS: dict[str, tuple[tuple[str, ...], bool]] = {
+    "bb_pct": (("bb_pct", "bb_percent", "walk_pct", "walk_rate"), True),
+    "zone_contact_pct": (("z_contact_pct", "zone_contact_pct"), True),
+    "out_of_zone_contact_pct": (("o_contact_pct", "out_of_zone_contact_pct"), True),
+    "chase_pct": (("chase_pct", "o_swing_pct", "out_of_zone_swing_pct"), True),
+    "hard_hit_pct": (("hard_hit_pct", "hard_hit_rate"), True),
+    "xwoba": (("xwoba",), False),
+    "pull_pct": (("pull_pct",), True),
+    "center_pct": (("cent_pct", "center_pct"), True),
+    "oppo_pct": (("oppo_pct", "opposite_field_pct"), True),
+    "ground_ball_pct": (("gb_pct", "ground_ball_pct"), True),
+    "fly_ball_pct": (("fb_pct", "fly_ball_pct"), True),
+    "line_drive_pct": (("ld_pct", "line_drive_pct"), True),
+    "first_pitch_hitting": (("first_pitch_hitting", "first_pitch_hitting_score"), False),
+    "contact_vs_lhp_minus_rhp": (("contact_vs_lhp_minus_rhp",), False),
+    "power_vs_lhp_minus_rhp": (("power_vs_lhp_minus_rhp",), False),
+    "trailing_bases_empty_hitting": (("trailing_bases_empty_hitting",), False),
+    "risp_hitting": (("risp_hitting",), False),
+    "fastball_hitting": (("fastball_hitting",), False),
+    "offspeed_hitting": (("offspeed_hitting",), False),
+    "zone_hitting_high": (("zone_hitting_high", "high_pitch_hitting"), False),
+    "zone_hitting_low": (("zone_hitting_low", "low_pitch_hitting"), False),
+    "zone_hitting_inside": (("zone_hitting_inside", "inside_pitch_hitting"), False),
+    "zone_hitting_outside": (("zone_hitting_outside", "outside_pitch_hitting"), False),
+    "consistency": (("consistency",), False),
+    "vs_ace_hitting": (("vs_ace_hitting",), False),
+    "bunt_value": (("bunt_value",), False),
+    "pinch_hitting": (("pinch_hitting",), False),
+    "pressure_hitting": (("pressure_hitting", "high_leverage_hitting"), False),
+    "baserunning_pressure": (("baserunning_pressure", "distraction_value"), False),
+    "mind_games": (("mind_games", "plate_presence"), False),
+    "sign_stealing": (("sign_stealing", "pitch_pickup"), False),
+    "late_game_hitting": (("late_game_hitting", "late_game_mojo"), False),
+    "durability": (("durability", "availability"), False),
+}
+
+PITCHER_TRAIT_METRIC_COLUMNS: dict[str, tuple[tuple[str, ...], bool]] = {
+    "durability": (("durability", "availability"), False),
+    "workhorse": (("workhorse", "stamina_workload", "innings_capacity"), False),
+    "pressure_pitching": (("pressure_pitching", "high_leverage_pitching"), False),
+    "runners_on_pitching": (("runners_on_pitching",), False),
+    "three_ball_accuracy": (("three_ball_accuracy",), False),
+    "first_pitch_pitching": (("first_pitch_pitching",), False),
+    "steal_suppression": (("steal_suppression", "running_game_control"), False),
+    "opposite_handed_pitching": (("opposite_handed_pitching",), False),
+    "same_handed_pitching": (("same_handed_pitching",), False),
+    "late_game_pitching": (("late_game_pitching", "late_game_mojo"), False),
+    "meltdown_risk": (("meltdown_risk", "collapse_risk"), False),
+    "wildness": (("wildness", "power_pitch_wildness"), False),
+    "crossed_up_risk": (("crossed_up_risk", "catcher_handling_risk"), False),
+    "metal_head": (("metal_head", "comeback_recovery"), False),
+    "pitch_quality_4f": (("pitch_quality_4f", "pitch_quality_ff", "pitch_quality_four_seam"), False),
+    "pitch_quality_cb": (("pitch_quality_cb", "pitch_quality_curveball"), False),
+    "pitch_quality_ch": (("pitch_quality_ch", "pitch_quality_changeup"), False),
+    "pitch_quality_sl": (("pitch_quality_sl", "pitch_quality_slider"), False),
+}
 from dataclasses import dataclass, field
 from pathlib import Path
 from statistics import median
@@ -103,6 +159,12 @@ ROSTER_DAY_COLUMNS = (
     "roster_days",
 )
 
+SECONDARY_FIELD_POSITION_COLUMNS = (
+    "secondary_field_positions",
+    "secondary_positions",
+    "two_way_positions",
+)
+
 
 def load_injury_threshold_config() -> dict[str, float]:
     try:
@@ -190,6 +252,29 @@ def _pick_number(row: dict[str, str], *aliases: str, rate: bool = False) -> floa
     return _coerce_rate(value) if rate else value
 
 
+def _pick_percentage_points(row: dict[str, str], *aliases: str) -> float | None:
+    raw_value = _pick_first(row, *aliases)
+    if raw_value is None:
+        return None
+    value = _as_float(raw_value)
+    if value is None:
+        return None
+    if isinstance(raw_value, str) and "%" in raw_value:
+        return value * 100.0
+    if 0.0 <= value <= 1.0:
+        return value * 100.0
+    return value
+
+
+def _row_trait_metrics(row: dict[str, str], specs: dict[str, tuple[tuple[str, ...], bool]]) -> dict[str, float]:
+    trait_metrics: dict[str, float] = {}
+    for metric_name, (aliases, percent_like) in specs.items():
+        value = _pick_percentage_points(row, *aliases) if percent_like else _pick_number(row, *aliases)
+        if value is not None:
+            trait_metrics[metric_name] = round(float(value), 6)
+    return trait_metrics
+
+
 def _safe_divide(numerator: float | None, denominator: float | None) -> float | None:
     if numerator is None or denominator in (None, 0):
         return None
@@ -254,6 +339,30 @@ def _row_days_on_roster(row: dict[str, str]) -> float | None:
     return _pick_number(row, *ROSTER_DAY_COLUMNS)
 
 
+def _position_group_from_code(position: str | None) -> str | None:
+    if position == "C":
+        return "C"
+    if position in {"1B", "2B", "3B", "SS", "IF"}:
+        return "IF"
+    if position in {"LF", "CF", "RF", "OF"}:
+        return "OF"
+    return None
+
+
+def _row_secondary_field_positions(row: dict[str, str]) -> list[str]:
+    groups: set[str] = set()
+    raw_positions = _pick_first(row, *SECONDARY_FIELD_POSITION_COLUMNS)
+    if raw_positions:
+        for piece in raw_positions.replace("/", ",").replace(";", ",").split(","):
+            group = _position_group_from_code(_canonical_position(piece.strip()))
+            if group is not None:
+                groups.add(group)
+    secondary_position = _position_group_from_code(_canonical_position(_pick_first(row, "secondary_position", "secondary_pos")))
+    if secondary_position is not None:
+        groups.add(secondary_position)
+    return sorted(groups)
+
+
 @dataclass(slots=True)
 class SeasonInputs:
     year: int | None = None
@@ -292,6 +401,8 @@ class PlayerAccumulator:
     roles: set[str] = field(default_factory=set)
     metrics: dict[str, dict[str, float]] = field(default_factory=lambda: defaultdict(dict))
     samples: dict[str, dict[str, float]] = field(default_factory=lambda: defaultdict(dict))
+    trait_metrics: dict[str, dict[str, float]] = field(default_factory=lambda: defaultdict(dict))
+    trait_lists: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
     days_on_roster_by_season: dict[str, float] = field(default_factory=dict)
     pitch_mix_by_season: dict[str, dict[str, float]] = field(default_factory=lambda: defaultdict(dict))
     estimated_metrics: dict[str, list[str]] = field(default_factory=lambda: defaultdict(list))
@@ -310,6 +421,20 @@ class PlayerAccumulator:
         if value is None:
             return
         self.samples[sample_name][season_key] = round(float(value), 6)
+
+    def set_trait_metric(self, metric_name: str, season_key: str, value: float | None) -> None:
+        if value is None:
+            return
+        self.trait_metrics[metric_name][season_key] = round(float(value), 6)
+
+    def set_trait_metrics(self, season_key: str, values: dict[str, float]) -> None:
+        for metric_name, value in values.items():
+            self.set_trait_metric(metric_name, season_key, value)
+
+    def add_trait_list_values(self, list_name: str, values: list[str]) -> None:
+        if not values:
+            return
+        self.trait_lists[list_name].update(value for value in values if value)
 
     def note_missing_file(self, season_key: str, file_type: str) -> None:
         if file_type not in self.missing_files[season_key]:
@@ -385,6 +510,19 @@ class PlayerAccumulator:
         pitch_mix = self.aggregated_pitch_mix()
         if pitch_mix:
             player_dict["pitch_mix"] = pitch_mix
+
+        if self.trait_metrics:
+            player_dict["trait_metrics"] = {
+                name: dict(sorted(values.items()))
+                for name, values in sorted(self.trait_metrics.items())
+                if values
+            }
+        if self.trait_lists:
+            player_dict["trait_lists"] = {
+                name: sorted(values)
+                for name, values in sorted(self.trait_lists.items())
+                if values
+            }
         return player_dict
 
 
@@ -541,6 +679,7 @@ def _apply_identity(player: PlayerAccumulator, row: dict[str, str], *, default_p
     secondary_position = _canonical_position(_pick_first(row, "secondary_position", "secondary_pos"))
     if secondary_position:
         player.secondary_position = secondary_position
+    player.add_trait_list_values("secondary_field_positions", _row_secondary_field_positions(row))
     bats = _pick_first(row, "bats", "bat_side", "stand", "stands")
     if bats:
         player.bats = bats
@@ -615,6 +754,7 @@ def _apply_hitter_row(player: PlayerAccumulator, season_key: str, row: dict[str,
     player.roles.add("hitter")
     _apply_identity(player, row)
     player.set_days_on_roster(season_key, _row_days_on_roster(row))
+    player.set_trait_metrics(season_key, _row_trait_metrics(row, HITTER_TRAIT_METRIC_COLUMNS))
 
     plate_appearances = _pick_number(row, "pa", "plate_appearances")
     at_bats = _pick_number(row, "ab", "at_bats")
@@ -685,6 +825,7 @@ def _apply_pitcher_row(player: PlayerAccumulator, season_key: str, row: dict[str
     player.roles.add("pitcher")
     _apply_identity(player, row, default_position="P")
     player.set_days_on_roster(season_key, _row_days_on_roster(row))
+    player.set_trait_metrics(season_key, _row_trait_metrics(row, PITCHER_TRAIT_METRIC_COLUMNS))
 
     pitch_mix = _row_pitch_mix(row)
     tracked_pitches = _pick_number(row, "pitches", "tracked_pitches", "pitch_count", "total_pitches")
@@ -768,6 +909,7 @@ def _apply_pitcher_row(player: PlayerAccumulator, season_key: str, row: dict[str
 
 def _apply_fielding_row(player: PlayerAccumulator, season_key: str, row: dict[str, str]) -> None:
     _apply_identity(player, row)
+    player.set_trait_metrics(season_key, _row_trait_metrics(row, HITTER_TRAIT_METRIC_COLUMNS))
     innings = _pick_number(row, "defensive_innings", "innings", "inn", "fielding_innings")
     position = player.primary_position or _canonical_position(_pick_first(row, "position", "pos", "primary_position"))
     oaa = _pick_number(row, "oaa", "outs_above_average")
@@ -800,6 +942,7 @@ def _apply_fielding_row(player: PlayerAccumulator, season_key: str, row: dict[st
 
 def _apply_running_row(player: PlayerAccumulator, season_key: str, row: dict[str, str]) -> None:
     _apply_identity(player, row)
+    player.set_trait_metrics(season_key, _row_trait_metrics(row, HITTER_TRAIT_METRIC_COLUMNS))
     sprint_speed = _pick_number(row, "sprint_speed")
     baserunning_value = _pick_number(row, "baserunning_value", "bsr", "running_value", "baserunning_run_value")
     opportunities = _pick_number(row, "baserunning_opportunities", "br_opportunities")

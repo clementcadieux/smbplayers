@@ -871,5 +871,285 @@
         "description": "While pitching, opposing baserunners gain increased running speed when attempting to steal a base."
       }
     ]
+  },
+  "trait_criteria": {
+    "minimum_score": 10,
+    "traits": {
+      "First Pitch Slayer": {
+        "description": "Award when first-pitch hitting is a clear situational strength.",
+        "sources": ["baseball_savant", "baseball_reference"],
+        "criteria": [{"stat": "trait_metrics.first_pitch_hitting", "operator": ">=", "value": 65, "weight": 1.0}]
+      },
+      "First Pitch Prayer": {
+        "description": "Award when first-pitch hitting is a clear situational weakness.",
+        "sources": ["baseball_savant", "baseball_reference"],
+        "criteria": [
+          {"stat": "trait_metrics.first_pitch_hitting", "operator": "<=", "value": 35, "weight": 1.0},
+          {"stat": "trait_metrics.fastball_hitting", "operator": "<=", "value": 35, "weight": 1.0}
+        ]
+      },
+      "CON vs LHP": {
+        "description": "Award when contact production is meaningfully better versus left-handed pitching.",
+        "sources": ["baseball_savant", "baseball_reference"],
+        "criteria": [{"stat": "trait_metrics.contact_vs_lhp_minus_rhp", "operator": ">=", "value": 8, "weight": 1.0}]
+      },
+      "CON vs RHP": {
+        "description": "Award when contact production is meaningfully better versus right-handed pitching.",
+        "sources": ["baseball_savant", "baseball_reference"],
+        "criteria": [{"stat": "trait_metrics.contact_vs_lhp_minus_rhp", "operator": "<=", "value": -8, "weight": 1.0}]
+      },
+      "POW vs LHP": {
+        "description": "Award when power plays much better against left-handed pitching.",
+        "sources": ["baseball_savant", "baseball_reference"],
+        "criteria": [{"stat": "trait_metrics.power_vs_lhp_minus_rhp", "operator": ">=", "value": 8, "weight": 1.0}]
+      },
+      "POW vs RHP": {
+        "description": "Award when power plays much better against right-handed pitching.",
+        "sources": ["baseball_savant", "baseball_reference"],
+        "criteria": [{"stat": "trait_metrics.power_vs_lhp_minus_rhp", "operator": "<=", "value": -8, "weight": 1.0}]
+      },
+      "Dive Wizard": {
+        "description": "Award when dive and recovery performance is well above average.",
+        "sources": ["baseball_savant", "baseball_reference"],
+        "criteria": [{"stat": "trait_metrics.dive_recovery", "operator": ">=", "value": 65, "weight": 1.0}]
+      },
+      "Butter Fingers": {
+        "description": "Award when handling and recovery on difficult plays is clearly poor.",
+        "sources": ["baseball_savant", "baseball_reference"],
+        "criteria": [{"stat": "trait_metrics.dive_recovery", "operator": "<=", "value": 35, "weight": 1.0}]
+      },
+      "Rally Starter": {
+        "description": "Award when batting with empty bases while trailing is a meaningful strength.",
+        "sources": ["baseball_savant", "baseball_reference"],
+        "criteria": [{"stat": "trait_metrics.trailing_bases_empty_hitting", "operator": ">=", "value": 65, "weight": 1.0}]
+      },
+      "RBI Hero": {
+        "description": "Award when production with runners in scoring position is a clear strength.",
+        "sources": ["baseball_savant", "baseball_reference"],
+        "criteria": [{"stat": "trait_metrics.risp_hitting", "operator": ">=", "value": 65, "weight": 1.0}]
+      },
+      "RBI Zero": {
+        "description": "Award when run-producing situational hitting is a clear weakness.",
+        "sources": ["baseball_savant", "baseball_reference"],
+        "criteria": [
+          {"stat": "trait_metrics.trailing_bases_empty_hitting", "operator": "<=", "value": 35, "weight": 1.0},
+          {"stat": "trait_metrics.risp_hitting", "operator": "<=", "value": 35, "weight": 1.0}
+        ]
+      },
+      "Fastball Hitter": {
+        "description": "Award when the hitter handles fastballs exceptionally well.",
+        "sources": ["baseball_savant"],
+        "criteria": [{"stat": "trait_metrics.fastball_hitting", "operator": ">=", "value": 65, "weight": 1.0}]
+      },
+      "Off-Speed Hitter": {
+        "description": "Award when the hitter handles breaking and off-speed pitches exceptionally well.",
+        "sources": ["baseball_savant"],
+        "criteria": [{"stat": "trait_metrics.offspeed_hitting", "operator": ">=", "value": 65, "weight": 1.0}]
+      },
+      "High Pitch": {
+        "description": "Award when the hitter performs especially well in the upper part of the zone.",
+        "sources": ["baseball_savant"],
+        "criteria": [{"stat": "trait_metrics.zone_hitting_high", "operator": ">=", "value": 65, "weight": 1.0}]
+      },
+      "Low Pitch": {
+        "description": "Award when the hitter performs especially well in the lower part of the zone.",
+        "sources": ["baseball_savant"],
+        "criteria": [{"stat": "trait_metrics.zone_hitting_low", "operator": ">=", "value": 65, "weight": 1.0}]
+      },
+      "Inside Pitch": {
+        "description": "Award when the hitter performs especially well on inside pitches.",
+        "sources": ["baseball_savant"],
+        "criteria": [{"stat": "trait_metrics.zone_hitting_inside", "operator": ">=", "value": 65, "weight": 1.0}]
+      },
+      "Outside Pitch": {
+        "description": "Award when the hitter performs especially well on outside pitches.",
+        "sources": ["baseball_savant"],
+        "criteria": [{"stat": "trait_metrics.zone_hitting_outside", "operator": ">=", "value": 65, "weight": 1.0}]
+      },
+      "Consistent": {
+        "description": "Award when performance consistency is clearly above average.",
+        "role_scope": "all",
+        "sources": ["baseball_savant", "baseball_reference"],
+        "criteria": [{"stat": "trait_metrics.consistency", "operator": ">=", "value": 65, "weight": 1.0}]
+      },
+      "Volatile": {
+        "description": "Award when performance consistency is clearly below average.",
+        "role_scope": "all",
+        "sources": ["baseball_savant", "baseball_reference"],
+        "criteria": [{"stat": "trait_metrics.consistency", "operator": "<=", "value": 35, "weight": 1.0}]
+      },
+      "Ace Exterminator": {
+        "description": "Award when production against ace-level pitching is a real strength.",
+        "sources": ["baseball_savant", "baseball_reference"],
+        "criteria": [{"stat": "trait_metrics.vs_ace_hitting", "operator": ">=", "value": 65, "weight": 1.0}]
+      },
+      "Bunter": {
+        "description": "Award when bunting skill or value is clearly above average.",
+        "sources": ["baseball_reference"],
+        "criteria": [{"stat": "trait_metrics.bunt_value", "operator": ">=", "value": 65, "weight": 1.0}]
+      },
+      "Pinch Perfect": {
+        "description": "Award when pinch-hitting results are clearly above average.",
+        "sources": ["baseball_reference"],
+        "criteria": [{"stat": "trait_metrics.pinch_hitting", "operator": ">=", "value": 65, "weight": 1.0}]
+      },
+      "Clutch": {
+        "description": "Award when high-leverage performance is clearly above average.",
+        "role_scope": "all",
+        "sources": ["baseball_savant", "baseball_reference"],
+        "criteria": [
+          {"stat": "trait_metrics.pressure_hitting", "operator": ">=", "value": 65, "weight": 1.0},
+          {"stat": "trait_metrics.pressure_pitching", "operator": ">=", "value": 65, "weight": 1.0}
+        ]
+      },
+      "Choker": {
+        "description": "Award when high-leverage performance is clearly below average.",
+        "role_scope": "all",
+        "sources": ["baseball_savant", "baseball_reference"],
+        "criteria": [
+          {"stat": "trait_metrics.pressure_hitting", "operator": "<=", "value": 35, "weight": 1.0},
+          {"stat": "trait_metrics.pressure_pitching", "operator": "<=", "value": 35, "weight": 1.0}
+        ]
+      },
+      "Distractor": {
+        "description": "Award when baserunning pressure consistently disrupts pitchers.",
+        "sources": ["baseball_savant"],
+        "criteria": [{"stat": "trait_metrics.baserunning_pressure", "operator": ">=", "value": 65, "weight": 1.0}]
+      },
+      "Mind Gamer": {
+        "description": "Award when pitcher-disruption or plate-presence signals are clearly above average.",
+        "sources": ["baseball_savant"],
+        "criteria": [{"stat": "trait_metrics.mind_games", "operator": ">=", "value": 65, "weight": 1.0}]
+      },
+      "Sign Stealer": {
+        "description": "Award when pitch recognition and anticipation indicators are clearly above average.",
+        "sources": ["baseball_savant"],
+        "criteria": [{"stat": "trait_metrics.sign_stealing", "operator": ">=", "value": 65, "weight": 1.0}]
+      },
+      "Stimulated": {
+        "description": "Award when late-game performance trends are clearly above average.",
+        "role_scope": "all",
+        "sources": ["baseball_savant", "baseball_reference"],
+        "criteria": [
+          {"stat": "trait_metrics.late_game_hitting", "operator": ">=", "value": 65, "weight": 1.0},
+          {"stat": "trait_metrics.late_game_pitching", "operator": ">=", "value": 65, "weight": 1.0}
+        ]
+      },
+      "Durable": {
+        "description": "Award when availability or durability is clearly above average.",
+        "role_scope": "all",
+        "sources": ["baseball_savant", "baseball_reference"],
+        "criteria": [{"stat": "trait_metrics.durability", "operator": ">=", "value": 65, "weight": 1.0}]
+      },
+      "Injury Prone": {
+        "description": "Award when availability or durability is clearly below average.",
+        "role_scope": "all",
+        "sources": ["baseball_savant", "baseball_reference"],
+        "criteria": [{"stat": "trait_metrics.durability", "operator": "<=", "value": 35, "weight": 1.0}]
+      },
+      "Bad Ball Hitter": {
+        "description": "Award when out-of-zone or difficult-contact ability is a clear strength.",
+        "sources": ["baseball_savant"],
+        "criteria": [
+          {"stat": "trait_metrics.out_of_zone_contact_pct", "operator": ">=", "value": 68, "weight": 1.0},
+          {"stat": "trait_metrics.zone_contact_pct", "operator": ">=", "value": 85, "weight": 0.4}
+        ]
+      },
+      "Workhouse": {
+        "description": "Award when workload and stamina indicators are clearly above average.",
+        "sources": ["baseball_savant", "baseball_reference"],
+        "criteria": [{"stat": "trait_metrics.workhorse", "operator": ">=", "value": 65, "weight": 1.0}]
+      },
+      "Rally Stopper": {
+        "description": "Award when pitching with traffic on base is a clear strength.",
+        "sources": ["baseball_savant", "baseball_reference"],
+        "criteria": [{"stat": "trait_metrics.runners_on_pitching", "operator": ">=", "value": 65, "weight": 1.0}]
+      },
+      "Surrounded": {
+        "description": "Award when pitching with traffic on base is a clear weakness.",
+        "sources": ["baseball_savant", "baseball_reference"],
+        "criteria": [{"stat": "trait_metrics.runners_on_pitching", "operator": "<=", "value": 35, "weight": 1.0}]
+      },
+      "Composed": {
+        "description": "Award when three-ball command is clearly above average.",
+        "sources": ["baseball_savant", "baseball_reference"],
+        "criteria": [{"stat": "trait_metrics.three_ball_accuracy", "operator": ">=", "value": 65, "weight": 1.0}]
+      },
+      "BB Prone": {
+        "description": "Award when three-ball command is clearly below average.",
+        "sources": ["baseball_savant", "baseball_reference"],
+        "criteria": [{"stat": "trait_metrics.three_ball_accuracy", "operator": "<=", "value": 35, "weight": 1.0}]
+      },
+      "Metal Head": {
+        "description": "Award when recovery and resilience signals are clearly above average.",
+        "sources": ["baseball_savant"],
+        "criteria": [{"stat": "trait_metrics.metal_head", "operator": ">=", "value": 65, "weight": 1.0}]
+      },
+      "Elite 4F": {
+        "description": "Award when four-seam pitch quality is clearly above average.",
+        "sources": ["baseball_savant"],
+        "criteria": [{"stat": "trait_metrics.pitch_quality_4f", "operator": ">=", "value": 65, "weight": 1.0}]
+      },
+      "Elite CB": {
+        "description": "Award when curveball quality is clearly above average.",
+        "sources": ["baseball_savant"],
+        "criteria": [{"stat": "trait_metrics.pitch_quality_cb", "operator": ">=", "value": 65, "weight": 1.0}]
+      },
+      "Elite CH": {
+        "description": "Award when changeup quality is clearly above average.",
+        "sources": ["baseball_savant"],
+        "criteria": [{"stat": "trait_metrics.pitch_quality_ch", "operator": ">=", "value": 65, "weight": 1.0}]
+      },
+      "Elite SL": {
+        "description": "Award when slider quality is clearly above average.",
+        "sources": ["baseball_savant"],
+        "criteria": [{"stat": "trait_metrics.pitch_quality_sl", "operator": ">=", "value": 65, "weight": 1.0}]
+      },
+      "Gets Ahead": {
+        "description": "Award when 0-0 count command is clearly above average.",
+        "sources": ["baseball_savant", "baseball_reference"],
+        "criteria": [{"stat": "trait_metrics.first_pitch_pitching", "operator": ">=", "value": 65, "weight": 1.0}]
+      },
+      "Falls Behind": {
+        "description": "Award when 0-0 count command is clearly below average.",
+        "sources": ["baseball_savant", "baseball_reference"],
+        "criteria": [{"stat": "trait_metrics.first_pitch_pitching", "operator": "<=", "value": 35, "weight": 1.0}]
+      },
+      "Pick Officer": {
+        "description": "Award when the running game is controlled especially well.",
+        "sources": ["baseball_savant", "baseball_reference"],
+        "criteria": [{"stat": "trait_metrics.steal_suppression", "operator": ">=", "value": 65, "weight": 1.0}]
+      },
+      "Easy Jumps": {
+        "description": "Award when the running game exploits the pitcher consistently.",
+        "sources": ["baseball_savant", "baseball_reference"],
+        "criteria": [{"stat": "trait_metrics.steal_suppression", "operator": "<=", "value": 35, "weight": 1.0}]
+      },
+      "Reverse Splits": {
+        "description": "Award when opposite-handed matchup performance is clearly above average.",
+        "sources": ["baseball_savant", "baseball_reference"],
+        "criteria": [{"stat": "trait_metrics.opposite_handed_pitching", "operator": ">=", "value": 65, "weight": 1.0}]
+      },
+      "Specialist": {
+        "description": "Award when same-handed matchup performance is clearly above average.",
+        "sources": ["baseball_savant", "baseball_reference"],
+        "criteria": [{"stat": "trait_metrics.same_handed_pitching", "operator": ">=", "value": 65, "weight": 1.0}]
+      },
+      "Meltdown": {
+        "description": "Award when collapse-risk indicators are clearly above average.",
+        "sources": ["baseball_savant"],
+        "criteria": [{"stat": "trait_metrics.meltdown_risk", "operator": ">=", "value": 65, "weight": 1.0}]
+      },
+      "Wild Thing": {
+        "description": "Award when pitch-location volatility is clearly above average.",
+        "sources": ["baseball_savant"],
+        "criteria": [{"stat": "trait_metrics.wildness", "operator": ">=", "value": 65, "weight": 1.0}]
+      },
+      "Crossed Up": {
+        "description": "Award when catcher-handling or sequencing risk is clearly above average.",
+        "sources": ["baseball_savant"],
+        "criteria": [{"stat": "trait_metrics.crossed_up_risk", "operator": ">=", "value": 65, "weight": 1.0}]
+      }
+    }
   }
 }

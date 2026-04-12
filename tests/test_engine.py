@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
 import unittest
+from dataclasses import fields
+from pathlib import Path
 
 from smb4_mlb_ratings.engine import (
     blend_component_percentiles,
@@ -174,6 +177,94 @@ class SurfaceBlendTests(unittest.TestCase):
 
         pitch_mix_test = next(output for output in outputs if output.name == "Pitch Mix Test")
         self.assertEqual(pitch_mix_test.recommended_pitches, ["4-Seam Fastball", "Slider", "Forkball"])
+
+    def test_rate_players_allocates_configured_trait_metrics(self) -> None:
+        outputs = rate_players(
+            [
+                {
+                    "name": "Criteria Hitter",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "CF",
+                    "metrics": {
+                        "iso": 0.180,
+                        "hr_per_pa": 0.032,
+                        "barrel_rate": 0.085,
+                        "slugging": 0.450,
+                        "avg_exit_velocity": 89.0,
+                        "strikeout_rate": 0.205,
+                        "contact_rate": 0.780,
+                        "batting_average": 0.274,
+                        "adjusted_obp": 0.342,
+                        "two_strike_contact_rate": 0.640,
+                    },
+                    "samples": {"weighted_pa": 560},
+                    "trait_metrics": {
+                        "first_pitch_hitting": {"current": 82},
+                        "pressure_hitting": {"current": 79},
+                        "out_of_zone_contact_pct": {"current": 74},
+                    },
+                },
+                self._player("Peer 1", 0.500, 425, iso=0.220, hr_per_pa=0.045, barrel_rate=0.110, avg_exit_velocity=91.0),
+                self._player("Peer 2", 0.360, 425, iso=0.120, hr_per_pa=0.025, barrel_rate=0.060, avg_exit_velocity=87.5),
+            ],
+            trim_final_traits=False,
+        )
+
+        hitter = next(output for output in outputs if output.name == "Criteria Hitter")
+        trait_names = {trait.name for trait in hitter.assigned_traits}
+        self.assertIn("First Pitch Slayer", trait_names)
+        self.assertIn("Clutch", trait_names)
+        self.assertIn("Bad Ball Hitter", trait_names)
+
+    def test_missing_trait_metrics_do_not_crash_trait_evaluation(self) -> None:
+        outputs = rate_players(
+            [
+                {
+                    "name": "Sparse Pitcher",
+                    "role": "pitcher",
+                    "team": "NYM",
+                    "primary_position": "P",
+                    "metrics": {
+                        "avg_fastball_velocity": 94.2,
+                        "peak_fastball_velocity": 96.4,
+                        "fastball_usage": 0.52,
+                        "swinging_strike_rate": 0.11,
+                        "chase_rate": 0.28,
+                        "movement_quality": 22.0,
+                        "stuff_metric": 118.0,
+                        "arsenal_diversity": 0.72,
+                        "weak_contact_rate": 0.62,
+                        "walk_rate": 0.08,
+                        "strike_pct": 0.64,
+                        "zone_pct": 0.47,
+                        "first_pitch_strike_pct": 0.60,
+                        "command_error_rate": 0.36,
+                    },
+                    "samples": {"weighted_bf": 640, "tracked_pitches": 2550, "tracked_fastballs": 1326},
+                },
+                self._pitcher_peer("Pitcher Peer 1", 95.0, 0.13, 0.30, 0.075),
+                self._pitcher_peer("Pitcher Peer 2", 93.5, 0.11, 0.28, 0.085),
+            ]
+        )
+
+        pitcher = next(output for output in outputs if output.name == "Sparse Pitcher")
+        self.assertIsInstance(pitcher.assigned_traits, list)
+
+    def test_trait_criteria_reference_known_player_input_roots(self) -> None:
+        reference_path = Path(__file__).resolve().parents[1] / "smb4_player_reference.json"
+        payload = json.loads(reference_path.read_text(encoding="utf-8"))
+        criteria_payload = payload.get("trait_criteria", {})
+        traits = criteria_payload.get("traits", {}) if isinstance(criteria_payload, dict) else {}
+        player_input_fields = {item.name for item in fields(PlayerInput)} | {"metadata", "metrics", "samples"}
+
+        for trait_name, config in traits.items():
+            self.assertIsInstance(config, dict, trait_name)
+            self.assertIn("criteria", config, trait_name)
+            for rule in config.get("criteria", []):
+                self.assertIsInstance(rule, dict, trait_name)
+                root = str(rule.get("stat", "")).split(".", 1)[0]
+                self.assertIn(root, player_input_fields, f"{trait_name}: unknown stat root {root}")
 
     def _build_power_players(self, *, sample: float) -> list[dict[str, object]]:
         return [
