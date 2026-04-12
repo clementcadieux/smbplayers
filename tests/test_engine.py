@@ -854,6 +854,11 @@ class SurfaceBlendTests(unittest.TestCase):
 
         self.assertLessEqual(len(assigned_names), 2)
         self.assertLessEqual(elite_count, 1)
+        self.assertEqual(
+            elite_count,
+            1,
+            f"Expected one elite pitch trait to survive final trimming, got: {assigned_names}",
+        )
 
     def test_pop_time_boosts_catcher_arm_rating(self) -> None:
         outputs = rate_players(

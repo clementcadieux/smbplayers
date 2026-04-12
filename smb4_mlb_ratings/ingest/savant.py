@@ -72,6 +72,8 @@ from pathlib import Path
 from statistics import median
 from typing import Any
 
+from .pitch_quality import pitch_rv_per_100_score
+
 
 SEASON_KEYS = ("current", "previous", "two_years_ago")
 SUPPORTED_SOURCES = frozenset({"baseball_savant", "baseball_reference", "fangraphs", "mixed"})
@@ -207,12 +209,6 @@ PITCH_NAME_TO_CODE = {
     "SCREWBALL": "SC",
 }
 
-DEFAULT_PITCH_RV_THRESHOLDS = {
-    "elite": -2.0,
-    "exceptional": -6.0,
-}
-
-
 def load_injury_threshold_config() -> dict[str, float]:
     try:
         payload = json.loads(REFERENCE_PATH.read_text(encoding="utf-8"))
@@ -235,34 +231,6 @@ def load_injury_threshold_config() -> dict[str, float]:
 
 
 INJURY_THRESHOLD_CONFIG = load_injury_threshold_config()
-
-
-def load_pitch_rv_threshold_config() -> dict[str, float]:
-    try:
-        payload = json.loads(REFERENCE_PATH.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return dict(DEFAULT_PITCH_RV_THRESHOLDS)
-
-    elite_value = payload.get("pitch_rv_per_100_elite", DEFAULT_PITCH_RV_THRESHOLDS["elite"])
-    exceptional_value = payload.get("pitch_rv_per_100_exceptional", DEFAULT_PITCH_RV_THRESHOLDS["exceptional"])
-    try:
-        elite = float(elite_value)
-    except (TypeError, ValueError):
-        elite = DEFAULT_PITCH_RV_THRESHOLDS["elite"]
-    try:
-        exceptional = float(exceptional_value)
-    except (TypeError, ValueError):
-        exceptional = DEFAULT_PITCH_RV_THRESHOLDS["exceptional"]
-
-    if exceptional > elite:
-        elite, exceptional = exceptional, elite
-    return {
-        "elite": elite,
-        "exceptional": exceptional,
-    }
-
-
-PITCH_RV_THRESHOLDS = load_pitch_rv_threshold_config()
 
 
 def _normalized_key(value: str) -> str:
@@ -360,14 +328,6 @@ def parse_savant_pitch_run_value_csv(rows: list[dict[str, str]]) -> dict[tuple[s
     return values
 
 
-def _pitch_rv_per_100_score(run_value_per_100: float) -> float:
-    elite_rv = PITCH_RV_THRESHOLDS["elite"]
-    exceptional_rv = PITCH_RV_THRESHOLDS["exceptional"]
-    scale = max(elite_rv - exceptional_rv, 0.001)
-    normalized = _clamp((elite_rv - run_value_per_100) / scale, 0.0, 1.0)
-    return round(normalized * 99.0, 3)
-
-
 def _apply_pitch_run_values_to_trait_metrics(
     player: PlayerAccumulator,
     season_key: str,
@@ -377,7 +337,7 @@ def _apply_pitch_run_values_to_trait_metrics(
         metric_key = PITCH_RUN_VALUE_METRIC_KEYS.get(pitch_type)
         if metric_key is None:
             continue
-        rv_score = _pitch_rv_per_100_score(run_value_per_100)
+        rv_score = pitch_rv_per_100_score(run_value_per_100)
         existing = player.trait_metrics.get(metric_key, {}).get(season_key)
         if existing is None:
             merged_score = rv_score
