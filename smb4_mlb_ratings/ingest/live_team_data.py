@@ -96,6 +96,19 @@ def fetch_team_players(
         if player is not None:
             players.append(player)
 
+    _apply_savant_arm_strength(
+        players,
+        seasons=seasons,
+        ssl_context=ssl_context,
+        baseball_savant=baseball_savant,
+    )
+    _apply_savant_catcher_defense(
+        players,
+        seasons=seasons,
+        ssl_context=ssl_context,
+        baseball_savant=baseball_savant,
+    )
+
     if min_players is not None and len(players) < min_players:
         raise ValueError(f"Expected at least {min_players} live players, found {len(players)}")
     return sorted(players, key=lambda player: (str(player.get("type") or ""), str(player.get("name") or "")))
@@ -335,6 +348,78 @@ def parse_savant_oaa_csv(payload: str) -> list[dict[str, Any]]:
                 "team": team.upper() if team else None,
                 "oaa": oaa,
                 "runs_prevented": runs_prevented,
+            }
+        )
+    return parsed_rows
+
+
+def parse_savant_arm_strength_csv(payload: str) -> list[dict[str, Any]]:
+    reader = csv.DictReader(io.StringIO(payload.lstrip("\ufeff")))
+    parsed_rows: list[dict[str, Any]] = []
+    for row in reader:
+        if not isinstance(row, dict):
+            continue
+        name = _player_name_from_row(row)
+        if not name:
+            continue
+        player_id = _as_int(row.get("player_id") or row.get("id"))
+        team = _as_str(row.get("team_name") or row.get("Team") or row.get("Tm") or row.get("team"))
+        arm_strength = _as_float(
+            row.get("arm_overall")
+            or row.get("arm_strength")
+            or row.get("max_arm_strength")
+            or row.get("throw_speed")
+            or row.get("avg_throw_speed")
+        )
+        if arm_strength is None:
+            continue
+        parsed_rows.append(
+            {
+                "name": name,
+                "player_id": player_id,
+                "team": team.upper() if team else None,
+                "arm_strength": arm_strength,
+            }
+        )
+    return parsed_rows
+
+
+def parse_savant_catcher_throwing_csv(payload: str) -> list[dict[str, Any]]:
+    reader = csv.DictReader(io.StringIO(payload.lstrip("\ufeff")))
+    parsed_rows: list[dict[str, Any]] = []
+    for row in reader:
+        if not isinstance(row, dict):
+            continue
+        name = _player_name_from_row(row)
+        if not name:
+            continue
+        player_id = _as_int(row.get("player_id") or row.get("id"))
+        team = _as_str(row.get("team_name") or row.get("Team") or row.get("Tm") or row.get("team"))
+        catcher_throw_value = _as_float(
+            row.get("caught_stealing_above_average")
+            or row.get("catcher_throw_value")
+            or row.get("cs_above_average")
+        )
+        pop_time = _as_float(
+            row.get("pop_time")
+            or row.get("avg_pop_time_2b")
+            or row.get("pop_2b_sba")
+        )
+        arm_strength = _as_float(
+            row.get("arm_strength")
+            or row.get("arm_overall")
+            or row.get("throw_speed")
+        )
+        if catcher_throw_value is None and pop_time is None and arm_strength is None:
+            continue
+        parsed_rows.append(
+            {
+                "name": name,
+                "player_id": player_id,
+                "team": team.upper() if team else None,
+                "catcher_throw_value": catcher_throw_value,
+                "pop_time": pop_time,
+                "arm_strength": arm_strength,
             }
         )
     return parsed_rows
@@ -1013,6 +1098,217 @@ def _fetch_savant_oaa_csv(
     )
 
 
+def _fetch_savant_arm_strength_csv(
+    *,
+    season: int,
+    ssl_context: SSLContext | None,
+    baseball_savant: str,
+) -> str | None:
+    candidate_urls = (
+        (
+            f"{baseball_savant}/leaderboard/arm-strength"
+            f"?type=player&year={season}&minThrows=0&team=&pos=&csv=true"
+        ),
+        (
+            f"{baseball_savant}/leaderboard/arm-strength"
+            f"?year={season}&csv=true"
+        ),
+        (
+            f"{baseball_savant}/leaderboard/arm-strength"
+            f"?startYear={season}&endYear={season}&csv=true"
+        ),
+    )
+    return _fetch_first_valid_csv(
+        candidate_urls,
+        required_headers=("fielder_name", "arm_overall"),
+        ssl_context=ssl_context,
+    )
+
+
+def _fetch_savant_catcher_throwing_csv(
+    *,
+    season: int,
+    ssl_context: SSLContext | None,
+    baseball_savant: str,
+) -> str | None:
+    candidate_urls = (
+        (
+            f"{baseball_savant}/leaderboard/catcher-throwing"
+            f"?year={season}&csv=true"
+        ),
+        (
+            f"{baseball_savant}/leaderboard/catcher-throwing"
+            f"?startYear={season}&endYear={season}&csv=true"
+        ),
+    )
+    return _fetch_first_valid_csv(
+        candidate_urls,
+        required_headers=("player_id", "caught_stealing_above_average", "pop_time"),
+        ssl_context=ssl_context,
+    )
+
+
+def _apply_savant_arm_strength(
+    players: list[dict[str, Any]],
+    *,
+    seasons: tuple[int, int],
+    ssl_context: SSLContext | None,
+    baseball_savant: str,
+) -> None:
+    arm_by_id: dict[int, float] = {}
+    arm_by_name: dict[str, float] = {}
+
+    for season in seasons:
+        payload = _fetch_savant_arm_strength_csv(
+            season=season,
+            ssl_context=ssl_context,
+            baseball_savant=baseball_savant,
+        )
+        if not payload:
+            continue
+        for row in parse_savant_arm_strength_csv(payload):
+            arm_strength = _as_float(row.get("arm_strength"))
+            if arm_strength is None:
+                continue
+            player_id = _as_int(row.get("player_id"))
+            if player_id is not None and player_id not in arm_by_id:
+                arm_by_id[player_id] = arm_strength
+            row_name = _as_str(row.get("name"))
+            if row_name:
+                normalized = _normalized_name(row_name)
+                if normalized and normalized not in arm_by_name:
+                    arm_by_name[normalized] = arm_strength
+
+    if not arm_by_id and not arm_by_name:
+        return
+
+    for player in players:
+        if player.get("type") != "hitter":
+            continue
+        fielding = player.get("fielding_stats") if isinstance(player.get("fielding_stats"), dict) else {}
+        existing_arm = _as_float(fielding.get("armStrength")) or _as_float(fielding.get("averageThrowingVelocity"))
+        if existing_arm is not None:
+            continue
+        player_id = _as_int(player.get("player_id"))
+        arm_strength = arm_by_id.get(player_id) if player_id is not None else None
+        if arm_strength is None:
+            player_name = _as_str(player.get("name"))
+            if player_name:
+                arm_strength = arm_by_name.get(_normalized_name(player_name))
+        if arm_strength is None:
+            continue
+        fielding["armStrength"] = arm_strength
+        player["fielding_stats"] = fielding
+
+
+def _apply_savant_catcher_defense(
+    players: list[dict[str, Any]],
+    *,
+    seasons: tuple[int, int],
+    ssl_context: SSLContext | None,
+    baseball_savant: str,
+) -> None:
+    catcher_by_id: dict[int, dict[str, float]] = {}
+    catcher_by_name: dict[str, dict[str, float]] = {}
+    frv_by_name: dict[str, dict[str, float]] = {}
+
+    for season in seasons:
+        catcher_payload = _fetch_savant_catcher_throwing_csv(
+            season=season,
+            ssl_context=ssl_context,
+            baseball_savant=baseball_savant,
+        )
+        if catcher_payload:
+            for row in parse_savant_catcher_throwing_csv(catcher_payload):
+                player_id = _as_int(row.get("player_id"))
+                row_name = _as_str(row.get("name"))
+                metrics = {
+                    key: value
+                    for key, value in {
+                        "catcher_throw_value": _as_float(row.get("catcher_throw_value")),
+                        "pop_time": _as_float(row.get("pop_time")),
+                        "arm_strength": _as_float(row.get("arm_strength")),
+                    }.items()
+                    if value is not None
+                }
+                if not metrics:
+                    continue
+                if player_id is not None and player_id not in catcher_by_id:
+                    catcher_by_id[player_id] = metrics
+                if row_name:
+                    normalized = _normalized_name(row_name)
+                    if normalized and normalized not in catcher_by_name:
+                        catcher_by_name[normalized] = metrics
+
+        frv_payload = _fetch_savant_fielding_run_value_csv(
+            season=season,
+            ssl_context=ssl_context,
+            baseball_savant=baseball_savant,
+        )
+        if frv_payload:
+            for row in parse_savant_fielding_run_value_csv(frv_payload):
+                player_name = _as_str(row.get("name"))
+                if not player_name:
+                    continue
+                metrics = {
+                    key: value
+                    for key, value in {
+                        "framing_runs": _as_float(row.get("framing_runs")),
+                        "catcher_throw_value": _as_float(row.get("throwing_runs")),
+                    }.items()
+                    if value is not None
+                }
+                if not metrics:
+                    continue
+                # FRV does not currently expose player_id in our parsed row,
+                # so name-based matching is the primary lookup for this table.
+                normalized = _normalized_name(player_name)
+                if normalized and normalized not in frv_by_name:
+                    frv_by_name[normalized] = metrics
+
+    if not catcher_by_id and not catcher_by_name and not frv_by_name:
+        return
+
+    for player in players:
+        if player.get("type") != "hitter" or _as_str(player.get("position")) != "C":
+            continue
+        fielding = player.get("fielding_stats") if isinstance(player.get("fielding_stats"), dict) else {}
+        player_id = _as_int(player.get("player_id"))
+        player_name = _as_str(player.get("name"))
+        normalized_name = _normalized_name(player_name) if player_name else None
+
+        catcher_metrics = catcher_by_id.get(player_id) if player_id is not None else None
+        if catcher_metrics is None and normalized_name:
+            catcher_metrics = catcher_by_name.get(normalized_name)
+
+        frv_metrics = frv_by_name.get(normalized_name) if normalized_name else None
+
+        if catcher_metrics:
+            if _as_float(fielding.get("caughtStealingAboveAverage")) is None and _as_float(fielding.get("catcherThrowValue")) is None:
+                ctv = _as_float(catcher_metrics.get("catcher_throw_value"))
+                if ctv is not None:
+                    fielding["caughtStealingAboveAverage"] = ctv
+            if _as_float(fielding.get("avgPopTime2B")) is None and _as_float(fielding.get("popTime")) is None:
+                pop = _as_float(catcher_metrics.get("pop_time"))
+                if pop is not None:
+                    fielding["avgPopTime2B"] = pop
+            if _as_float(fielding.get("armStrength")) is None and _as_float(fielding.get("averageThrowingVelocity")) is None:
+                arm = _as_float(catcher_metrics.get("arm_strength"))
+                if arm is not None:
+                    fielding["armStrength"] = arm
+
+        if frv_metrics and _as_float(fielding.get("framingRuns")) is None and _as_float(fielding.get("catcherFramingRuns")) is None:
+            framing = _as_float(frv_metrics.get("framing_runs"))
+            if framing is not None:
+                fielding["framingRuns"] = framing
+        if frv_metrics and _as_float(fielding.get("caughtStealingAboveAverage")) is None and _as_float(fielding.get("catcherThrowValue")) is None:
+            ctv = _as_float(frv_metrics.get("catcher_throw_value"))
+            if ctv is not None:
+                fielding["caughtStealingAboveAverage"] = ctv
+
+        player["fielding_stats"] = fielding
+
+
 def _fetch_first_valid_csv(
     candidate_urls: tuple[str, ...],
     *,
@@ -1037,6 +1333,8 @@ def _player_name_from_row(row: Mapping[str, Any]) -> str | None:
         or row.get("Name")
         or row.get("player_name")
         or row.get("name")
+        or row.get("fielder_name")
+        or row.get("entity_name")
     )
     if preferred_name:
         return _normalize_last_first_name(preferred_name)

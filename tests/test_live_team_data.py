@@ -14,6 +14,8 @@ from smb4_mlb_ratings.ingest.live_team_data import (
     build_savant_pitcher_rows,
     parse_savant_fielding_run_value_csv,
     parse_savant_oaa_csv,
+    parse_savant_arm_strength_csv,
+    parse_savant_catcher_throwing_csv,
     parse_savant_statcast_summary,
 )
 
@@ -260,6 +262,36 @@ class LiveTeamDataTests(unittest.TestCase):
         self.assertEqual(rows[0]["name"], "Alejandro Kirk")
         self.assertEqual(rows[0]["runs_prevented"], 5.0)
         self.assertEqual(rows[0]["oaa"], 4.0)
+
+    def test_parse_savant_arm_strength_csv_handles_current_savant_schema(self) -> None:
+        payload = (
+            '"fielder_name","player_id","team_name","arm_overall","max_arm_strength"\n'
+            '"Varsho, Daulton","662139","TOR","92.1","98.2"\n'
+        )
+
+        rows = parse_savant_arm_strength_csv(payload)
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["name"], "Daulton Varsho")
+        self.assertEqual(rows[0]["player_id"], 662139)
+        self.assertEqual(rows[0]["team"], "TOR")
+        self.assertEqual(rows[0]["arm_strength"], 92.1)
+
+    def test_parse_savant_catcher_throwing_csv_handles_current_savant_schema(self) -> None:
+        payload = (
+            '"player_id","player_name","team_name","caught_stealing_above_average","pop_time","arm_strength"\n'
+            '"672386","Kirk, Alejandro","TOR","0.20","1.9676","78.96"\n'
+        )
+
+        rows = parse_savant_catcher_throwing_csv(payload)
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["name"], "Alejandro Kirk")
+        self.assertEqual(rows[0]["player_id"], 672386)
+        self.assertEqual(rows[0]["team"], "TOR")
+        self.assertEqual(rows[0]["catcher_throw_value"], 0.2)
+        self.assertEqual(rows[0]["pop_time"], 1.9676)
+        self.assertEqual(rows[0]["arm_strength"], 78.96)
 
     def test_build_fangraphs_fielding_rows_uses_savant_fallback_when_fangraphs_missing(self) -> None:
         players = [
