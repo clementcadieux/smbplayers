@@ -7,7 +7,9 @@ from pathlib import Path
 
 from smb4_mlb_ratings.engine import (
     blend_component_percentiles,
+    interpolate_rating,
     rate_players,
+    role_weighted_overall_numeric,
     resolved_projected_ip,
     resolved_projected_pa,
     surface_weight_factor,
@@ -901,6 +903,141 @@ class SurfaceBlendTests(unittest.TestCase):
                 self.assertIsInstance(rule, dict, trait_name)
                 root = str(rule.get("stat", "")).split(".", 1)[0]
                 self.assertIn(root, player_input_fields, f"{trait_name}: unknown stat root {root}")
+
+    def test_interpolate_rating_expands_elite_percentile_band(self) -> None:
+        self.assertEqual(interpolate_rating(88.0), 85)
+        self.assertEqual(interpolate_rating(93.0), 90)
+        self.assertEqual(interpolate_rating(96.0), 94)
+        self.assertEqual(interpolate_rating(99.5), 98)
+
+    def test_elite_pitcher_profile_reaches_elite_overall_rating(self) -> None:
+        peers = [
+            {
+                "name": f"Pitcher Peer {index}",
+                "role": "pitcher",
+                "team": "NYM",
+                "primary_position": "P",
+                "metrics": {
+                    "avg_fastball_velocity": 92.2 + (index * 0.04),
+                    "peak_fastball_velocity": 94.1 + (index * 0.04),
+                    "fastball_usage": 0.49,
+                    "swinging_strike_rate": 0.103 + (index * 0.001),
+                    "chase_rate": 0.269 + (index * 0.001),
+                    "movement_quality": 20.0 + (index * 0.1),
+                    "stuff_metric": 110.0 + index,
+                    "arsenal_diversity": 0.68,
+                    "weak_contact_rate": 0.58,
+                    "walk_rate": 0.088 - (index * 0.0004),
+                    "strike_pct": 0.618,
+                    "zone_pct": 0.458,
+                    "first_pitch_strike_pct": 0.578,
+                    "command_error_rate": 0.382,
+                },
+                "samples": {"weighted_bf": 760, "tracked_pitches": 2800, "tracked_fastballs": 1380},
+            }
+            for index in range(1, 26)
+        ]
+
+        elite = {
+            "name": "Elite Pitcher",
+            "role": "pitcher",
+            "team": "NYM",
+            "primary_position": "P",
+            "metrics": {
+                "avg_fastball_velocity": 97.8,
+                "peak_fastball_velocity": 99.7,
+                "fastball_usage": 0.52,
+                "swinging_strike_rate": 0.171,
+                "chase_rate": 0.354,
+                "movement_quality": 29.5,
+                "stuff_metric": 152.0,
+                "arsenal_diversity": 0.88,
+                "weak_contact_rate": 0.73,
+                "walk_rate": 0.041,
+                "strike_pct": 0.704,
+                "zone_pct": 0.542,
+                "first_pitch_strike_pct": 0.689,
+                "command_error_rate": 0.201,
+            },
+            "samples": {"weighted_bf": 860, "tracked_pitches": 3200, "tracked_fastballs": 1650},
+        }
+
+        outputs = rate_players([elite, *peers])
+        elite_output = next(output for output in outputs if output.name == "Elite Pitcher")
+        self.assertGreaterEqual(elite_output.overall_numeric or 0, 95)
+
+    def test_average_pitcher_profile_stays_in_middle_band(self) -> None:
+        peers = [
+            {
+                "name": f"Peer Band {index}",
+                "role": "pitcher",
+                "team": "NYM",
+                "primary_position": "P",
+                "metrics": {
+                    "avg_fastball_velocity": 91.8 + (index * 0.05),
+                    "peak_fastball_velocity": 93.7 + (index * 0.05),
+                    "fastball_usage": 0.50,
+                    "swinging_strike_rate": 0.100 + (index * 0.001),
+                    "chase_rate": 0.266 + (index * 0.001),
+                    "movement_quality": 19.5 + (index * 0.08),
+                    "stuff_metric": 108.0 + index,
+                    "arsenal_diversity": 0.67,
+                    "weak_contact_rate": 0.57,
+                    "walk_rate": 0.090 - (index * 0.0005),
+                    "strike_pct": 0.614,
+                    "zone_pct": 0.454,
+                    "first_pitch_strike_pct": 0.576,
+                    "command_error_rate": 0.386,
+                },
+                "samples": {"weighted_bf": 760, "tracked_pitches": 2800, "tracked_fastballs": 1380},
+            }
+            for index in range(1, 26)
+        ]
+
+        average = {
+            "name": "Average Pitcher",
+            "role": "pitcher",
+            "team": "NYM",
+            "primary_position": "P",
+            "metrics": {
+                "avg_fastball_velocity": 92.5,
+                "peak_fastball_velocity": 94.4,
+                "fastball_usage": 0.50,
+                "swinging_strike_rate": 0.109,
+                "chase_rate": 0.274,
+                "movement_quality": 21.1,
+                "stuff_metric": 116.0,
+                "arsenal_diversity": 0.70,
+                "weak_contact_rate": 0.60,
+                "walk_rate": 0.081,
+                "strike_pct": 0.628,
+                "zone_pct": 0.468,
+                "first_pitch_strike_pct": 0.591,
+                "command_error_rate": 0.366,
+            },
+            "samples": {"weighted_bf": 790, "tracked_pitches": 2900, "tracked_fastballs": 1450},
+        }
+
+        outputs = rate_players([average, *peers])
+        average_output = next(output for output in outputs if output.name == "Average Pitcher")
+        self.assertGreaterEqual(average_output.overall_numeric or 0, 70)
+        self.assertLessEqual(average_output.overall_numeric or 0, 84)
+
+    def test_two_way_role_weighting_prioritizes_pitching_components(self) -> None:
+        ratings = {
+            "power": 58,
+            "contact": 60,
+            "speed": 56,
+            "fielding": 55,
+            "arm": 52,
+            "velocity": 96,
+            "junk": 95,
+            "accuracy": 92,
+        }
+        weighted = role_weighted_overall_numeric("two_way", ratings)
+        equal_weighted = int(round(sum(ratings.values()) / len(ratings)))
+        self.assertIsNotNone(weighted)
+        self.assertGreater(weighted or 0, equal_weighted)
 
     def _build_power_players(self, *, sample: float) -> list[dict[str, object]]:
         return [
