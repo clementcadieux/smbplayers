@@ -5,20 +5,19 @@ import json
 import ssl
 import tempfile
 import unittest
-from collections import defaultdict
-from datetime import date
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
 
 from smb4_mlb_ratings.cli import main
-from smb4_mlb_ratings.ingest.pitch_quality import (
-    arsenal_percentage as resolve_arsenal_percentage,
-    derive_pitch_quality_metrics,
-    fastball_velocity as resolve_fastball_velocity,
-    parse_savant_pitch_details,
-    pitch_quality_columns,
+from smb4_mlb_ratings.ingest.live_team_data import (
+    build_baseball_reference_hitter_rows,
+    build_baseball_reference_pitcher_rows,
+    build_mixed_source_manifest,
+    build_roster_rows,
+    build_savant_hitter_rows,
+    build_savant_pitcher_rows,
+    fetch_team_players,
 )
 
 try:
@@ -35,8 +34,6 @@ TEAM_ABBREVIATION = "TOR"
 ROSTER_SEASON = 2026
 PRIMARY_STAT_SEASON = 2025
 FALLBACK_STAT_SEASON = 2026
-MLB_STATS_API = "https://statsapi.mlb.com/api/v1"
-BASEBALL_SAVANT = "https://baseballsavant.mlb.com"
 INFIELD_POSITIONS = {"1B", "2B", "3B", "SS", "IF"}
 OUTFIELD_POSITIONS = {"LF", "CF", "RF", "OF"}
 
@@ -58,7 +55,15 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
 
     def test_blue_jays_full_pipeline(self) -> None:
         try:
-            self.players = self._fetch_blue_jays_players()
+            self.players = fetch_team_players(
+                TEAM_ID,
+                team_abbreviation=TEAM_ABBREVIATION,
+                roster_season=ROSTER_SEASON,
+                primary_stat_season=PRIMARY_STAT_SEASON,
+                fallback_stat_season=FALLBACK_STAT_SEASON,
+                ssl_context=self.ssl_context,
+                min_players=22,
+            )
         except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError) as error:
             self.skipTest(f"Live MLB Stats API unavailable: {error}")
 
@@ -181,125 +186,37 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
                 writer.writerow(row)
 
     def _write_fixture_files(self) -> None:
-        self._write_csv(self.exports / "bluejays_roster_2026.csv", self._roster_rows())
-        self._write_csv(self.exports / "bluejays_savant_hitters_2025.csv", self._savant_hitter_rows())
-        self._write_csv(self.exports / "bluejays_savant_pitchers_2025.csv", self._savant_pitcher_rows())
-        self._write_csv(self.exports / "bluejays_bref_hitters_2025.csv", self._bref_hitter_rows())
-        self._write_csv(self.exports / "bluejays_bref_pitchers_2025.csv", self._bref_pitcher_rows())
-        manifest = {
-            "source": "mixed",
-            "roster_filter": {"team": TEAM_ABBREVIATION, "year": ROSTER_SEASON},
-            "seasons": {
-                "current": {
-                    "year": ROSTER_SEASON,
-                    "sources": {
-                        "baseball_reference": {
-                            "files": {
-                                "hitters": "bluejays_bref_hitters_2025.csv",
-                                "pitchers": "bluejays_bref_pitchers_2025.csv",
-                            }
-                        },
-                        "baseball_savant": {
-                            "files": {
-                                "roster": "bluejays_roster_2026.csv",
-                                "hitters": "bluejays_savant_hitters_2025.csv",
-                                "pitchers": "bluejays_savant_pitchers_2025.csv",
-                            }
-                        },
-                    },
-                }
-            },
-        }
+        inactive_players = [self._inactive_player()]
+        self._write_csv(
+            self.exports / "bluejays_roster_2026.csv",
+            build_roster_rows(self.players, team_abbreviation=TEAM_ABBREVIATION),
+        )
+        self._write_csv(
+            self.exports / "bluejays_savant_hitters_2025.csv",
+            build_savant_hitter_rows(self.players, team_abbreviation=TEAM_ABBREVIATION, extra_players=inactive_players),
+        )
+        self._write_csv(
+            self.exports / "bluejays_savant_pitchers_2025.csv",
+            build_savant_pitcher_rows(self.players, team_abbreviation=TEAM_ABBREVIATION),
+        )
+        self._write_csv(
+            self.exports / "bluejays_bref_hitters_2025.csv",
+            build_baseball_reference_hitter_rows(self.players, team_abbreviation=TEAM_ABBREVIATION, extra_players=inactive_players),
+        )
+        self._write_csv(
+            self.exports / "bluejays_bref_pitchers_2025.csv",
+            build_baseball_reference_pitcher_rows(self.players, team_abbreviation=TEAM_ABBREVIATION),
+        )
+        manifest = build_mixed_source_manifest(
+            team_abbreviation=TEAM_ABBREVIATION,
+            roster_season=ROSTER_SEASON,
+            roster_file="bluejays_roster_2026.csv",
+            savant_hitters_file="bluejays_savant_hitters_2025.csv",
+            savant_pitchers_file="bluejays_savant_pitchers_2025.csv",
+            baseball_reference_hitters_file="bluejays_bref_hitters_2025.csv",
+            baseball_reference_pitchers_file="bluejays_bref_pitchers_2025.csv",
+        )
         (self.exports / "bluejays_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-
-    def _roster_rows(self) -> list[dict[str, object]]:
-        return [
-            {
-                "player_id": player["player_id"],
-                "player_name": player["name"],
-                "team": TEAM_ABBREVIATION,
-                "status": player["status"],
-                "status_code": player["status_code"],
-                "age": player["age"],
-                "position": player["position"],
-                "bats": player["bats"],
-                "throws": player["throws"],
-            }
-            for player in self.players
-        ]
-
-    def _bref_hitter_rows(self) -> list[dict[str, object]]:
-        rows: list[dict[str, object]] = []
-        for player in self.players + [self._inactive_player()]:
-            if player["type"] != "hitter":
-                continue
-            hitting_splits = player.get("hitting_handedness_splits") if isinstance(player.get("hitting_handedness_splits"), dict) else {}
-            rows.append(
-                {
-                    "player_id": player["player_id"],
-                    "player_name": player["name"],
-                    "team": player.get("team", TEAM_ABBREVIATION),
-                    "position": player["position"],
-                    "Days On Roster": player.get("days_on_roster"),
-                    "PA": player["plate_appearances"],
-                    "AB": player["at_bats"],
-                    "H": player["hits"],
-                    "2B": player["doubles"],
-                    "3B": player["triples"],
-                    "HR": player["home_runs"],
-                    "BB": player["walks"],
-                    "SO": player["strikeouts"],
-                    "HBP": player["hit_by_pitch"],
-                    "SB": player["stolen_bases"],
-                    "CS": player["caught_stealing"],
-                    "BA": player["avg"],
-                    "OBP": player["obp"],
-                    "SLG": player["slg"],
-                    "Contact vs LHP Minus RHP": self._hitter_contact_platoon_delta(hitting_splits),
-                    "Power vs LHP Minus RHP": self._hitter_power_platoon_delta(hitting_splits),
-                }
-            )
-        return rows
-
-    def _savant_hitter_rows(self) -> list[dict[str, object]]:
-        rows: list[dict[str, object]] = []
-        for player in self.players + [self._inactive_player()]:
-            if player["type"] != "hitter":
-                continue
-            advanced = player.get("advanced_hitting") if isinstance(player.get("advanced_hitting"), dict) else {}
-            hitting_splits = player.get("hitting_handedness_splits") if isinstance(player.get("hitting_handedness_splits"), dict) else {}
-            total_swings = self._as_int(advanced.get("totalSwings"))
-            swing_and_misses = self._as_int(advanced.get("swingAndMisses"))
-            contact_pct = None
-            if total_swings not in (None, 0) and swing_and_misses is not None:
-                contact_pct = round((1.0 - (swing_and_misses / total_swings)) * 100.0, 3)
-            rows.append(
-                {
-                    "player_id": player["player_id"],
-                    "player_name": player["name"],
-                    "team": player.get("team", TEAM_ABBREVIATION),
-                    "position": player["position"],
-                    "Days On Roster": player.get("days_on_roster"),
-                    "PA": player["plate_appearances"],
-                    "ISO": self._as_str(advanced.get("iso")) or self._format_decimal(float(player["slg"]) - float(player["avg"])),
-                    "HR": player["home_runs"],
-                    "SLG": player["slg"],
-                    "AVG": player["avg"],
-                    "OBP": player["obp"],
-                    "K %": self._percentage(player["strikeouts"], player["plate_appearances"]),
-                    "Contact %": contact_pct,
-                    "2B": player["doubles"],
-                    "3B": player["triples"],
-                    "SB": player["stolen_bases"],
-                    "CS": player["caught_stealing"],
-                    "BB": player["walks"],
-                    "HBP": player["hit_by_pitch"],
-                    "H": player["hits"],
-                    "Contact vs LHP Minus RHP": self._hitter_contact_platoon_delta(hitting_splits),
-                    "Power vs LHP Minus RHP": self._hitter_power_platoon_delta(hitting_splits),
-                }
-            )
-        return rows
 
     def _inactive_player(self) -> dict[str, object]:
         return {
@@ -326,454 +243,6 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
             "obp": "0.327",
             "slg": "0.438",
         }
-
-    def _bref_pitcher_rows(self) -> list[dict[str, object]]:
-        rows: list[dict[str, object]] = []
-        for player in self.players:
-            if player["type"] != "pitcher":
-                continue
-            pitching_splits = player.get("pitching_handedness_splits") if isinstance(player.get("pitching_handedness_splits"), dict) else {}
-            rows.append(
-                {
-                    "player_id": player["player_id"],
-                    "player_name": player["name"],
-                    "team": TEAM_ABBREVIATION,
-                    "position": "P",
-                    "Days On Roster": player.get("days_on_roster"),
-                    "BF": player["batters_faced"],
-                    "BB": player["walks"],
-                    "SO": player["strikeouts"],
-                    "HR": player["home_runs"],
-                    "H": player["hits"],
-                    "IP": player["innings_pitched"],
-                    "Pitches": player["number_of_pitches"],
-                    "Strikes": player["strikes"],
-                    "Same Handed Pitching": self._pitcher_handedness_score(player, pitching_splits, split_type="same"),
-                    "Same Handed Pitching Gap": self._pitcher_handedness_gap(player, pitching_splits, split_type="same"),
-                    "Opposite Handed Pitching": self._pitcher_handedness_score(player, pitching_splits, split_type="opposite"),
-                    "Opposite Handed Pitching Gap": self._pitcher_handedness_gap(player, pitching_splits, split_type="opposite"),
-                }
-            )
-        return rows
-
-    def _savant_pitcher_rows(self) -> list[dict[str, object]]:
-        rows: list[dict[str, object]] = []
-        for player in self.players:
-            if player["type"] != "pitcher":
-                continue
-            advanced = player.get("advanced_pitching") if isinstance(player.get("advanced_pitching"), dict) else {}
-            arsenal = player.get("pitch_arsenal") if isinstance(player.get("pitch_arsenal"), dict) else {}
-            pitching_splits = player.get("pitching_handedness_splits") if isinstance(player.get("pitching_handedness_splits"), dict) else {}
-            savant_pitch_details = player.get("savant_pitch_details") if isinstance(player.get("savant_pitch_details"), dict) else {}
-            pitch_quality = self._derived_pitch_quality_metrics(arsenal, savant_pitch_details)
-            rows.append(
-                {
-                    "player_id": player["player_id"],
-                    "player_name": player["name"],
-                    "team": TEAM_ABBREVIATION,
-                    "position": "P",
-                    "Days On Roster": player.get("days_on_roster"),
-                    "BF": player["batters_faced"],
-                    "Pitches": player["number_of_pitches"],
-                    "Avg Fastball Velocity": self._fastball_velocity(arsenal, mode="average"),
-                    "Peak Fastball Velocity": self._fastball_velocity(arsenal, mode="peak"),
-                    "FF %": self._arsenal_percentage(arsenal, "FF"),
-                    "FT %": self._arsenal_percentage(arsenal, "FT"),
-                    "SI %": self._arsenal_percentage(arsenal, "SI"),
-                    "FC %": self._arsenal_percentage(arsenal, "FC"),
-                    "SL %": self._arsenal_percentage(arsenal, "SL"),
-                    "CU %": self._arsenal_percentage(arsenal, "CU"),
-                    "CH %": self._arsenal_percentage(arsenal, "CH"),
-                    "FS %": self._arsenal_percentage(arsenal, "FS"),
-                    "FO %": self._arsenal_percentage(arsenal, "FO"),
-                    "SC %": self._arsenal_percentage(arsenal, "SC"),
-                    "SV %": self._arsenal_percentage(arsenal, "SV"),
-                    "SwStr %": self._as_percentage_string(advanced.get("whiffPercentage")),
-                    "BB %": self._percentage(player["walks"], player["batters_faced"]),
-                    "Strike %": self._as_percentage_string(player.get("strike_percentage")),
-                    **pitch_quality_columns(pitch_quality),
-                    "Same Handed Pitching": self._pitcher_handedness_score(player, pitching_splits, split_type="same"),
-                    "Same Handed Pitching Gap": self._pitcher_handedness_gap(player, pitching_splits, split_type="same"),
-                    "Opposite Handed Pitching": self._pitcher_handedness_score(player, pitching_splits, split_type="opposite"),
-                    "Opposite Handed Pitching Gap": self._pitcher_handedness_gap(player, pitching_splits, split_type="opposite"),
-                }
-            )
-        return rows
-
-    def _fetch_blue_jays_players(self) -> list[dict[str, Any]]:
-        roster_payload = self._fetch_json(f"{MLB_STATS_API}/teams/{TEAM_ID}/roster?rosterType=40Man&season={ROSTER_SEASON}")
-        roster_entries = roster_payload.get("roster", [])
-        if not isinstance(roster_entries, list):
-            return []
-
-        players: list[dict[str, Any]] = []
-
-        for roster_entry in roster_entries:
-            if not isinstance(roster_entry, dict):
-                continue
-            person_summary = roster_entry.get("person", {})
-            if not isinstance(person_summary, dict):
-                continue
-            player_id = self._as_int(person_summary.get("id"))
-            if player_id is None:
-                continue
-
-            person_payload = self._fetch_json(f"{MLB_STATS_API}/people/{player_id}")
-            people = person_payload.get("people", [])
-            if not isinstance(people, list) or not people:
-                continue
-            person = people[0]
-            if not isinstance(person, dict):
-                continue
-
-            roster_position = roster_entry.get("position", {})
-            if not isinstance(roster_position, dict):
-                roster_position = {}
-            primary_position = person.get("primaryPosition", {})
-            if not isinstance(primary_position, dict):
-                primary_position = {}
-            status_payload = roster_entry.get("status", {})
-            if not isinstance(status_payload, dict):
-                status_payload = {}
-            status = self._as_str(status_payload.get("description")) or "Active"
-            if status != "Active" and "injured" not in status.lower():
-                continue
-
-            position = self._as_str(roster_position.get("abbreviation")) or self._as_str(primary_position.get("abbreviation"))
-            position_type = self._as_str(roster_position.get("type"))
-            if position_type == "Pitcher" or position == "P":
-                stat_group = "pitching"
-                player_type = "pitcher"
-            else:
-                stat_group = "hitting"
-                player_type = "hitter"
-
-            stats = self._fetch_stats(player_id, stat_group)
-            if stats is None:
-                continue
-            advanced_stats = self._fetch_stats(player_id, stat_group, stats_type="seasonAdvanced") or {}
-            handedness_splits = self._fetch_handedness_splits(player_id, stat_group)
-
-            base_player = {
-                "player_id": player_id,
-                "name": self._as_str(person.get("fullName")) or self._as_str(person_summary.get("fullName")),
-                "type": player_type,
-                "position": position,
-                "status": status,
-                "status_code": self._as_str(status_payload.get("code")) or "A",
-                "age": self._as_int(person.get("currentAge")),
-                "bats": self._nested_str(person, "batSide", "code"),
-                "throws": self._nested_str(person, "pitchHand", "code"),
-                "days_on_roster": self._fetch_days_on_roster(player_id, stat_group),
-            }
-            if player_type == "hitter":
-                plate_appearances = self._as_int(stats.get("plateAppearances")) or 0
-                if plate_appearances == 0:
-                    continue
-                base_player.update(
-                    {
-                        "plate_appearances": plate_appearances,
-                        "at_bats": self._as_int(stats.get("atBats")) or 0,
-                        "hits": self._as_int(stats.get("hits")) or 0,
-                        "doubles": self._as_int(stats.get("doubles")) or 0,
-                        "triples": self._as_int(stats.get("triples")) or 0,
-                        "home_runs": self._as_int(stats.get("homeRuns")) or 0,
-                        "walks": self._as_int(stats.get("baseOnBalls")) or 0,
-                        "strikeouts": self._as_int(stats.get("strikeOuts")) or 0,
-                        "hit_by_pitch": self._as_int(stats.get("hitByPitch")) or 0,
-                        "stolen_bases": self._as_int(stats.get("stolenBases")) or 0,
-                        "caught_stealing": self._as_int(stats.get("caughtStealing")) or 0,
-                        "avg": self._as_str(stats.get("avg")) or "0.000",
-                        "obp": self._as_str(stats.get("obp")) or "0.000",
-                        "slg": self._as_str(stats.get("slg")) or "0.000",
-                        "advanced_hitting": advanced_stats,
-                        "hitting_handedness_splits": handedness_splits,
-                    }
-                )
-            else:
-                pitch_arsenal = self._fetch_pitch_arsenal(player_id)
-                batters_faced = self._as_int(stats.get("battersFaced")) or 0
-                if batters_faced == 0:
-                    continue
-                base_player.update(
-                    {
-                        "batters_faced": batters_faced,
-                        "walks": self._as_int(stats.get("baseOnBalls")) or 0,
-                        "strikeouts": self._as_int(stats.get("strikeOuts")) or 0,
-                        "home_runs": self._as_int(stats.get("homeRuns")) or 0,
-                        "hits": self._as_int(stats.get("hits")) or 0,
-                        "innings_pitched": self._as_str(stats.get("inningsPitched")) or "0.0",
-                        "number_of_pitches": self._as_int(stats.get("numberOfPitches")) or 0,
-                        "strikes": self._as_int(stats.get("strikes")) or 0,
-                        "strike_percentage": self._as_str(stats.get("strikePercentage")) or self._as_str(advanced_stats.get("strikePercentage")),
-                        "advanced_pitching": advanced_stats,
-                        "pitching_handedness_splits": handedness_splits,
-                        "savant_pitch_details": self._fetch_savant_pitch_details(player_id),
-                        "pitch_arsenal": pitch_arsenal,
-                    }
-                )
-            players.append(base_player)
-
-        if len(players) < 22:
-            self.fail(f"Expected enough real Blue Jays players for a full roster, found {len(players)}")
-        return sorted(players, key=lambda player: (player["type"], player["name"]))
-
-    def _fetch_json(self, url: str) -> dict[str, Any]:
-        with urlopen(url, timeout=30, context=self.ssl_context) as response:
-            return json.load(response)
-
-    def _fetch_text(self, url: str, *, headers: dict[str, str] | None = None) -> str:
-        request = Request(url, headers=headers or {})
-        with urlopen(request, timeout=30, context=self.ssl_context) as response:
-            return response.read().decode("utf-8", errors="replace")
-
-    def _fetch_stats(self, player_id: int, group: str, *, stats_type: str = "season") -> dict[str, Any] | None:
-        for season in (PRIMARY_STAT_SEASON, FALLBACK_STAT_SEASON):
-            payload = self._fetch_json(f"{MLB_STATS_API}/people/{player_id}/stats?stats={stats_type}&group={group}&season={season}")
-            stats = payload.get("stats", [])
-            if not isinstance(stats, list) or not stats:
-                continue
-            first_stats = stats[0]
-            if not isinstance(first_stats, dict):
-                continue
-            splits = first_stats.get("splits", [])
-            if not isinstance(splits, list) or not splits:
-                continue
-            first_split = splits[0]
-            if not isinstance(first_split, dict):
-                continue
-            stat_line = first_split.get("stat", {})
-            if isinstance(stat_line, dict):
-                return stat_line
-        return None
-
-    def _fetch_pitch_arsenal(self, player_id: int) -> dict[str, dict[str, Any]]:
-        for season in (PRIMARY_STAT_SEASON, FALLBACK_STAT_SEASON):
-            payload = self._fetch_json(f"{MLB_STATS_API}/people/{player_id}/stats?stats=pitchArsenal&group=pitching&season={season}")
-            stats = payload.get("stats", [])
-            if not isinstance(stats, list) or not stats:
-                continue
-            first_stats = stats[0]
-            if not isinstance(first_stats, dict):
-                continue
-            splits = first_stats.get("splits", [])
-            if not isinstance(splits, list) or not splits:
-                continue
-            arsenal: dict[str, dict[str, Any]] = {}
-            for split in splits:
-                if not isinstance(split, dict):
-                    continue
-                stat_line = split.get("stat", {})
-                if not isinstance(stat_line, dict):
-                    continue
-                pitch_type = stat_line.get("type", {})
-                if not isinstance(pitch_type, dict):
-                    continue
-                pitch_code = self._as_str(pitch_type.get("code"))
-                if not pitch_code:
-                    continue
-                arsenal[pitch_code.upper()] = stat_line
-            if arsenal:
-                return arsenal
-        return {}
-
-    def _fetch_savant_pitch_details(self, player_id: int) -> dict[str, dict[str, float]]:
-        try:
-            payload = self._fetch_text(
-                f"{BASEBALL_SAVANT}/player-services/statcast-pitches-breakdown?playerId={player_id}&position=1&pitchBreakdown=pitches",
-                headers={
-                    "User-Agent": "Mozilla/5.0",
-                    "Referer": f"{BASEBALL_SAVANT}/",
-                    "Accept": "application/json,text/plain,*/*",
-                    "X-Requested-With": "XMLHttpRequest",
-                },
-            )
-        except (HTTPError, URLError, TimeoutError, OSError):
-            return {}
-        return parse_savant_pitch_details(payload)
-
-    def _fetch_handedness_splits(self, player_id: int, group: str) -> dict[str, dict[str, float]]:
-        for season in (PRIMARY_STAT_SEASON, FALLBACK_STAT_SEASON):
-            splits_by_code: dict[str, dict[str, float]] = {}
-            for split_code in ("vl", "vr"):
-                payload = self._fetch_json(
-                    f"{MLB_STATS_API}/people/{player_id}/stats?stats=statSplits&group={group}&season={season}&sitCodes={split_code}"
-                )
-                stats = payload.get("stats", [])
-                if not isinstance(stats, list) or not stats:
-                    continue
-                first_stats = stats[0]
-                if not isinstance(first_stats, dict):
-                    continue
-                splits = first_stats.get("splits", [])
-                if not isinstance(splits, list) or not splits:
-                    continue
-                aggregated = self._aggregate_split_stats(group, splits)
-                if aggregated:
-                    splits_by_code[split_code] = aggregated
-            if splits_by_code:
-                return splits_by_code
-        return {}
-
-    def _aggregate_split_stats(self, group: str, splits: list[dict[str, Any]]) -> dict[str, float]:
-        totals: dict[str, float] = defaultdict(float)
-        for split in splits:
-            if not isinstance(split, dict):
-                continue
-            stat_line = split.get("stat", {})
-            if not isinstance(stat_line, dict):
-                continue
-            for key in (
-                "hits",
-                "atBats",
-                "baseOnBalls",
-                "hitByPitch",
-                "sacFlies",
-                "totalBases",
-                "strikeOuts",
-                "plateAppearances",
-                "battersFaced",
-            ):
-                value = self._as_float(stat_line.get(key))
-                if value is not None:
-                    totals[key] += value
-
-        if group == "hitting":
-            at_bats = totals.get("atBats", 0.0)
-            plate_appearances = totals.get("plateAppearances", 0.0)
-            hits = totals.get("hits", 0.0)
-            total_bases = totals.get("totalBases", 0.0)
-            walks = totals.get("baseOnBalls", 0.0)
-            hit_by_pitch = totals.get("hitByPitch", 0.0)
-            sac_flies = totals.get("sacFlies", 0.0)
-            strikeouts = totals.get("strikeOuts", 0.0)
-            avg = self._ratio(hits, at_bats)
-            obp = self._ratio(hits + walks + hit_by_pitch, at_bats + walks + hit_by_pitch + sac_flies)
-            slg = self._ratio(total_bases, at_bats)
-            iso = None if avg is None or slg is None else max(slg - avg, 0.0)
-            strikeout_rate = self._ratio(strikeouts, plate_appearances)
-            return {
-                "avg": avg or 0.0,
-                "obp": obp or 0.0,
-                "slg": slg or 0.0,
-                "iso": iso or 0.0,
-                "strikeout_rate": strikeout_rate or 0.0,
-            }
-
-        if group == "pitching":
-            at_bats = totals.get("atBats", 0.0)
-            batters_faced = totals.get("battersFaced", 0.0)
-            hits = totals.get("hits", 0.0)
-            total_bases = totals.get("totalBases", 0.0)
-            walks = totals.get("baseOnBalls", 0.0)
-            hit_by_pitch = totals.get("hitByPitch", 0.0)
-            sac_flies = totals.get("sacFlies", 0.0)
-            strikeouts = totals.get("strikeOuts", 0.0)
-            avg = self._ratio(hits, at_bats)
-            obp = self._ratio(hits + walks + hit_by_pitch, at_bats + walks + hit_by_pitch + sac_flies)
-            slg = self._ratio(total_bases, at_bats)
-            ops = None if obp is None or slg is None else obp + slg
-            strikeout_rate = self._ratio(strikeouts, batters_faced)
-            return {
-                "avg": avg or 0.0,
-                "obp": obp or 0.0,
-                "slg": slg or 0.0,
-                "ops": ops or 0.0,
-                "strikeout_rate": strikeout_rate or 0.0,
-            }
-        return {}
-
-    def _hitter_contact_platoon_delta(self, splits: dict[str, dict[str, float]]) -> float | None:
-        vs_left = splits.get("vl") if isinstance(splits.get("vl"), dict) else None
-        vs_right = splits.get("vr") if isinstance(splits.get("vr"), dict) else None
-        if not isinstance(vs_left, dict) or not isinstance(vs_right, dict):
-            return None
-        avg_delta = (vs_left.get("avg", 0.0) - vs_right.get("avg", 0.0)) * 1000.0
-        strikeout_delta = (vs_right.get("strikeout_rate", 0.0) - vs_left.get("strikeout_rate", 0.0)) * 100.0
-        return round(avg_delta + strikeout_delta, 3)
-
-    def _hitter_power_platoon_delta(self, splits: dict[str, dict[str, float]]) -> float | None:
-        vs_left = splits.get("vl") if isinstance(splits.get("vl"), dict) else None
-        vs_right = splits.get("vr") if isinstance(splits.get("vr"), dict) else None
-        if not isinstance(vs_left, dict) or not isinstance(vs_right, dict):
-            return None
-        return round((vs_left.get("iso", 0.0) - vs_right.get("iso", 0.0)) * 1000.0, 3)
-
-    def _pitcher_handedness_score(
-        self,
-        player: dict[str, Any],
-        splits: dict[str, dict[str, float]],
-        *,
-        split_type: str,
-    ) -> float | None:
-        throws = self._as_str(player.get("throws"))
-        if throws == "L":
-            key = "vl" if split_type == "same" else "vr"
-        elif throws == "R":
-            key = "vr" if split_type == "same" else "vl"
-        else:
-            return None
-        split = splits.get(key) if isinstance(splits.get(key), dict) else None
-        if not isinstance(split, dict):
-            return None
-        ops = split.get("ops", 0.0)
-        strikeout_rate = split.get("strikeout_rate", 0.0)
-        score = 100.0 - max((ops - 0.5) * 200.0, 0.0) + (strikeout_rate * 100.0 * 0.25)
-        return round(max(0.0, min(99.0, score)), 3)
-
-    def _pitcher_handedness_gap(
-        self,
-        player: dict[str, Any],
-        splits: dict[str, dict[str, float]],
-        *,
-        split_type: str,
-    ) -> float | None:
-        same_score = self._pitcher_handedness_score(player, splits, split_type="same")
-        opposite_score = self._pitcher_handedness_score(player, splits, split_type="opposite")
-        if same_score is None or opposite_score is None:
-            return None
-        if split_type == "same":
-            return round(same_score - opposite_score, 3)
-        if split_type == "opposite":
-            return round(opposite_score - same_score, 3)
-        return None
-
-    def _derived_pitch_quality_metrics(
-        self,
-        arsenal: dict[str, dict[str, Any]],
-        savant_pitch_details: dict[str, dict[str, float]] | None = None,
-    ) -> dict[str, float | None]:
-        return derive_pitch_quality_metrics(arsenal, savant_pitch_details)
-
-    def _ratio(self, numerator: float, denominator: float) -> float | None:
-        if denominator == 0:
-            return None
-        return numerator / denominator
-
-    def _fetch_days_on_roster(self, player_id: int, group: str) -> int | None:
-        for season in (PRIMARY_STAT_SEASON, FALLBACK_STAT_SEASON):
-            payload = self._fetch_json(f"{MLB_STATS_API}/people/{player_id}/stats?stats=gameLog&group={group}&season={season}")
-            stats = payload.get("stats", [])
-            if not isinstance(stats, list) or not stats:
-                continue
-            first_stats = stats[0]
-            if not isinstance(first_stats, dict):
-                continue
-            splits = first_stats.get("splits", [])
-            if not isinstance(splits, list) or not splits:
-                continue
-            dates = [self._parse_date(split.get("date")) for split in splits if isinstance(split, dict)]
-            dates = [game_date for game_date in dates if game_date is not None]
-            if not dates:
-                continue
-            return (max(dates) - min(dates)).days + 1
-        return None
-
-    def _arsenal_percentage(self, arsenal: dict[str, dict[str, Any]], pitch_code: str) -> float | None:
-        return resolve_arsenal_percentage(arsenal, pitch_code)
-
-    def _fastball_velocity(self, arsenal: dict[str, dict[str, Any]], *, mode: str) -> float | None:
-        return resolve_fastball_velocity(arsenal, mode=mode)
 
     def _output_sort_key(self, player: dict[str, Any]) -> tuple[float, int, int, str]:
         projected_ip = player.get("projected_ip")
@@ -888,12 +357,6 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
         counts["total"] = counts["SP"] + counts["RP"] + counts["C"] + counts["IF"] + counts["OF"] + counts["Flex"]
         return counts
 
-    def _nested_str(self, payload: dict[str, Any], key: str, nested_key: str) -> str | None:
-        nested = payload.get(key)
-        if not isinstance(nested, dict):
-            return None
-        return self._as_str(nested.get(nested_key))
-
     def _as_int(self, value: Any) -> int | None:
         if value is None:
             return None
@@ -933,36 +396,12 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
                 return None
         return None
 
-    def _percentage(self, numerator: Any, denominator: Any) -> float | None:
-        numerator_value = self._as_float(numerator)
-        denominator_value = self._as_float(denominator)
-        if numerator_value is None or denominator_value in (None, 0.0):
-            return None
-        return round((numerator_value / denominator_value) * 100.0, 3)
-
-    def _as_percentage_string(self, value: Any) -> float | None:
-        numeric = self._as_float(value)
-        if numeric is None:
-            return None
-        return round(numeric * 100.0 if numeric <= 1.0 else numeric, 3)
-
-    def _format_decimal(self, value: float) -> str:
-        return f"{value:.3f}"
-
     def _as_str(self, value: Any) -> str | None:
         if value is None:
             return None
         if isinstance(value, str):
             return value
         return str(value)
-
-    def _parse_date(self, value: Any) -> date | None:
-        if not isinstance(value, str) or not value:
-            return None
-        try:
-            return date.fromisoformat(value)
-        except ValueError:
-            return None
 
 
 if __name__ == "__main__":
