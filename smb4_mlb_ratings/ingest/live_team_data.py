@@ -44,30 +44,54 @@ _POSITION_OUTS_COLUMN_MAP: dict[str, str] = {
 }
 
 
-def parse_savant_statcast_summary(payload: str, *, season: int) -> dict[str, float]:
-    match = re.search(r"statcast:\s*(\[.*?\]),\s*statcastArrayString:", payload, re.DOTALL)
-    if not match:
-        return {}
+def _extract_embedded_json_array(payload: str, key: str) -> list[Mapping[str, Any]]:
+    marker = f"{key}:"
+    marker_index = payload.find(marker)
+    if marker_index < 0:
+        return []
+
+    array_start = payload.find("[", marker_index + len(marker))
+    if array_start < 0:
+        return []
+
     try:
-        rows = json.loads(match.group(1))
+        rows, _ = json.JSONDecoder().raw_decode(payload[array_start:])
     except json.JSONDecodeError:
-        return {}
+        return []
     if not isinstance(rows, list):
+        return []
+    return [row for row in rows if isinstance(row, Mapping)]
+
+
+
+def parse_savant_statcast_summary(payload: str, *, season: int) -> dict[str, float]:
+    rows = _extract_embedded_json_array(payload, "statcast")
+    if not rows:
         return {}
 
     for row in rows:
-        if not isinstance(row, Mapping):
-            continue
         if _as_int(row.get("year")) != season:
             continue
         zone_contact_pct = _as_float(row.get("iz_contact_percent"))
         out_of_zone_contact_pct = _as_float(row.get("oz_contact_percent"))
-        if zone_contact_pct is None or out_of_zone_contact_pct is None:
-            return {}
-        return {
-            "zone_contact_pct": zone_contact_pct,
-            "out_of_zone_contact_pct": out_of_zone_contact_pct,
-        }
+        summary: dict[str, float] = {}
+        if zone_contact_pct is not None:
+            summary["zone_contact_pct"] = zone_contact_pct
+        if out_of_zone_contact_pct is not None:
+            summary["out_of_zone_contact_pct"] = out_of_zone_contact_pct
+
+        avg_exit_velocity = _as_float(row.get("exit_velocity_avg"))
+        barrel_rate = _as_float(row.get("barrel_batted_rate"))
+        sprint_speed = _as_float(row.get("sprint_speed"))
+
+        if avg_exit_velocity is not None:
+            summary["avg_exit_velocity"] = avg_exit_velocity
+        if barrel_rate is not None:
+            summary["barrel_rate"] = barrel_rate
+        if sprint_speed is not None:
+            summary["sprint_speed"] = sprint_speed
+
+        return summary
     return {}
 
 
@@ -215,8 +239,11 @@ def build_savant_hitter_rows(
                 "OBP": player.get("obp"),
                 "K %": _percentage(player.get("strikeouts"), player.get("plate_appearances")),
                 "Contact %": contact_pct,
+                "Barrel %": savant_hitting_summary.get("barrel_rate"),
+                "Avg Exit Velocity": savant_hitting_summary.get("avg_exit_velocity"),
                 "z_contact_pct": savant_hitting_summary.get("zone_contact_pct"),
                 "o_contact_pct": savant_hitting_summary.get("out_of_zone_contact_pct"),
+                "Sprint Speed": savant_hitting_summary.get("sprint_speed"),
                 "first_pitch_hitting": situational_hitting_metrics.get("first_pitch_hitting"),
                 "risp_hitting": situational_hitting_metrics.get("risp_hitting"),
                 "pressure_hitting": situational_hitting_metrics.get("pressure_hitting"),

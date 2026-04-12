@@ -1,14 +1,35 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
+import ssl
 import sys
 from pathlib import Path
 
 from .engine import rate_players
 from .ingest import ingest_from_manifest, load_manifest
+from .ingest.live_team_data import (
+    build_baseball_reference_hitter_rows,
+    build_baseball_reference_pitcher_rows,
+    build_mixed_source_manifest,
+    build_roster_rows,
+    build_savant_fielding_rows,
+    build_savant_hitter_rows,
+    build_savant_pitcher_rows,
+    fetch_team_players,
+)
 from .output import write_structured_output
 from .roster_selector import build_rank_output, load_ratings
+
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+BLUE_JAYS_TEAM_ID = 141
+BLUE_JAYS_TEAM_ABBREVIATION = "TOR"
+BLUE_JAYS_ROSTER_SEASON = 2026
+BLUE_JAYS_PRIMARY_STAT_SEASON = 2025
+BLUE_JAYS_FALLBACK_STAT_SEASON = 2026
+
 
 
 def load_players(path: Path) -> list[dict]:
@@ -22,6 +43,17 @@ def load_players(path: Path) -> list[dict]:
 
 def write_json(path: Path, payload: object) -> None:
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
+    if not rows:
+        raise ValueError("CSV output requires at least one row")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
 
 
 def _normalized_team(team: str | None) -> str | None:
@@ -85,6 +117,79 @@ def run_ingest_rate(
     return 0
 
 
+def run_refresh_bluejays_example(example_root: Path | None = None) -> int:
+    root = example_root if example_root is not None else PROJECT_ROOT / "examples"
+    exports = root / "exports"
+    structured_output_path = exports / "bluejays_structured_report"
+    normalized_output_path = exports / "bluejays_normalized_for_result_example.json"
+    roster_output_path = exports / "bluejays_roster_report.json"
+    manifest_path = root / "bluejays_mixed_manifest_concrete.json"
+    ratings_output_path = root / "bluejays_result_example.json"
+
+    exports.mkdir(parents=True, exist_ok=True)
+    ssl_context = ssl._create_unverified_context()
+    players = fetch_team_players(
+        BLUE_JAYS_TEAM_ID,
+        team_abbreviation=BLUE_JAYS_TEAM_ABBREVIATION,
+        roster_season=BLUE_JAYS_ROSTER_SEASON,
+        primary_stat_season=BLUE_JAYS_PRIMARY_STAT_SEASON,
+        fallback_stat_season=BLUE_JAYS_FALLBACK_STAT_SEASON,
+        ssl_context=ssl_context,
+        min_players=22,
+    )
+
+    roster_file = exports / "bluejays_roster_2026.csv"
+    savant_hitters_file = exports / "bluejays_savant_hitters_2025.csv"
+    savant_pitchers_file = exports / "bluejays_savant_pitchers_2025.csv"
+    savant_fielding_file = exports / "bluejays_savant_fielding_2025.csv"
+    baseball_reference_hitters_file = exports / "bluejays_bref_hitters_2025.csv"
+    baseball_reference_pitchers_file = exports / "bluejays_bref_pitchers_2025.csv"
+
+    write_csv(roster_file, build_roster_rows(players, team_abbreviation=BLUE_JAYS_TEAM_ABBREVIATION))
+    write_csv(savant_hitters_file, build_savant_hitter_rows(players, team_abbreviation=BLUE_JAYS_TEAM_ABBREVIATION))
+    write_csv(savant_pitchers_file, build_savant_pitcher_rows(players, team_abbreviation=BLUE_JAYS_TEAM_ABBREVIATION))
+    write_csv(
+        savant_fielding_file,
+        build_savant_fielding_rows(
+            players,
+            team_abbreviation=BLUE_JAYS_TEAM_ABBREVIATION,
+            season=BLUE_JAYS_PRIMARY_STAT_SEASON,
+            ssl_context=ssl_context,
+        ),
+    )
+    write_csv(
+        baseball_reference_hitters_file,
+        build_baseball_reference_hitter_rows(players, team_abbreviation=BLUE_JAYS_TEAM_ABBREVIATION),
+    )
+    write_csv(
+        baseball_reference_pitchers_file,
+        build_baseball_reference_pitcher_rows(players, team_abbreviation=BLUE_JAYS_TEAM_ABBREVIATION),
+    )
+
+    manifest = build_mixed_source_manifest(
+        team_abbreviation=BLUE_JAYS_TEAM_ABBREVIATION,
+        roster_season=BLUE_JAYS_ROSTER_SEASON,
+        roster_file=str(roster_file.relative_to(root)).replace("\\", "/"),
+        savant_hitters_file=str(savant_hitters_file.relative_to(root)).replace("\\", "/"),
+        savant_pitchers_file=str(savant_pitchers_file.relative_to(root)).replace("\\", "/"),
+        savant_fielding_file=str(savant_fielding_file.relative_to(root)).replace("\\", "/"),
+        baseball_reference_hitters_file=str(baseball_reference_hitters_file.relative_to(root)).replace("\\", "/"),
+        baseball_reference_pitchers_file=str(baseball_reference_pitchers_file.relative_to(root)).replace("\\", "/"),
+    )
+    write_json(manifest_path, manifest)
+
+    ingest_rate_result = run_ingest_rate(
+        manifest_path,
+        ratings_output_path,
+        normalized_output_path,
+        structured_output_path,
+        team=BLUE_JAYS_TEAM_ABBREVIATION,
+    )
+    if ingest_rate_result != 0:
+        return ingest_rate_result
+    return run_rank(ratings_output_path, roster_output_path)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Convert MLB data into SMB4-ready inputs and ratings")
     subparsers = parser.add_subparsers(dest="command")
@@ -118,6 +223,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional directory path for league/division/team JSON output",
     )
     ingest_rate_parser.add_argument("--team", type=str, default=None, help="Optional team abbreviation to filter before rating")
+
+    refresh_bluejays_parser = subparsers.add_parser(
+        "refresh-bluejays-example",
+        help="Fetch the live Blue Jays roster and regenerate the local example artifacts",
+    )
+    refresh_bluejays_parser.add_argument(
+        "--example-root",
+        type=Path,
+        default=None,
+        help="Optional root directory for the Blue Jays example outputs (defaults to the workspace examples folder)",
+    )
     return parser
 
 
@@ -144,6 +260,8 @@ def main(argv: list[str] | None = None) -> int:
             namespace.structured_output,
             namespace.team,
         )
+    if namespace.command == "refresh-bluejays-example":
+        return run_refresh_bluejays_example(namespace.example_root)
 
     parser.print_help(sys.stderr)
     return 1

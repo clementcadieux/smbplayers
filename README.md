@@ -175,6 +175,7 @@ python -m smb4_mlb_ratings.cli rank ratings_output.json roster_output.json
 python -m smb4_mlb_ratings.cli ingest-rate savant_manifest.json ratings_output.json --normalized-output normalized_players.json
 python -m smb4_mlb_ratings.cli ingest-rate savant_manifest.json --structured-output team_ratings
 python -m smb4_mlb_ratings.cli ingest-rate savant_manifest.json ratings_output.json --team TOR --structured-output team_ratings
+python -m smb4_mlb_ratings.cli refresh-bluejays-example
 ```
 
 The `ingest` manifest can now target `baseball_savant`, `baseball_reference`, or `mixed`.
@@ -190,6 +191,8 @@ When a player record includes per-season `days_on_roster`, projected plate appea
 Pitchers with Savant pitch-usage data now also receive `recommended_pitches` in the rating output, capped by the SMB4 slot limit and translated through the configured MLB-to-SMB4 pitch mappings in [smb4_player_reference.json](smb4_player_reference.json).
 
 The Blue Jays end-to-end integration test now fetches the live 2026 Blue Jays active-plus-IL subset of the 40-man roster from the public MLB Stats API, then builds a mixed-source temp fixture set with Baseball Reference-style result files and Baseball Savant-style hitter and pitcher files before running the full ingest-rate-rank pipeline.
+
+The `refresh-bluejays-example` command promotes that same live pipeline into a local artifact refresh. It fetches the current Blue Jays 40-man active-plus-IL roster, rebuilds the local mixed-source CSV exports under `examples/exports/`, rewrites `examples/bluejays_mixed_manifest_concrete.json`, and regenerates `examples/bluejays_result_example.json` from a real live run instead of leaving it as a stale hand-maintained snapshot.
 
 ## Full Pipeline Walkthrough
 
