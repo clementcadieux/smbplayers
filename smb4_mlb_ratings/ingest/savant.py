@@ -6,8 +6,8 @@ import math
 from collections import defaultdict
 HITTER_TRAIT_METRIC_COLUMNS: dict[str, tuple[tuple[str, ...], bool]] = {
     "bb_pct": (("bb_pct", "bb_percent", "walk_pct", "walk_rate"), True),
-    "zone_contact_pct": (("z_contact_pct", "zone_contact_pct"), True),
-    "out_of_zone_contact_pct": (("o_contact_pct", "out_of_zone_contact_pct"), True),
+    "zone_contact_pct": (("z_contact_pct", "zone_contact_pct", "iz_contact_percent"), True),
+    "out_of_zone_contact_pct": (("o_contact_pct", "out_of_zone_contact_pct", "oz_contact_percent"), True),
     "dive_recovery": (("dive_recovery", "dive_recovery_score", "fielding_recovery"), False),
     "chase_pct": (("chase_pct", "o_swing_pct", "out_of_zone_swing_pct"), True),
     "hard_hit_pct": (("hard_hit_pct", "hard_hit_rate"), True),

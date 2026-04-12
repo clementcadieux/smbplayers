@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from ssl import SSLContext
 from typing import Any, Iterable, Mapping
 from urllib.request import Request, urlopen
@@ -24,6 +25,29 @@ from .pitch_quality import (
 
 DEFAULT_MLB_STATS_API = "https://statsapi.mlb.com/api/v1"
 DEFAULT_BASEBALL_SAVANT = "https://baseballsavant.mlb.com"
+
+
+def parse_savant_statcast_summary(payload: str, *, season: int) -> dict[str, float]:
+    match = re.search(r"statcast:\s*(\[.*?\]),\s*statcastArrayString:", payload, re.DOTALL)
+    if not match:
+        return {}
+    try:
+        rows = json.loads(match.group(1))
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(rows, list):
+        return {}
+
+    for row in rows:
+        if not isinstance(row, Mapping):
+            continue
+        if _as_int(row.get("year")) != season:
+            continue
+        return {
+            "zone_contact_pct": _as_float(row.get("iz_contact_percent")) or 0.0,
+            "out_of_zone_contact_pct": _as_float(row.get("oz_contact_percent")) or 0.0,
+        }
+    return {}
 
 
 def fetch_team_players(
@@ -135,6 +159,7 @@ def build_savant_hitter_rows(
             continue
         advanced = player.get("advanced_hitting") if isinstance(player.get("advanced_hitting"), Mapping) else {}
         hitting_splits = player.get("hitting_handedness_splits") if isinstance(player.get("hitting_handedness_splits"), Mapping) else {}
+        savant_hitting_summary = player.get("savant_hitting_summary") if isinstance(player.get("savant_hitting_summary"), Mapping) else {}
         total_swings = _as_int(advanced.get("totalSwings"))
         swing_and_misses = _as_int(advanced.get("swingAndMisses"))
         contact_pct = None
@@ -155,6 +180,8 @@ def build_savant_hitter_rows(
                 "OBP": player.get("obp"),
                 "K %": _percentage(player.get("strikeouts"), player.get("plate_appearances")),
                 "Contact %": contact_pct,
+                "z_contact_pct": savant_hitting_summary.get("zone_contact_pct"),
+                "o_contact_pct": savant_hitting_summary.get("out_of_zone_contact_pct"),
                 "2B": player.get("doubles"),
                 "3B": player.get("triples"),
                 "SB": player.get("stolen_bases"),
@@ -376,6 +403,12 @@ def _fetch_roster_player(
     }
 
     if player_type == "hitter":
+        savant_hitting_summary = _fetch_savant_hitter_summary(
+            player_id,
+            season=seasons[0],
+            ssl_context=ssl_context,
+            baseball_savant=baseball_savant,
+        )
         plate_appearances = _as_int(stats.get("plateAppearances")) or 0
         if plate_appearances == 0:
             return None
@@ -396,6 +429,7 @@ def _fetch_roster_player(
                 "obp": _as_str(stats.get("obp")) or "0.000",
                 "slg": _as_str(stats.get("slg")) or "0.000",
                 "advanced_hitting": advanced_stats,
+                "savant_hitting_summary": savant_hitting_summary,
                 "hitting_handedness_splits": handedness_splits,
             }
         )
@@ -534,6 +568,21 @@ def _fetch_savant_pitch_details(
         },
     )
     return parse_savant_pitch_details(payload)
+
+
+def _fetch_savant_hitter_summary(
+    player_id: int,
+    *,
+    season: int,
+    ssl_context: SSLContext | None,
+    baseball_savant: str,
+) -> dict[str, float]:
+    payload = _fetch_text(
+        f"{baseball_savant}/savant-player/player-{player_id}?stats=statcast-r-hitting-mlb",
+        ssl_context=ssl_context,
+        headers={"User-Agent": "Mozilla/5.0"},
+    )
+    return parse_savant_statcast_summary(payload, season=season)
 
 
 def _fetch_handedness_splits(

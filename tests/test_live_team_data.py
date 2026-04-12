@@ -9,6 +9,7 @@ from smb4_mlb_ratings.ingest.live_team_data import (
     build_roster_rows,
     build_savant_hitter_rows,
     build_savant_pitcher_rows,
+    parse_savant_statcast_summary,
 )
 
 
@@ -56,6 +57,7 @@ class LiveTeamDataTests(unittest.TestCase):
             "obp": "0.341",
             "slg": "0.502",
             "advanced_hitting": {"iso": "0.222", "totalSwings": 700, "swingAndMisses": 140},
+            "savant_hitting_summary": {"zone_contact_pct": 88.4, "out_of_zone_contact_pct": 61.2},
             "hitting_handedness_splits": {
                 "vl": {"avg": 0.300, "iso": 0.240, "strikeout_rate": 0.18},
                 "vr": {"avg": 0.260, "iso": 0.180, "strikeout_rate": 0.24},
@@ -108,9 +110,25 @@ class LiveTeamDataTests(unittest.TestCase):
         self.assertEqual(len(roster_rows), 2)
         self.assertEqual(bref_hitter_rows[0]["Contact vs LHP Minus RHP"], 46.0)
         self.assertEqual(savant_hitter_rows[0]["Contact %"], 80.0)
+        self.assertEqual(savant_hitter_rows[0]["z_contact_pct"], 88.4)
+        self.assertEqual(savant_hitter_rows[0]["o_contact_pct"], 61.2)
         self.assertGreater(bref_pitcher_rows[0]["Same Handed Pitching"], bref_pitcher_rows[0]["Opposite Handed Pitching"])
         self.assertIn("Pitch Quality SL", savant_pitcher_rows[0])
         self.assertEqual(savant_pitcher_rows[0]["Strike %"], 65.4)
+
+    def test_parse_savant_statcast_summary_extracts_contact_fields(self) -> None:
+        payload = """
+        <script>
+        var pageData = {
+            statcast: [{"year": 2024, "iz_contact_percent": 80.1, "oz_contact_percent": 55.2}, {"year": 2025, "iz_contact_percent": 84.1, "oz_contact_percent": 59.1}],
+            statcastArrayString: "..."
+        };
+        </script>
+        """
+
+        summary = parse_savant_statcast_summary(payload, season=2025)
+
+        self.assertEqual(summary, {"zone_contact_pct": 84.1, "out_of_zone_contact_pct": 59.1})
 
 
 if __name__ == "__main__":
