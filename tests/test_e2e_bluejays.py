@@ -5,6 +5,7 @@ import json
 import ssl
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -230,6 +231,7 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
                     "player_name": player["name"],
                     "team": player.get("team", TEAM_ABBREVIATION),
                     "position": player["position"],
+                    "Days On Roster": player.get("days_on_roster"),
                     "PA": player["plate_appearances"],
                     "AB": player["at_bats"],
                     "H": player["hits"],
@@ -265,6 +267,7 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
                     "player_name": player["name"],
                     "team": player.get("team", TEAM_ABBREVIATION),
                     "position": player["position"],
+                    "Days On Roster": player.get("days_on_roster"),
                     "PA": player["plate_appearances"],
                     "ISO": self._as_str(advanced.get("iso")) or self._format_decimal(float(player["slg"]) - float(player["avg"])),
                     "HR": player["home_runs"],
@@ -321,6 +324,7 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
                     "player_name": player["name"],
                     "team": TEAM_ABBREVIATION,
                     "position": "P",
+                    "Days On Roster": player.get("days_on_roster"),
                     "BF": player["batters_faced"],
                     "BB": player["walks"],
                     "SO": player["strikeouts"],
@@ -346,6 +350,7 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
                     "player_name": player["name"],
                     "team": TEAM_ABBREVIATION,
                     "position": "P",
+                    "Days On Roster": player.get("days_on_roster"),
                     "BF": player["batters_faced"],
                     "Pitches": player["number_of_pitches"],
                     "Avg Fastball Velocity": self._fastball_velocity(arsenal, mode="average"),
@@ -428,6 +433,7 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
                 "age": self._as_int(person.get("currentAge")),
                 "bats": self._nested_str(person, "batSide", "code"),
                 "throws": self._nested_str(person, "pitchHand", "code"),
+                "days_on_roster": self._fetch_days_on_roster(player_id, stat_group),
             }
             if player_type == "hitter":
                 plate_appearances = self._as_int(stats.get("plateAppearances")) or 0
@@ -531,6 +537,25 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
             if arsenal:
                 return arsenal
         return {}
+
+    def _fetch_days_on_roster(self, player_id: int, group: str) -> int | None:
+        for season in (PRIMARY_STAT_SEASON, FALLBACK_STAT_SEASON):
+            payload = self._fetch_json(f"{MLB_STATS_API}/people/{player_id}/stats?stats=gameLog&group={group}&season={season}")
+            stats = payload.get("stats", [])
+            if not isinstance(stats, list) or not stats:
+                continue
+            first_stats = stats[0]
+            if not isinstance(first_stats, dict):
+                continue
+            splits = first_stats.get("splits", [])
+            if not isinstance(splits, list) or not splits:
+                continue
+            dates = [self._parse_date(split.get("date")) for split in splits if isinstance(split, dict)]
+            dates = [game_date for game_date in dates if game_date is not None]
+            if not dates:
+                continue
+            return (max(dates) - min(dates)).days + 1
+        return None
 
     def _arsenal_percentage(self, arsenal: dict[str, dict[str, Any]], pitch_code: str) -> float | None:
         stat_line = arsenal.get(pitch_code)
@@ -747,6 +772,14 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
         if isinstance(value, str):
             return value
         return str(value)
+
+    def _parse_date(self, value: Any) -> date | None:
+        if not isinstance(value, str) or not value:
+            return None
+        try:
+            return date.fromisoformat(value)
+        except ValueError:
+            return None
 
 
 if __name__ == "__main__":

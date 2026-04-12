@@ -20,6 +20,7 @@ class PlayerInput:
     throws: str | None = None
     projected_pa: float | None = None
     projected_ip: float | None = None
+    days_on_roster: dict[str, float] = field(default_factory=dict)
     pitch_mix: dict[str, float] = field(default_factory=dict)
     metrics: dict[str, SeasonValue] = field(default_factory=dict)
     samples: dict[str, SeasonValue] = field(default_factory=dict)
@@ -39,6 +40,7 @@ class PlayerInput:
             throws=data.get("throws"),
             projected_pa=data.get("projected_pa"),
             projected_ip=data.get("projected_ip"),
+            days_on_roster={str(key): float(value) for key, value in data.get("days_on_roster", {}).items()},
             pitch_mix={str(key): float(value) for key, value in data.get("pitch_mix", {}).items()},
             metrics=data.get("metrics", {}),
             samples=data.get("samples", {}),

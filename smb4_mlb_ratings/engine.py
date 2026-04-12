@@ -71,6 +71,11 @@ CHEMISTRY_TYPES = (
     "Crafty",
 )
 
+DEFAULT_VOLUME_PROJECTION = {
+    "full_season_days_hitter": 162.0,
+    "full_season_days_pitcher": 180.0,
+}
+
 
 REFERENCE_PATH = Path(__file__).resolve().parent.parent / "smb4_player_reference.json"
 
@@ -131,7 +136,27 @@ def load_trait_catalog() -> tuple[tuple[str, ...], dict[str, dict[str, str | boo
     return chemistry_types, catalog
 
 
+def load_volume_projection_config() -> dict[str, float]:
+    try:
+        payload = json.loads(REFERENCE_PATH.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return dict(DEFAULT_VOLUME_PROJECTION)
+
+    projection_payload = payload.get("volume_projection", {})
+    if not isinstance(projection_payload, dict):
+        return dict(DEFAULT_VOLUME_PROJECTION)
+
+    try:
+        return {
+            "full_season_days_hitter": float(projection_payload.get("full_season_days_hitter", DEFAULT_VOLUME_PROJECTION["full_season_days_hitter"])),
+            "full_season_days_pitcher": float(projection_payload.get("full_season_days_pitcher", DEFAULT_VOLUME_PROJECTION["full_season_days_pitcher"])),
+        }
+    except (TypeError, ValueError):
+        return dict(DEFAULT_VOLUME_PROJECTION)
+
+
 CHEMISTRY_TYPES, TRAIT_CATALOG = load_trait_catalog()
+VOLUME_PROJECTION_CONFIG = load_volume_projection_config()
 
 
 @dataclass(frozen=True)
@@ -584,6 +609,37 @@ def season_average_excluding_injuries(value: SeasonValue, shortened_seasons: set
     return None
 
 
+def projected_season_average(
+    value: SeasonValue,
+    shortened_seasons: set[str],
+    *,
+    days_on_roster: dict[str, float] | None = None,
+    full_season_days: float | None = None,
+) -> float | None:
+    season_values = season_dict(value)
+    if season_values is None:
+        return None
+
+    def projected_value(season_key: str, season_value: float) -> float:
+        if full_season_days is None or not days_on_roster:
+            return season_value
+        roster_days = days_on_roster.get(season_key)
+        if roster_days is None or roster_days <= 0:
+            return season_value
+        return season_value / roster_days * full_season_days
+
+    healthy_values = [
+        projected_value(season_key, season_value)
+        for season_key, season_value in season_values.items()
+        if season_key not in shortened_seasons
+    ]
+    if healthy_values:
+        return mean(healthy_values)
+    if season_values:
+        return mean(projected_value(season_key, season_value) for season_key, season_value in season_values.items())
+    return None
+
+
 def pitcher_season_ip_dict(player: PlayerInput) -> dict[str, float] | None:
     defensive_innings = season_dict(player.samples.get("defensive_innings"))
     if defensive_innings is not None:
@@ -598,13 +654,23 @@ def pitcher_season_ip_dict(player: PlayerInput) -> dict[str, float] | None:
 def resolved_projected_pa(player: PlayerInput) -> float | None:
     if player.projected_pa is not None:
         return float(player.projected_pa)
-    return season_average_excluding_injuries(player.samples.get("weighted_pa"), injury_shortened_seasons(player))
+    return projected_season_average(
+        player.samples.get("weighted_pa"),
+        injury_shortened_seasons(player),
+        days_on_roster=player.days_on_roster,
+        full_season_days=VOLUME_PROJECTION_CONFIG["full_season_days_hitter"],
+    )
 
 
 def resolved_projected_ip(player: PlayerInput) -> float | None:
     if player.projected_ip is not None:
         return float(player.projected_ip)
-    return season_average_excluding_injuries(pitcher_season_ip_dict(player), injury_shortened_seasons(player))
+    return projected_season_average(
+        pitcher_season_ip_dict(player),
+        injury_shortened_seasons(player),
+        days_on_roster=player.days_on_roster,
+        full_season_days=VOLUME_PROJECTION_CONFIG["full_season_days_pitcher"],
+    )
 
 
 def trait_confidence(score: float) -> str:
