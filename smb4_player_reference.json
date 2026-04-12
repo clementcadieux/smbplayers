@@ -29,6 +29,10 @@
     "min_pa_fraction": 0.6,
     "min_ip_fraction": 0.6
   },
+  "volume_projection": {
+    "full_season_days_hitter": 162,
+    "full_season_days_pitcher": 180
+  },
   "pitch_slot_limit": 4,
   "pitch_mappings": {
     "ff": {

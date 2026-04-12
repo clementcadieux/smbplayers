@@ -113,6 +113,33 @@ class SurfaceBlendTests(unittest.TestCase):
         volume_test = next(output for output in outputs if output.name == "Volume Test")
         self.assertEqual(volume_test.projected_pa, 570.0)
 
+    def test_projected_pa_scales_partial_season_by_days_on_roster(self) -> None:
+        player = PlayerInput.from_dict(
+            {
+                "name": "Late Call-Up Hitter",
+                "role": "hitter",
+                "team": "NYM",
+                "primary_position": "CF",
+                "samples": {"weighted_pa": {"current": 120}},
+                "days_on_roster": {"current": 30},
+            }
+        )
+
+        self.assertEqual(resolved_projected_pa(player), 648.0)
+
+    def test_projected_ip_falls_back_to_raw_totals_without_days_on_roster(self) -> None:
+        player = PlayerInput.from_dict(
+            {
+                "name": "Raw Volume Pitcher",
+                "role": "pitcher",
+                "team": "NYM",
+                "primary_position": "P",
+                "samples": {"weighted_bf": {"current": 255}},
+            }
+        )
+
+        self.assertAlmostEqual(resolved_projected_ip(player), 60.0)
+
     def test_rate_players_surfaces_recommended_pitches_for_pitchers(self) -> None:
         outputs = rate_players(
             [

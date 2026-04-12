@@ -179,6 +179,8 @@ When `--team` is provided to `rate` or `ingest-rate`, only players whose `team` 
 
 Projected plate appearances and innings now ignore seasons flagged as injury-shortened during ingestion. The flagging thresholds come from the `injury_threshold` block in [smb4_player_reference.json](smb4_player_reference.json), so low-volume injury years do not drag down roster-priority projections.
 
+When a player record includes per-season `days_on_roster`, projected plate appearances and innings are scaled from a per-day rate to the configurable full-season targets in the `volume_projection` block of [smb4_player_reference.json](smb4_player_reference.json). If `days_on_roster` is missing, the engine falls back to raw seasonal totals.
+
 Pitchers with Savant pitch-usage data now also receive `recommended_pitches` in the rating output, capped by the SMB4 slot limit and translated through the configured MLB-to-SMB4 pitch mappings in [smb4_player_reference.json](smb4_player_reference.json).
 
 The Blue Jays end-to-end integration test now fetches the live 2026 Blue Jays active-plus-IL subset of the 40-man roster from the public MLB Stats API, then builds a mixed-source temp fixture set with Baseball Reference-style result files and Baseball Savant-style hitter and pitcher files before running the full ingest-rate-rank pipeline.

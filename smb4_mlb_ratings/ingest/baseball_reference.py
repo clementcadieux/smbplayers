@@ -16,6 +16,7 @@ from .savant import (
     _ensure_player,
     _pick_first,
     _pick_number,
+    _row_days_on_roster,
     _read_csv,
     _safe_divide,
     load_manifest,
@@ -25,6 +26,7 @@ from .savant import (
 def _apply_hitter_row(player: PlayerAccumulator, season_key: str, row: dict[str, str]) -> None:
     player.roles.add("hitter")
     _apply_identity(player, row)
+    player.set_days_on_roster(season_key, _row_days_on_roster(row))
 
     plate_appearances = _pick_number(row, "pa", "plate_appearances")
     at_bats = _pick_number(row, "ab", "at_bats")
@@ -117,6 +119,7 @@ def _parse_ip_to_outs(value: str | None) -> float | None:
 def _apply_pitcher_row(player: PlayerAccumulator, season_key: str, row: dict[str, str]) -> None:
     player.roles.add("pitcher")
     _apply_identity(player, row, default_position="P")
+    player.set_days_on_roster(season_key, _row_days_on_roster(row))
 
     batters_faced = _pick_number(row, "bf", "tbf", "batters_faced")
     pitches = _pick_number(row, "pitches", "pit", "pitch_count")

@@ -60,6 +60,7 @@ class IngestFrameworkTests(unittest.TestCase):
                     "player_name": "Test Hitter",
                     "team": "NYM",
                     "position": "CF",
+                    "Days On Roster": 154,
                     "PA": 620,
                     "ISO": 0.215,
                     "HR": 31,
@@ -90,6 +91,7 @@ class IngestFrameworkTests(unittest.TestCase):
                     "player_name": "Test Hitter",
                     "team": "NYM",
                     "position": "CF",
+                    "Days On Roster": 149,
                     "PA": 590,
                     "ISO": 0.201,
                     "HR": 26,
@@ -150,6 +152,7 @@ class IngestFrameworkTests(unittest.TestCase):
                     "player_name": "Test Pitcher",
                     "team": "LAD",
                     "position": "P",
+                    "Days On Roster": 176,
                     "BF": 712,
                     "Pitches": 2810,
                     "Avg Fastball Velocity": 96.3,
@@ -225,6 +228,7 @@ class IngestFrameworkTests(unittest.TestCase):
                     "player_name": "BR Hitter",
                     "team": "SEA",
                     "position": "RF",
+                    "Days On Roster": 158,
                     "PA": 645,
                     "AB": 585,
                     "H": 170,
@@ -251,6 +255,7 @@ class IngestFrameworkTests(unittest.TestCase):
                     "player_name": "BR Pitcher",
                     "team": "CHC",
                     "position": "P",
+                    "Days On Roster": 172,
                     "BF": 701,
                     "BB": 58,
                     "SO": 192,
@@ -304,6 +309,7 @@ class IngestFrameworkTests(unittest.TestCase):
                     "player_name": "Merge Hitter",
                     "team": "ATL",
                     "position": "LF",
+                    "Days On Roster": 141,
                     "PA": 600,
                     "ISO": 0.190,
                     "OBP": 0.330,
@@ -323,6 +329,7 @@ class IngestFrameworkTests(unittest.TestCase):
                     "player_name": "Merge Pitcher",
                     "team": "BOS",
                     "position": "P",
+                    "Days On Roster": 168,
                     "BF": 680,
                     "Pitches": 2750,
                     "Avg Fastball Velocity": 97.1,
@@ -359,6 +366,7 @@ class IngestFrameworkTests(unittest.TestCase):
                     "player_name": "Merge Hitter",
                     "team": "ATL",
                     "position": "LF",
+                    "Days On Roster": 150,
                     "PA": 612,
                     "AB": 560,
                     "H": 158,
@@ -385,6 +393,7 @@ class IngestFrameworkTests(unittest.TestCase):
                     "player_name": "Merge Pitcher",
                     "team": "BOS",
                     "position": "P",
+                    "Days On Roster": 171,
                     "BF": 684,
                     "BB": 54,
                     "SO": 205,
@@ -435,12 +444,14 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertIn("current", hitter["metrics"]["iso"])
         self.assertIn("previous", hitter["metrics"]["iso"])
         self.assertAlmostEqual(hitter["samples"]["weighted_pa"]["current"], 620.0)
+        self.assertEqual(hitter["days_on_roster"]["current"], 154.0)
         self.assertAlmostEqual(hitter["metrics"]["position_difficulty"]["current"], 0.82)
         self.assertEqual(hitter["metadata"]["source_player_id"], "100")
 
         self.assertEqual(pitcher["role"], "pitcher")
         self.assertEqual(pitcher["primary_position"], "P")
         self.assertAlmostEqual(pitcher["metrics"]["avg_fastball_velocity"]["current"], 96.3)
+        self.assertEqual(pitcher["days_on_roster"]["current"], 176.0)
         self.assertIn("tracked_pitches", pitcher["samples"])
         self.assertAlmostEqual(pitcher["pitch_mix"]["ff"], 0.48)
         self.assertAlmostEqual(pitcher["pitch_mix"]["sl"], 0.27)
@@ -780,11 +791,13 @@ class IngestFrameworkTests(unittest.TestCase):
         pitcher = next(player for player in players if player["name"] == "BR Pitcher")
 
         self.assertEqual(hitter["metadata"]["source"], "baseball_reference")
+        self.assertEqual(hitter["days_on_roster"]["current"], 158.0)
         self.assertAlmostEqual(hitter["metrics"]["iso"]["current"], 0.23)
         self.assertAlmostEqual(hitter["metrics"]["adjusted_obp"]["current"], 0.352)
         self.assertIn("contact_rate", hitter["metadata"]["ingest"]["estimated_metrics"]["current"])
 
         self.assertEqual(pitcher["metadata"]["source"], "baseball_reference")
+        self.assertEqual(pitcher["days_on_roster"]["current"], 172.0)
         self.assertAlmostEqual(pitcher["metrics"]["walk_rate"]["current"], 58 / 701, places=6)
         self.assertIn("stuff_metric", pitcher["metadata"]["ingest"]["estimated_metrics"]["current"])
         self.assertIn("running", pitcher["metadata"]["ingest"]["missing_files"]["current"])
@@ -804,6 +817,7 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertAlmostEqual(hitter["metrics"]["barrel_rate"]["current"], 0.144)
         self.assertAlmostEqual(hitter["metrics"]["avg_exit_velocity"]["current"], 92.8)
         self.assertAlmostEqual(hitter["metrics"]["sprint_speed"]["current"], 29.1)
+        self.assertEqual(hitter["days_on_roster"]["current"], 141.0)
         self.assertIn("baseball_reference:contact_rate", hitter["metadata"]["ingest"]["estimated_metrics"]["current"])
         self.assertIn("baseball_savant:fielding", hitter["metadata"]["ingest"]["missing_files"]["current"])
 
@@ -811,6 +825,7 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertAlmostEqual(pitcher["metrics"]["walk_rate"]["current"], 54 / 684, places=6)
         self.assertAlmostEqual(pitcher["metrics"]["avg_fastball_velocity"]["current"], 97.1)
         self.assertAlmostEqual(pitcher["metrics"]["swinging_strike_rate"]["current"], 0.144)
+        self.assertEqual(pitcher["days_on_roster"]["current"], 168.0)
         self.assertAlmostEqual(pitcher["pitch_mix"]["ff"], 0.565217, places=6)
         self.assertAlmostEqual(pitcher["pitch_mix"]["sl"], 0.304348, places=6)
         self.assertIn("baseball_reference:running", pitcher["metadata"]["ingest"]["missing_files"]["current"])

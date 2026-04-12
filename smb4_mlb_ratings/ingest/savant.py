@@ -95,6 +95,13 @@ PITCH_USAGE_COLUMNS = {
 
 REFERENCE_PATH = Path(__file__).resolve().parents[2] / "smb4_player_reference.json"
 DEFAULT_INJURY_THRESHOLD = {"min_pa_fraction": 0.6, "min_ip_fraction": 0.6}
+ROSTER_DAY_COLUMNS = (
+    "days_on_roster",
+    "days_on_active_roster",
+    "active_roster_days",
+    "active_days",
+    "roster_days",
+)
 
 
 def load_injury_threshold_config() -> dict[str, float]:
@@ -243,6 +250,10 @@ def _row_pitch_mix(row: dict[str, str]) -> dict[str, float]:
     return _normalize_distribution(pitch_mix)
 
 
+def _row_days_on_roster(row: dict[str, str]) -> float | None:
+    return _pick_number(row, *ROSTER_DAY_COLUMNS)
+
+
 @dataclass(slots=True)
 class SeasonInputs:
     year: int | None = None
@@ -281,6 +292,7 @@ class PlayerAccumulator:
     roles: set[str] = field(default_factory=set)
     metrics: dict[str, dict[str, float]] = field(default_factory=lambda: defaultdict(dict))
     samples: dict[str, dict[str, float]] = field(default_factory=lambda: defaultdict(dict))
+    days_on_roster_by_season: dict[str, float] = field(default_factory=dict)
     pitch_mix_by_season: dict[str, dict[str, float]] = field(default_factory=lambda: defaultdict(dict))
     estimated_metrics: dict[str, list[str]] = field(default_factory=lambda: defaultdict(list))
     missing_files: dict[str, list[str]] = field(default_factory=lambda: defaultdict(list))
@@ -302,6 +314,11 @@ class PlayerAccumulator:
     def note_missing_file(self, season_key: str, file_type: str) -> None:
         if file_type not in self.missing_files[season_key]:
             self.missing_files[season_key].append(file_type)
+
+    def set_days_on_roster(self, season_key: str, value: float | None) -> None:
+        if value is None or value <= 0:
+            return
+        self.days_on_roster_by_season[season_key] = round(float(value), 6)
 
     def set_pitch_mix(self, season_key: str, pitch_mix: dict[str, float]) -> None:
         if not pitch_mix:
@@ -363,6 +380,8 @@ class PlayerAccumulator:
             "samples": {name: dict(sorted(values.items())) for name, values in sorted(self.samples.items()) if values},
             "metadata": metadata,
         }
+        if self.days_on_roster_by_season:
+            player_dict["days_on_roster"] = dict(sorted(self.days_on_roster_by_season.items()))
         pitch_mix = self.aggregated_pitch_mix()
         if pitch_mix:
             player_dict["pitch_mix"] = pitch_mix
@@ -595,6 +614,7 @@ def _flag_injury_shortened_seasons(players: dict[tuple[str, str], PlayerAccumula
 def _apply_hitter_row(player: PlayerAccumulator, season_key: str, row: dict[str, str]) -> None:
     player.roles.add("hitter")
     _apply_identity(player, row)
+    player.set_days_on_roster(season_key, _row_days_on_roster(row))
 
     plate_appearances = _pick_number(row, "pa", "plate_appearances")
     at_bats = _pick_number(row, "ab", "at_bats")
@@ -664,6 +684,7 @@ def _apply_hitter_row(player: PlayerAccumulator, season_key: str, row: dict[str,
 def _apply_pitcher_row(player: PlayerAccumulator, season_key: str, row: dict[str, str]) -> None:
     player.roles.add("pitcher")
     _apply_identity(player, row, default_position="P")
+    player.set_days_on_roster(season_key, _row_days_on_roster(row))
 
     pitch_mix = _row_pitch_mix(row)
     tracked_pitches = _pick_number(row, "pitches", "tracked_pitches", "pitch_count", "total_pitches")
