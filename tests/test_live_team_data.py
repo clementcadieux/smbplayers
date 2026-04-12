@@ -5,8 +5,10 @@ import unittest
 from smb4_mlb_ratings.ingest.live_team_data import (
     build_baseball_reference_hitter_rows,
     build_baseball_reference_pitcher_rows,
+    build_fangraphs_fielding_rows,
     build_mixed_source_manifest,
     build_roster_rows,
+    parse_fangraphs_fielding_csv,
     build_savant_fielding_rows,
     build_savant_hitter_rows,
     build_savant_pitcher_rows,
@@ -171,6 +173,41 @@ class LiveTeamDataTests(unittest.TestCase):
         summary = parse_savant_statcast_summary(payload, season=2025)
 
         self.assertEqual(summary, {"zone_contact_pct": 84.1, "out_of_zone_contact_pct": 59.1})
+
+    def test_parse_fangraphs_fielding_csv_extracts_drs_and_uzr(self) -> None:
+        payload = """Name,Team,DRS,UZR\nAlejandro Kirk,TOR,9,7.1\nPitcher Example,TOR,,\n"""
+
+        rows = parse_fangraphs_fielding_csv(payload)
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["name"], "Alejandro Kirk")
+        self.assertEqual(rows[0]["team"], "TOR")
+        self.assertEqual(rows[0]["drs"], 9.0)
+        self.assertEqual(rows[0]["uzr"], 7.1)
+
+    def test_build_fangraphs_fielding_rows_matches_players_by_name_and_team(self) -> None:
+        players = [
+            {
+                "player_id": 672386,
+                "name": "Alejandro Kirk",
+                "team": "TOR",
+                "type": "hitter",
+                "position": "C",
+            }
+        ]
+        payload = """Name,Team,DRS,UZR\nAlejandro Kirk,TOR,8,6.4\n"""
+
+        rows = build_fangraphs_fielding_rows(
+            players,
+            team_abbreviation="TOR",
+            season=2025,
+            csv_payload=payload,
+        )
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["player_id"], 672386)
+        self.assertEqual(rows[0]["DRS"], 8.0)
+        self.assertEqual(rows[0]["UZR"], 6.4)
 
 
 if __name__ == "__main__":

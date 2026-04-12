@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import csv
+import io
 import json
 import re
 from ssl import SSLContext
 from typing import Any, Iterable, Mapping
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
 
 from .live_metrics import (
     aggregate_split_stats,
@@ -27,6 +30,7 @@ from .pitch_quality import (
 
 DEFAULT_MLB_STATS_API = "https://statsapi.mlb.com/api/v1"
 DEFAULT_BASEBALL_SAVANT = "https://baseballsavant.mlb.com"
+DEFAULT_FANGRAPHS = "https://www.fangraphs.com"
 
 
 def parse_savant_statcast_summary(payload: str, *, season: int) -> dict[str, float]:
@@ -237,6 +241,83 @@ def build_savant_fielding_rows(
                 "Outfield Arm Runs": _as_float(fielding.get("outfieldArmRuns")) or _as_float(fielding.get("armRuns")),
                 "Pop Time": _as_float(fielding.get("popTime")) or _as_float(fielding.get("avgPopTime2B")),
                 "Framing Runs": _as_float(fielding.get("framingRuns")) or _as_float(fielding.get("catcherFramingRuns")),
+            }
+        )
+    return rows
+
+
+def parse_fangraphs_fielding_csv(payload: str) -> list[dict[str, Any]]:
+    reader = csv.DictReader(io.StringIO(payload))
+    parsed_rows: list[dict[str, Any]] = []
+    for row in reader:
+        if not isinstance(row, dict):
+            continue
+        name = _as_str(row.get("Name") or row.get("Player") or row.get("player_name"))
+        if not name:
+            continue
+        team = _as_str(row.get("Team") or row.get("Tm") or row.get("team"))
+        drs = _as_float(row.get("DRS") or row.get("drs") or row.get("Defensive Runs Saved"))
+        uzr = _as_float(row.get("UZR") or row.get("uzr") or row.get("UZR/150") or row.get("uzr_150"))
+        if drs is None and uzr is None:
+            continue
+        parsed_rows.append(
+            {
+                "name": name,
+                "team": team.upper() if team else None,
+                "drs": drs,
+                "uzr": uzr,
+            }
+        )
+    return parsed_rows
+
+
+def build_fangraphs_fielding_rows(
+    players: Iterable[Mapping[str, Any]],
+    *,
+    team_abbreviation: str,
+    season: int,
+    ssl_context: SSLContext | None = None,
+    fangraphs: str = DEFAULT_FANGRAPHS,
+    csv_payload: str | None = None,
+) -> list[dict[str, object]]:
+    payload = csv_payload
+    if payload is None:
+        payload = _fetch_fangraphs_fielding_csv(season=season, ssl_context=ssl_context, fangraphs=fangraphs)
+    if not payload:
+        return []
+
+    parsed = parse_fangraphs_fielding_csv(payload)
+    by_name_team = {
+        (_normalized_name(row["name"]), row.get("team")): row
+        for row in parsed
+        if isinstance(row.get("name"), str)
+    }
+    by_name = {
+        _normalized_name(row["name"]): row
+        for row in parsed
+        if isinstance(row.get("name"), str)
+    }
+
+    rows: list[dict[str, object]] = []
+    for player in players:
+        if player.get("type") != "hitter":
+            continue
+        player_name = _as_str(player.get("name"))
+        if not player_name:
+            continue
+        team = _as_str(player.get("team")) or team_abbreviation
+        normalized = _normalized_name(player_name)
+        match = by_name_team.get((normalized, (team or "").upper())) or by_name.get(normalized)
+        if not match:
+            continue
+        rows.append(
+            {
+                "player_id": player.get("player_id"),
+                "player_name": player_name,
+                "team": team,
+                "position": player.get("position"),
+                "DRS": match.get("drs"),
+                "UZR": match.get("uzr"),
             }
         )
     return rows
@@ -685,6 +766,26 @@ def _fetch_savant_hitter_summary(
     return parse_savant_statcast_summary(payload, season=season)
 
 
+def _fetch_fangraphs_fielding_csv(
+    *,
+    season: int,
+    ssl_context: SSLContext | None,
+    fangraphs: str,
+) -> str | None:
+    url = (
+        f"{fangraphs}/leaders-legacy.aspx?pos=all&stats=fld&lg=all&qual=0&type=8"
+        f"&season={season}&month=0&season1={season}&ind=0&team=0&rost=0&age=0"
+        "&filter=&players=0&startdate=&enddate=&page=1_2000&csv=1"
+    )
+    try:
+        payload = _fetch_text(url, ssl_context=ssl_context, headers={"User-Agent": "Mozilla/5.0"})
+    except (HTTPError, URLError, TimeoutError, OSError):
+        return None
+    if "Name" not in payload or "DRS" not in payload:
+        return None
+    return payload
+
+
 def _fetch_handedness_splits(
     player_id: int,
     group: str,
@@ -851,3 +952,7 @@ def _as_str(value: Any) -> str | None:
     if isinstance(value, str):
         return value
     return str(value)
+
+
+def _normalized_name(value: str) -> str:
+    return " ".join(value.lower().split())
