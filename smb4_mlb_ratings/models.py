@@ -11,6 +11,7 @@ SeasonValue = float | int | dict[str, float | int] | None
 class PlayerInput:
     name: str
     role: str
+    active: bool = True
     team: str | None = None
     age: int | None = None
     primary_position: str | None = None
@@ -28,6 +29,7 @@ class PlayerInput:
         return cls(
             name=data["name"],
             role=data["role"],
+            active=bool(data.get("active", True)),
             team=data.get("team"),
             age=data.get("age"),
             primary_position=data.get("primary_position"),

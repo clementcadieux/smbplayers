@@ -23,7 +23,9 @@ if pytest is not None:
 
 TEAM_ID = 141
 TEAM_ABBREVIATION = "TOR"
-SEASON = 2025
+ROSTER_SEASON = 2026
+PRIMARY_STAT_SEASON = 2025
+FALLBACK_STAT_SEASON = 2026
 MLB_STATS_API = "https://statsapi.mlb.com/api/v1"
 INFIELD_POSITIONS = {"1B", "2B", "3B", "SS", "IF"}
 OUTFIELD_POSITIONS = {"LF", "CF", "RF", "OF"}
@@ -53,6 +55,7 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
         self._write_fixture_files()
 
         normalized_path = self.output / "tor_normalized.json"
+        filtered_normalized_path = self.output / "tor_filtered_normalized.json"
         ratings_path = self.output / "tor_ratings.json"
         structured_path = self.output / "tor_structured"
         roster_path = self.output / "tor_roster.json"
@@ -66,8 +69,10 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
                 "ingest-rate",
                 str(manifest_path),
                 str(ratings_path),
+                "--team",
+                TEAM_ABBREVIATION,
                 "--normalized-output",
-                str(normalized_path),
+                str(filtered_normalized_path),
                 "--structured-output",
                 str(structured_path),
             ]
@@ -78,20 +83,36 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
         self.assertEqual(rank_result, 0)
 
         expected_names = sorted(str(player["name"]) for player in self.players)
+        inactive_name = str(self._inactive_player()["name"])
         normalized_payload = json.loads(normalized_path.read_text(encoding="utf-8"))
         normalized_players = normalized_payload["players"]
-        self.assertEqual(len(normalized_players), len(self.players))
-        self.assertTrue(all(player["team"] == "TOR" for player in normalized_players))
+        self.assertEqual(len(normalized_players), len(self.players) + 1)
+        inactive_player = next(player for player in normalized_players if player["name"] == inactive_name)
+        self.assertFalse(inactive_player["active"])
+        self.assertEqual(inactive_player["team"], "NYY")
         self.assertTrue(all(player["name"] and player["primary_position"] for player in normalized_players))
         self.assertTrue(all(player["samples"] for player in normalized_players))
         self.assertTrue(all(player["metrics"] for player in normalized_players))
-        self.assertEqual(sorted(player["name"] for player in normalized_players), expected_names)
+
+        filtered_normalized_payload = json.loads(filtered_normalized_path.read_text(encoding="utf-8"))
+        filtered_normalized_players = filtered_normalized_payload["players"]
+        self.assertEqual(len(filtered_normalized_players), len(self.players))
+        self.assertTrue(all(player["team"] == "TOR" for player in filtered_normalized_players))
+        self.assertEqual(sorted(player["name"] for player in filtered_normalized_players), expected_names)
+        self.assertNotIn(inactive_name, {player["name"] for player in filtered_normalized_players})
 
         ratings_payload = json.loads(ratings_path.read_text(encoding="utf-8"))
         self.assertEqual(len(ratings_payload), len(self.players))
         self.assertTrue(all(player["team"] == "TOR" for player in ratings_payload))
         self.assertTrue(all(1 <= player["overall_numeric"] <= 99 for player in ratings_payload if player["overall_numeric"] is not None))
         self.assertEqual(sorted(player["name"] for player in ratings_payload), expected_names)
+        self.assertNotIn(inactive_name, {player["name"] for player in ratings_payload})
+        injured_players = {
+            player["name"]
+            for player in ratings_payload
+            if isinstance(player.get("metadata"), dict) and isinstance(player["metadata"].get("status"), str) and "injured" in player["metadata"]["status"].lower()
+        }
+        self.assertTrue(injured_players)
 
         structured_team_path = structured_path / "AL" / "East" / "TOR.json"
         self.assertTrue(structured_team_path.exists())
@@ -100,6 +121,7 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
             sorted(player["name"] for player in structured_team_payload["players"]),
             sorted(player["name"] for player in ratings_payload),
         )
+        self.assertNotIn(inactive_name, {player["name"] for player in structured_team_payload["players"]})
         index_payload = json.loads((structured_path / "index.json").read_text(encoding="utf-8"))
         self.assertEqual(index_payload["AL"]["East"][0]["team"], "TOR")
 
@@ -107,13 +129,14 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
         team_roster = roster_payload["teams"][0]
         self.assertEqual(team_roster["team"], "TOR")
         roster_slots = team_roster["recommended_roster"]
-        self.assertEqual(len(roster_slots), 22)
-        self.assertEqual(sum(slot["slot_type"].startswith("sp") for slot in roster_slots), 4)
-        self.assertEqual(sum(slot["slot_type"].startswith("rp") for slot in roster_slots), 5)
-        self.assertEqual(sum(slot["slot_type"].startswith("if") for slot in roster_slots), 5)
-        self.assertEqual(sum(slot["slot_type"].startswith("of") for slot in roster_slots), 4)
-        self.assertEqual(sum(slot["slot_type"].startswith("c") for slot in roster_slots), 2)
-        self.assertEqual(sum(slot["slot_type"].startswith("flex_") for slot in roster_slots), 2)
+        expected_counts = self._expected_roster_counts(structured_team_payload["players"])
+        self.assertEqual(len(roster_slots), expected_counts["total"])
+        self.assertEqual(sum(slot["slot_type"].startswith("sp") for slot in roster_slots), expected_counts["SP"])
+        self.assertEqual(sum(slot["slot_type"].startswith("rp") for slot in roster_slots), expected_counts["RP"])
+        self.assertEqual(sum(slot["slot_type"].startswith("if") for slot in roster_slots), expected_counts["IF"])
+        self.assertEqual(sum(slot["slot_type"].startswith("of") for slot in roster_slots), expected_counts["OF"])
+        self.assertEqual(sum(slot["slot_type"].startswith("c") for slot in roster_slots), expected_counts["C"])
+        self.assertEqual(sum(slot["slot_type"].startswith("flex_") for slot in roster_slots), expected_counts["Flex"])
 
         for prefix in ("sp", "rp", "c", "if", "of"):
             grouped_slots = [slot for slot in roster_slots if slot["slot_type"].startswith(prefix) and not slot["slot_type"].startswith("flex_")]
@@ -130,6 +153,10 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
             if slot["slot_type"].startswith("flex_")
         }
         self.assertEqual(structured_flex_names, flex_names)
+        self.assertNotIn(inactive_name, {slot["player"]["name"] for slot in roster_slots})
+        injured_slots = [slot for slot in roster_slots if slot["is_injured_list"]]
+        self.assertTrue(injured_slots)
+        self.assertTrue(all(slot["player"]["name"] in injured_players for slot in injured_slots))
 
     def _write_csv(self, path: Path, rows: list[dict[str, object]]) -> None:
         if not rows:
@@ -141,17 +168,18 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
                 writer.writerow(row)
 
     def _write_fixture_files(self) -> None:
-        self._write_csv(self.exports / "bluejays_roster_2025.csv", self._roster_rows())
+        self._write_csv(self.exports / "bluejays_roster_2026.csv", self._roster_rows())
         self._write_csv(self.exports / "bluejays_bref_hitters_2025.csv", self._bref_hitter_rows())
         self._write_csv(self.exports / "bluejays_bref_pitchers_2025.csv", self._bref_pitcher_rows())
 
         manifest = {
             "source": "baseball_reference",
+            "roster_filter": {"team": TEAM_ABBREVIATION, "year": ROSTER_SEASON},
             "seasons": {
                 "current": {
-                    "year": SEASON,
+                    "year": ROSTER_SEASON,
                     "files": {
-                        "roster": "bluejays_roster_2025.csv",
+                        "roster": "bluejays_roster_2026.csv",
                         "hitters": "bluejays_bref_hitters_2025.csv",
                         "pitchers": "bluejays_bref_pitchers_2025.csv",
                     },
@@ -166,6 +194,8 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
                 "player_id": player["player_id"],
                 "player_name": player["name"],
                 "team": TEAM_ABBREVIATION,
+                "status": player["status"],
+                "status_code": player["status_code"],
                 "age": player["age"],
                 "position": player["position"],
                 "bats": player["bats"],
@@ -176,14 +206,14 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
 
     def _bref_hitter_rows(self) -> list[dict[str, object]]:
         rows: list[dict[str, object]] = []
-        for player in self.players:
+        for player in self.players + [self._inactive_player()]:
             if player["type"] != "hitter":
                 continue
             rows.append(
                 {
                     "player_id": player["player_id"],
                     "player_name": player["name"],
-                    "team": TEAM_ABBREVIATION,
+                    "team": player.get("team", TEAM_ABBREVIATION),
                     "position": player["position"],
                     "PA": player["plate_appearances"],
                     "AB": player["at_bats"],
@@ -202,6 +232,32 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
                 }
             )
         return rows
+
+    def _inactive_player(self) -> dict[str, object]:
+        return {
+            "player_id": 999001,
+            "name": "Synthetic Traded Blue Jay",
+            "team": "NYY",
+            "type": "hitter",
+            "position": "LF",
+            "age": 29,
+            "bats": "L",
+            "throws": "R",
+            "plate_appearances": 320,
+            "at_bats": 290,
+            "hits": 77,
+            "doubles": 15,
+            "triples": 1,
+            "home_runs": 11,
+            "walks": 24,
+            "strikeouts": 68,
+            "hit_by_pitch": 3,
+            "stolen_bases": 5,
+            "caught_stealing": 2,
+            "avg": "0.266",
+            "obp": "0.327",
+            "slg": "0.438",
+        }
 
     def _bref_pitcher_rows(self) -> list[dict[str, object]]:
         rows: list[dict[str, object]] = []
@@ -227,7 +283,7 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
         return rows
 
     def _fetch_blue_jays_players(self) -> list[dict[str, Any]]:
-        roster_payload = self._fetch_json(f"{MLB_STATS_API}/teams/{TEAM_ID}/roster?rosterType=active&season={SEASON}")
+        roster_payload = self._fetch_json(f"{MLB_STATS_API}/teams/{TEAM_ID}/roster?rosterType=40Man&season={ROSTER_SEASON}")
         roster_entries = roster_payload.get("roster", [])
         if not isinstance(roster_entries, list):
             return []
@@ -258,6 +314,12 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
             primary_position = person.get("primaryPosition", {})
             if not isinstance(primary_position, dict):
                 primary_position = {}
+            status_payload = roster_entry.get("status", {})
+            if not isinstance(status_payload, dict):
+                status_payload = {}
+            status = self._as_str(status_payload.get("description")) or "Active"
+            if status != "Active" and "injured" not in status.lower():
+                continue
 
             position = self._as_str(roster_position.get("abbreviation")) or self._as_str(primary_position.get("abbreviation"))
             position_type = self._as_str(roster_position.get("type"))
@@ -277,6 +339,8 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
                 "name": self._as_str(person.get("fullName")) or self._as_str(person_summary.get("fullName")),
                 "type": player_type,
                 "position": position,
+                "status": status,
+                "status_code": self._as_str(status_payload.get("code")) or "A",
                 "age": self._as_int(person.get("currentAge")),
                 "bats": self._nested_str(person, "batSide", "code"),
                 "throws": self._nested_str(person, "pitchHand", "code"),
@@ -330,21 +394,24 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
             return json.load(response)
 
     def _fetch_stats(self, player_id: int, group: str) -> dict[str, Any] | None:
-        payload = self._fetch_json(f"{MLB_STATS_API}/people/{player_id}/stats?stats=season&group={group}&season={SEASON}")
-        stats = payload.get("stats", [])
-        if not isinstance(stats, list) or not stats:
-            return None
-        first_stats = stats[0]
-        if not isinstance(first_stats, dict):
-            return None
-        splits = first_stats.get("splits", [])
-        if not isinstance(splits, list) or not splits:
-            return None
-        first_split = splits[0]
-        if not isinstance(first_split, dict):
-            return None
-        stat_line = first_split.get("stat", {})
-        return stat_line if isinstance(stat_line, dict) else None
+        for season in (PRIMARY_STAT_SEASON, FALLBACK_STAT_SEASON):
+            payload = self._fetch_json(f"{MLB_STATS_API}/people/{player_id}/stats?stats=season&group={group}&season={season}")
+            stats = payload.get("stats", [])
+            if not isinstance(stats, list) or not stats:
+                continue
+            first_stats = stats[0]
+            if not isinstance(first_stats, dict):
+                continue
+            splits = first_stats.get("splits", [])
+            if not isinstance(splits, list) or not splits:
+                continue
+            first_split = splits[0]
+            if not isinstance(first_split, dict):
+                continue
+            stat_line = first_split.get("stat", {})
+            if isinstance(stat_line, dict):
+                return stat_line
+        return None
 
     def _output_sort_key(self, player: dict[str, Any]) -> tuple[float, int, int, str]:
         projected_ip = player.get("projected_ip")
@@ -405,6 +472,59 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
             ),
         )[:2]
         return {player["name"] for _, player in chosen}
+
+    def _expected_roster_counts(self, players: list[dict[str, Any]]) -> dict[str, int]:
+        grouped = {"SP": [], "RP": [], "C": [], "IF": [], "OF": []}
+        for player in players:
+            role = player.get("role")
+            primary_position = player.get("primary_position")
+            secondary_position = player.get("secondary_position")
+            positions = {position for position in (primary_position, secondary_position) if isinstance(position, str) and position}
+            if role in {"pitcher", "two_way"}:
+                projected_ip = self._as_float(player.get("projected_ip")) or 0.0
+                grouped["SP" if projected_ip >= 80 else "RP"].append(player)
+            if role in {"hitter", "two_way"}:
+                if "C" in positions:
+                    grouped["C"].append(player)
+                if positions & INFIELD_POSITIONS:
+                    grouped["IF"].append(player)
+                if positions & OUTFIELD_POSITIONS:
+                    grouped["OF"].append(player)
+
+        for group_name in grouped:
+            grouped[group_name] = sorted(grouped[group_name], key=self._output_sort_key)
+
+        selected_names = set()
+        counts = {"SP": 0, "RP": 0, "C": 0, "IF": 0, "OF": 0, "Flex": 0}
+        for group_name, count in (("SP", 4), ("RP", 5), ("C", 2), ("IF", 5), ("OF", 4)):
+            picked_count = 0
+            for player in grouped[group_name]:
+                if player["name"] in selected_names:
+                    continue
+                selected_names.add(player["name"])
+                picked_count += 1
+                if picked_count >= count:
+                    break
+            counts[group_name] = picked_count
+
+        flex_candidates: list[tuple[str, dict[str, Any]]] = []
+        for group_name in ("C", "IF", "OF"):
+            for player in grouped[group_name]:
+                if player["name"] in selected_names:
+                    continue
+                flex_candidates.append((group_name, player))
+                break
+
+        chosen = sorted(
+            flex_candidates,
+            key=lambda item: (
+                -(self._as_int(item[1].get("overall_numeric")) or 0),
+                self._output_sort_key(item[1]),
+            ),
+        )[:2]
+        counts["Flex"] = len(chosen)
+        counts["total"] = counts["SP"] + counts["RP"] + counts["C"] + counts["IF"] + counts["OF"] + counts["Flex"]
+        return counts
 
     def _nested_str(self, payload: dict[str, Any], key: str, nested_key: str) -> str | None:
         nested = payload.get(key)

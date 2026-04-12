@@ -481,6 +481,247 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertEqual(len(normalized_payload["players"]), 2)
         self.assertEqual(len(ratings_payload), 2)
 
+    def test_ingest_marks_current_wrong_team_players_inactive_when_roster_filter_present(self) -> None:
+        roster_path = self.root / "filtered_roster_2025.csv"
+        hitters_path = self.root / "filtered_hitters_2025.csv"
+        manifest_path = self.root / "filtered_manifest.json"
+
+        self._write_csv(
+            roster_path,
+            [
+                {
+                    "player_id": 700,
+                    "player_name": "Target Team Hitter",
+                    "team": "NYM",
+                    "age": 25,
+                    "position": "CF",
+                    "bats": "R",
+                    "throws": "R",
+                }
+            ],
+        )
+        self._write_csv(
+            hitters_path,
+            [
+                {
+                    "player_id": 700,
+                    "player_name": "Target Team Hitter",
+                    "team": "NYM",
+                    "position": "CF",
+                    "PA": 510,
+                    "ISO": 0.180,
+                    "HR": 21,
+                    "Barrel %": 9.8,
+                    "SLG": 0.472,
+                    "AVG": 0.277,
+                    "OBP": 0.340,
+                    "K %": 20.1,
+                    "Contact %": 79.1,
+                    "Two Strike Contact %": 63.0,
+                    "Avg Exit Velocity": 89.4,
+                    "2B": 28,
+                    "3B": 3,
+                    "SB": 14,
+                    "CS": 4,
+                    "BB": 41,
+                    "HBP": 3,
+                    "H": 138,
+                    "Sprint Speed": 28.2,
+                },
+                {
+                    "player_id": 701,
+                    "player_name": "Traded Hitter",
+                    "team": "PHI",
+                    "position": "RF",
+                    "PA": 480,
+                    "ISO": 0.195,
+                    "HR": 24,
+                    "Barrel %": 10.4,
+                    "SLG": 0.481,
+                    "AVG": 0.271,
+                    "OBP": 0.336,
+                    "K %": 22.0,
+                    "Contact %": 76.0,
+                    "Two Strike Contact %": 60.2,
+                    "Avg Exit Velocity": 90.1,
+                    "2B": 30,
+                    "3B": 2,
+                    "SB": 8,
+                    "CS": 2,
+                    "BB": 39,
+                    "HBP": 2,
+                    "H": 126,
+                    "Sprint Speed": 27.9,
+                },
+            ],
+        )
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "source": "baseball_savant",
+                    "roster_filter": {"team": "NYM", "year": 2025},
+                    "seasons": {
+                        "current": {
+                            "year": 2025,
+                            "files": {
+                                "roster": "filtered_roster_2025.csv",
+                                "hitters": "filtered_hitters_2025.csv",
+                            },
+                        }
+                    },
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        players = ingest_from_manifest(load_manifest(manifest_path))
+
+        active_player = next(player for player in players if player["name"] == "Target Team Hitter")
+        inactive_player = next(player for player in players if player["name"] == "Traded Hitter")
+        self.assertTrue(active_player["active"])
+        self.assertFalse(inactive_player["active"])
+        self.assertEqual(inactive_player["team"], "PHI")
+
+    def test_cli_rate_team_filter_excludes_other_teams(self) -> None:
+        normalized_path = self.root / "filtered_players.json"
+        ratings_path = self.root / "filtered_ratings.json"
+        normalized_path.write_text(
+            json.dumps(
+                {
+                    "players": [
+                        {
+                            "name": "Keep Me",
+                            "role": "hitter",
+                            "active": True,
+                            "team": "NYM",
+                            "primary_position": "CF",
+                            "metrics": {
+                                "iso": {"current": 0.190},
+                                "hr_per_pa": {"current": 0.040},
+                                "barrel_rate": {"current": 0.100},
+                                "slugging": {"current": 0.470},
+                                "avg_exit_velocity": {"current": 90.0},
+                                "strikeout_rate": {"current": 0.210},
+                                "contact_rate": {"current": 0.780},
+                                "batting_average": {"current": 0.270},
+                                "adjusted_obp": {"current": 0.340},
+                                "two_strike_contact_rate": {"current": 0.620},
+                            },
+                            "samples": {"weighted_pa": {"current": 500}},
+                            "metadata": {},
+                        },
+                        {
+                            "name": "Drop Me",
+                            "role": "hitter",
+                            "active": True,
+                            "team": "ATL",
+                            "primary_position": "RF",
+                            "metrics": {
+                                "iso": {"current": 0.180},
+                                "hr_per_pa": {"current": 0.038},
+                                "barrel_rate": {"current": 0.090},
+                                "slugging": {"current": 0.450},
+                                "avg_exit_velocity": {"current": 89.0},
+                                "strikeout_rate": {"current": 0.220},
+                                "contact_rate": {"current": 0.760},
+                                "batting_average": {"current": 0.265},
+                                "adjusted_obp": {"current": 0.332},
+                                "two_strike_contact_rate": {"current": 0.610},
+                            },
+                            "samples": {"weighted_pa": {"current": 480}},
+                            "metadata": {},
+                        },
+                    ]
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        result = main(["rate", str(normalized_path), str(ratings_path), "--team", "nym"])
+
+        self.assertEqual(result, 0)
+        ratings = json.loads(ratings_path.read_text(encoding="utf-8"))
+        self.assertEqual([item["name"] for item in ratings], ["Keep Me"])
+
+    def test_ingest_preserves_roster_status_metadata(self) -> None:
+        roster_path = self.root / "status_roster_2025.csv"
+        hitters_path = self.root / "status_hitters_2025.csv"
+        manifest_path = self.root / "status_manifest.json"
+
+        self._write_csv(
+            roster_path,
+            [
+                {
+                    "player_id": 710,
+                    "player_name": "Injured Hitter",
+                    "team": "NYM",
+                    "status": "Injured 10-Day",
+                    "status_code": "D10",
+                    "age": 28,
+                    "position": "LF",
+                    "bats": "L",
+                    "throws": "R",
+                }
+            ],
+        )
+        self._write_csv(
+            hitters_path,
+            [
+                {
+                    "player_id": 710,
+                    "player_name": "Injured Hitter",
+                    "team": "NYM",
+                    "position": "LF",
+                    "PA": 420,
+                    "ISO": 0.172,
+                    "HR": 18,
+                    "Barrel %": 8.9,
+                    "SLG": 0.441,
+                    "AVG": 0.266,
+                    "OBP": 0.329,
+                    "K %": 21.0,
+                    "Contact %": 77.4,
+                    "Two Strike Contact %": 61.8,
+                    "Avg Exit Velocity": 89.1,
+                    "2B": 24,
+                    "3B": 2,
+                    "SB": 6,
+                    "CS": 2,
+                    "BB": 35,
+                    "HBP": 2,
+                    "H": 111,
+                    "Sprint Speed": 27.5,
+                }
+            ],
+        )
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "source": "baseball_savant",
+                    "seasons": {
+                        "current": {
+                            "year": 2025,
+                            "files": {
+                                "roster": "status_roster_2025.csv",
+                                "hitters": "status_hitters_2025.csv",
+                            },
+                        }
+                    },
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        players = ingest_from_manifest(load_manifest(manifest_path))
+
+        player = players[0]
+        self.assertEqual(player["metadata"]["status"], "Injured 10-Day")
+        self.assertEqual(player["metadata"]["status_code"], "D10")
+        self.assertTrue(player["metadata"]["on_il"])
+
     def test_baseball_reference_manifest_builds_result_based_input(self) -> None:
         manifest = load_manifest(self.root / "br_manifest.json")
         players = ingest_from_manifest(manifest)

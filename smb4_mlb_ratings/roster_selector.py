@@ -157,8 +157,19 @@ def _select_group_slots(
     return slots
 
 
-def select_roster(players: list[RatingOutput], injured_list: set[str] | None = None) -> list[RosterSlot]:
+def select_roster(
+    players: list[RatingOutput],
+    injured_list: set[str] | None = None,
+    *,
+    target_team: str | None = None,
+) -> list[RosterSlot]:
     injured = injured_list or set()
+    if target_team is not None:
+        normalized_team = target_team.upper()
+        invalid_players = [player.name for player in players if not isinstance(player.team, str) or player.team.upper() != normalized_team]
+        if invalid_players:
+            invalid_text = ", ".join(sorted(invalid_players))
+            raise ValueError(f"Roster selection for {normalized_team} received players without a matching team: {invalid_text}")
     ranked = rank_players_by_role(players, injured)
     selected_names: set[str] = set()
     roster: list[RosterSlot] = []
@@ -215,7 +226,7 @@ def load_ratings(path: Path) -> list[RatingOutput]:
 
 
 def roster_payload_for_team(team: str | None, players: list[RatingOutput], injured_list: set[str] | None = None) -> dict[str, object]:
-    roster = select_roster(players, injured_list=injured_list)
+    roster = select_roster(players, injured_list=injured_list, target_team=team)
     return {
         "team": team,
         "players": [player.to_dict() for player in sorted(players, key=lambda item: item.name)],

@@ -1539,6 +1539,7 @@ def apply_review_flags(state: PlayerState, spec: RatingSpec, available_weight: f
 
 def rate_players(players: list[PlayerInput | dict], trim_final_traits: bool = True) -> list[RatingOutput]:
     player_objects = [player if isinstance(player, PlayerInput) else PlayerInput.from_dict(player) for player in players]
+    player_objects = [player for player in player_objects if player.active]
     players_by_name = {player.name: player for player in player_objects}
     states = [state_from_player(player) for player in player_objects]
 
