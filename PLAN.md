@@ -102,3 +102,51 @@ Two leagues (AL / NL), each with three divisions (East / Central / West), totall
    - Age tiebreaker applied correctly.
    - Flex spot resolution across all three options.
    - IL-aware ordering.
+
+---
+
+## Issue #10 – Run a Full Process Test Using the Toronto Blue Jays
+
+**Problem:** The complete pipeline (ingest → rate → structured output → roster selection) has not been validated end-to-end with real team data. Using the Toronto Blue Jays as the test team will confirm that every stage produces correct, consistent output for a real MLB roster.
+
+### Steps
+
+1. **Prepare sample Blue Jays data files:**
+   - Export a Baseball Savant CSV (`savant_bluejays.csv`) and a Baseball Reference CSV (`bref_bluejays.csv`) covering the 2025 Blue Jays 40-man roster.
+   - Create an ingestion manifest (`bluejays_manifest.json`) pointing to both CSVs, with `team: "TOR"` set for all players.
+   - Store these files locally (they are covered by `.gitignore` and must not be committed).
+
+2. **Run each pipeline stage in sequence and capture output:**
+   - `ingest`: `python -m smb4_mlb_ratings.cli ingest bluejays_manifest.json /tmp/tor_normalized.json`
+   - `ingest-rate` with structured output: `python -m smb4_mlb_ratings.cli ingest-rate bluejays_manifest.json /tmp/tor_ratings.json --normalized-output /tmp/tor_normalized.json --structured-output /tmp/tor_structured/`
+   - `rank`: `python -m smb4_mlb_ratings.cli rank /tmp/tor_ratings.json /tmp/tor_roster.json`
+
+3. **Validate normalized output (`tor_normalized.json`):**
+   - All expected Blue Jays players are present (no silent drops during ingestion).
+   - Required fields (`name`, `position`, `sample_size`, stat fields) are populated for every player.
+   - No players from other teams are included.
+
+4. **Validate ratings output (`tor_ratings.json`):**
+   - Every player has an `overall` rating in the valid SMB4 range (1–99).
+   - Surface-stat blending is correctly applied (underlying metrics dominate at low sample sizes).
+   - Position-specific rating components match those defined in `smb4_player_reference.json`.
+
+5. **Validate structured output directory (`tor_structured/`):**
+   - Confirm the file `tor_structured/AL/East/TOR.json` exists.
+   - Confirm `tor_structured/index.json` lists `TOR` under `AL → East`.
+   - Confirm player data in the team file matches the flat ratings output.
+
+6. **Validate roster selection output (`tor_roster.json`):**
+   - Exactly 22 roster slots are selected.
+   - Slot counts per group are correct: 4 SP, 5 RP, 5 IF, 4 OF, 2 C, 2 Flex.
+   - Flex slots are filled by the best candidate among 3rd C, 6th IF, and 5th OF.
+   - Players are sorted by projected playing time descending, then age ascending within each group.
+
+7. **Add an end-to-end integration test (`tests/test_e2e_bluejays.py`):**
+   - Use a minimal synthetic Blue Jays dataset (small enough to commit) that covers all position groups.
+   - Run the full `ingest-rate → rank` pipeline programmatically (not via subprocess) against a temp directory.
+   - Assert all validation criteria from steps 3–6 on the synthetic dataset output.
+   - Mark the test with `pytest.mark.integration` so it can be run separately from unit tests.
+
+8. **Document the manual test procedure in `README.md`:**
+   - Add a "Full Pipeline Walkthrough" section with the exact CLI commands for steps 2–6 using the Blue Jays as the example team.
