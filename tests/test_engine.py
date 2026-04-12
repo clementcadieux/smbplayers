@@ -130,6 +130,20 @@ class SurfaceBlendTests(unittest.TestCase):
 
         self.assertEqual(resolved_projected_pa(player), 648.0)
 
+    def test_projected_pa_is_capped_at_reference_maximum(self) -> None:
+        player = PlayerInput.from_dict(
+            {
+                "name": "Extreme Volume Hitter",
+                "role": "hitter",
+                "team": "NYM",
+                "primary_position": "CF",
+                "samples": {"weighted_pa": {"current": 200}},
+                "days_on_roster": {"current": 30},
+            }
+        )
+
+        self.assertEqual(resolved_projected_pa(player), 700.0)
+
     def test_projected_ip_falls_back_to_raw_totals_without_days_on_roster(self) -> None:
         player = PlayerInput.from_dict(
             {
@@ -142,6 +156,20 @@ class SurfaceBlendTests(unittest.TestCase):
         )
 
         self.assertAlmostEqual(resolved_projected_ip(player), 60.0)
+
+    def test_projected_ip_is_capped_at_reference_maximum(self) -> None:
+        player = PlayerInput.from_dict(
+            {
+                "name": "Extreme Volume Pitcher",
+                "role": "pitcher",
+                "team": "NYM",
+                "primary_position": "P",
+                "samples": {"defensive_innings": {"current": 100}},
+                "days_on_roster": {"current": 30},
+            }
+        )
+
+        self.assertEqual(resolved_projected_ip(player), 250.0)
 
     def test_rate_players_surfaces_recommended_pitches_for_pitchers(self) -> None:
         outputs = rate_players(

@@ -31,7 +31,9 @@
   },
   "volume_projection": {
     "full_season_days_hitter": 162,
-    "full_season_days_pitcher": 180
+    "full_season_days_pitcher": 180,
+    "max_projected_pa": 700,
+    "max_projected_ip": 250
   },
   "secondary_positions": {
     "minimum_positional_games": 1,
