@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 from typing import Any, Mapping
 
 
@@ -73,6 +74,42 @@ ELITE_PITCH_SPECS = {
 }
 
 
+REFERENCE_PATH = Path(__file__).resolve().parents[2] / "smb4_player_reference.json"
+DEFAULT_PITCH_RV_THRESHOLDS = {
+    "elite": -2.0,
+    "exceptional": -6.0,
+}
+
+
+def _load_pitch_rv_thresholds() -> dict[str, float]:
+    try:
+        payload = json.loads(REFERENCE_PATH.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return dict(DEFAULT_PITCH_RV_THRESHOLDS)
+
+    elite_value = payload.get("pitch_rv_per_100_elite", DEFAULT_PITCH_RV_THRESHOLDS["elite"])
+    exceptional_value = payload.get("pitch_rv_per_100_exceptional", DEFAULT_PITCH_RV_THRESHOLDS["exceptional"])
+
+    try:
+        elite = float(elite_value)
+    except (TypeError, ValueError):
+        elite = DEFAULT_PITCH_RV_THRESHOLDS["elite"]
+    try:
+        exceptional = float(exceptional_value)
+    except (TypeError, ValueError):
+        exceptional = DEFAULT_PITCH_RV_THRESHOLDS["exceptional"]
+
+    if exceptional > elite:
+        elite, exceptional = exceptional, elite
+    return {
+        "elite": elite,
+        "exceptional": exceptional,
+    }
+
+
+PITCH_RV_THRESHOLDS = _load_pitch_rv_thresholds()
+
+
 def _as_float(value: Any) -> float | None:
     if value is None:
         return None
@@ -134,6 +171,7 @@ def parse_savant_pitch_details(payload: str) -> dict[str, dict[str, float]]:
             "release_speed": _as_float(row.get("release_speed")) or 0.0,
             "pitches": _as_float(row.get("pitches")) or 0.0,
             "total_pitches": _as_float(row.get("total_pitches")) or 0.0,
+            "run_value_per_100": _as_float(row.get("run_value_per_100")) or _as_float(row.get("rv_per_100")) or 0.0,
         }
     return details
 
@@ -339,16 +377,23 @@ def _savant_pitch_quality_score(pitch_detail: Mapping[str, float], *, pitch_code
     misses = _as_float(pitch_detail.get("misses")) or 0.0
     whiff_percent = (misses / swings) * 100.0 if swings > 0 else 0.0
     release_speed = _as_float(pitch_detail.get("release_speed")) or 0.0
+    run_value_per_100 = _as_float(pitch_detail.get("run_value_per_100"))
+    if run_value_per_100 is None:
+        run_value_per_100 = _as_float(pitch_detail.get("rv_per_100")) or 0.0
 
     score = 0.0
-    score += _bounded_score(0.420 - xwoba, 0.220) * 35.0
-    score += _bounded_score(0.300 - xba, 0.160) * 15.0
-    score += _bounded_score(0.650 - xslg, 0.350) * 20.0
-    score += _bounded_score(whiff_percent - 15.0, 30.0) * 15.0
-    score += _bounded_score(55.0 - hard_hit_percent, 35.0) * 10.0
-    score += _bounded_score(12.0 - barrel_percent, 10.0) * 5.0
+    score += _bounded_score(0.420 - xwoba, 0.220) * 24.0
+    score += _bounded_score(0.300 - xba, 0.160) * 10.0
+    score += _bounded_score(0.650 - xslg, 0.350) * 13.0
+    score += _bounded_score(whiff_percent - 15.0, 30.0) * 10.0
+    score += _bounded_score(55.0 - hard_hit_percent, 35.0) * 7.0
+    score += _bounded_score(12.0 - barrel_percent, 10.0) * 4.0
+    elite_rv = PITCH_RV_THRESHOLDS["elite"]
+    exceptional_rv = PITCH_RV_THRESHOLDS["exceptional"]
+    rv_scale = max(elite_rv - exceptional_rv, 0.001)
+    score += _bounded_score(elite_rv - run_value_per_100, rv_scale) * 27.0
     if pitch_code in {"FF", "SI", "FT", "FC"}:
-        score += _bounded_score(release_speed - 92.0, 6.0) * 8.0
+        score += _bounded_score(release_speed - 92.0, 6.0) * 5.0
     return max(0.0, min(99.0, score))
 
 

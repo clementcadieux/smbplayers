@@ -193,6 +193,16 @@ class IngestFrameworkTests(unittest.TestCase):
                 }
             ],
         )
+        self._write_csv(
+            self.root / "pitch_run_values_2025.csv",
+            [
+                {
+                    "player_id": 200,
+                    "pitch_type": "CH",
+                    "run_value_per_100": -5.0,
+                }
+            ],
+        )
 
         manifest = {
             "source": "baseball_savant",
@@ -203,6 +213,7 @@ class IngestFrameworkTests(unittest.TestCase):
                         "roster": "roster_2025.csv",
                         "hitters": "hitters_2025.csv",
                         "pitchers": "pitchers_2025.csv",
+                        "pitch_run_values": "pitch_run_values_2025.csv",
                         "fielding": "fielding_2025.csv",
                         "running": "running_2025.csv",
                     },
@@ -566,6 +577,8 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertEqual(pitcher["trait_metrics"]["pitch_quality_cf"]["current"], 74.0)
         self.assertEqual(pitcher["trait_metrics"]["pitch_quality_fk"]["current"], 82.0)
         self.assertEqual(pitcher["trait_metrics"]["pitch_quality_sb"]["current"], 71.0)
+        self.assertIn("pitch_quality_ch", pitcher["trait_metrics"])
+        self.assertGreater(pitcher["trait_metrics"]["pitch_quality_ch"]["current"], 0.0)
         self.assertEqual(pitcher["trait_metrics"]["steal_suppression"]["current"], 68.0)
         self.assertEqual(pitcher["trait_metrics"]["same_handed_pitching_gap"]["current"], 14.0)
         self.assertEqual(pitcher["trait_metrics"]["opposite_handed_pitching_gap"]["current"], -14.0)
