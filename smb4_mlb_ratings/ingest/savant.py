@@ -969,6 +969,15 @@ def _apply_pitcher_row(player: PlayerAccumulator, season_key: str, row: dict[str
     player.set_pitch_mix(season_key, pitch_mix)
 
 
+def _should_apply_pitcher_row(player: PlayerAccumulator, row: dict[str, str]) -> bool:
+    row_position = _canonical_position(_pick_first(row, "primary_position", "position", "pos", "fielding_position", "mlb_pos"))
+    if row_position is not None and row_position != "P":
+        return False
+    if player.primary_position is not None and player.primary_position != "P" and "pitcher" not in player.roles:
+        return False
+    return True
+
+
 def _apply_fielding_row(player: PlayerAccumulator, season_key: str, row: dict[str, str]) -> None:
     # Expected leaderboard CSVs for specialized defensive inputs:
     # - https://baseballsavant.mlb.com/leaderboard/outs_above_average -> oaa / outs_above_average, innings
@@ -1087,6 +1096,8 @@ def ingest_from_manifest(manifest: IngestManifest | Path) -> list[dict[str, Any]
                     season_year=season_inputs.year,
                     roster_filter=manifest_obj.roster_filter,
                 )
+                if not _should_apply_pitcher_row(player, row):
+                    continue
                 _apply_pitcher_row(player, season_key, row)
 
         fielding_path = season_inputs.files.get("fielding")

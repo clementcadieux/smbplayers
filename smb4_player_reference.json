@@ -35,6 +35,20 @@
     "max_projected_pa": 700,
     "max_projected_ip": 250
   },
+  "trait_limits": {
+    "max_traits_per_player": 2,
+    "max_elite_pitch_traits": 1
+  },
+  "elite_pitch_traits": [
+    "Elite 4F",
+    "Elite 2F",
+    "Elite CF",
+    "Elite CB",
+    "Elite CH",
+    "Elite FK",
+    "Elite SL",
+    "Elite SB"
+  ],
   "secondary_positions": {
     "minimum_positional_games": 1,
     "coverage_groups": {
