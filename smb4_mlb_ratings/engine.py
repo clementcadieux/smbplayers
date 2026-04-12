@@ -558,24 +558,52 @@ def state_from_player(player: PlayerInput) -> PlayerState:
     )
 
 
+def injury_shortened_seasons(player: PlayerInput) -> set[str]:
+    ingest_metadata = player.metadata.get("ingest") if isinstance(player.metadata, Mapping) else None
+    if not isinstance(ingest_metadata, Mapping):
+        return set()
+    raw = ingest_metadata.get("injury_shortened")
+    if isinstance(raw, Mapping):
+        return {str(season_key) for season_key, flagged in raw.items() if flagged}
+    if isinstance(raw, list):
+        return {str(season_key) for season_key in raw}
+    return set()
+
+
+def season_average_excluding_injuries(value: SeasonValue, shortened_seasons: set[str]) -> float | None:
+    season_values = season_dict(value)
+    if season_values is None:
+        return None
+
+    healthy_values = [season_value for season_key, season_value in season_values.items() if season_key not in shortened_seasons]
+    if healthy_values:
+        return mean(healthy_values)
+    if season_values:
+        return mean(season_values.values())
+    return None
+
+
+def pitcher_season_ip_dict(player: PlayerInput) -> dict[str, float] | None:
+    defensive_innings = season_dict(player.samples.get("defensive_innings"))
+    if defensive_innings is not None:
+        return defensive_innings
+
+    weighted_bf = season_dict(player.samples.get("weighted_bf"))
+    if weighted_bf is None:
+        return None
+    return {season_key: round(batters_faced / 4.25, 2) for season_key, batters_faced in weighted_bf.items()}
+
+
 def resolved_projected_pa(player: PlayerInput) -> float | None:
     if player.projected_pa is not None:
         return float(player.projected_pa)
-    return current_season_value(player.samples.get("weighted_pa"))
+    return season_average_excluding_injuries(player.samples.get("weighted_pa"), injury_shortened_seasons(player))
 
 
 def resolved_projected_ip(player: PlayerInput) -> float | None:
     if player.projected_ip is not None:
         return float(player.projected_ip)
-
-    defensive_innings = current_season_value(player.samples.get("defensive_innings"))
-    if defensive_innings is not None:
-        return defensive_innings
-
-    weighted_bf = current_season_value(player.samples.get("weighted_bf"))
-    if weighted_bf is None:
-        return None
-    return round(weighted_bf / 4.25, 2)
+    return season_average_excluding_injuries(pitcher_season_ip_dict(player), injury_shortened_seasons(player))
 
 
 def trait_confidence(score: float) -> str:

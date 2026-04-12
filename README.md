@@ -176,6 +176,8 @@ When `--structured-output` is provided to `ingest-rate`, the tool writes one fil
 
 When `--team` is provided to `rate` or `ingest-rate`, only players whose `team` matches that abbreviation are included in the rating pass. Players marked inactive during ingestion are also skipped automatically by the engine.
 
+Projected plate appearances and innings now ignore seasons flagged as injury-shortened during ingestion. The flagging thresholds come from the `injury_threshold` block in [smb4_player_reference.json](smb4_player_reference.json), so low-volume injury years do not drag down roster-priority projections.
+
 The Blue Jays end-to-end integration test now fetches the live 2026 Blue Jays active-plus-IL subset of the 40-man roster from the public MLB Stats API, then pairs that roster with the most recent completed MLB season stats to build local Baseball Reference-style CSV fixtures in a temp directory before running the full ingest-rate-rank pipeline.
 
 ## Full Pipeline Walkthrough
@@ -242,7 +244,7 @@ Manual validation checklist:
 - `output/tor_structured/index.json`: should list `TOR` under `AL -> East`.
 - `output/tor_roster.json`: should contain exactly 22 selected roster slots with 4 SP, 5 RP, 5 IF, 4 OF, 2 C, and 2 flex slots.
 
-The `rank` subcommand reads a ratings JSON file and writes grouped roster recommendations per team. It uses projected plate appearances for hitters and projected innings for pitchers when available, and otherwise falls back to the most recent relevant sample volume already preserved in the rating output.
+The `rank` subcommand reads a ratings JSON file and writes grouped roster recommendations per team. It uses projected plate appearances for hitters and projected innings for pitchers when available, and otherwise falls back to a healthy-season volume baseline that excludes injury-shortened seasons when possible.
 
 ## Baseball Savant Ingestion
 
