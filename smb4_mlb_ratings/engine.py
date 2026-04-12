@@ -76,6 +76,15 @@ DEFAULT_VOLUME_PROJECTION = {
     "full_season_days_pitcher": 180.0,
 }
 
+DEFAULT_SECONDARY_POSITION_CONFIG = {
+    "minimum_positional_games": 1.0,
+    "coverage_groups": {
+        "OF": ["LF", "CF", "RF"],
+        "IF": ["1B", "2B", "3B", "SS"],
+    },
+    "utility_bonus_weight": 1.0,
+}
+
 
 REFERENCE_PATH = Path(__file__).resolve().parent.parent / "smb4_player_reference.json"
 
@@ -178,9 +187,60 @@ def load_trait_criteria_config() -> dict[str, object]:
     }
 
 
+def load_secondary_position_config() -> dict[str, object]:
+    try:
+        payload = json.loads(REFERENCE_PATH.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return dict(DEFAULT_SECONDARY_POSITION_CONFIG)
+
+    secondary_payload = payload.get("secondary_positions", {})
+    if not isinstance(secondary_payload, Mapping):
+        secondary_payload = {}
+
+    minimum_positional_games = secondary_payload.get(
+        "minimum_positional_games",
+        DEFAULT_SECONDARY_POSITION_CONFIG["minimum_positional_games"],
+    )
+    coverage_groups = secondary_payload.get("coverage_groups", DEFAULT_SECONDARY_POSITION_CONFIG["coverage_groups"])
+    utility_bonus_weight = secondary_payload.get(
+        "utility_bonus_weight",
+        DEFAULT_SECONDARY_POSITION_CONFIG["utility_bonus_weight"],
+    )
+    try:
+        minimum_value = float(minimum_positional_games)
+    except (TypeError, ValueError):
+        minimum_value = float(DEFAULT_SECONDARY_POSITION_CONFIG["minimum_positional_games"])
+    try:
+        utility_weight = float(utility_bonus_weight)
+    except (TypeError, ValueError):
+        utility_weight = float(DEFAULT_SECONDARY_POSITION_CONFIG["utility_bonus_weight"])
+
+    normalized_groups: dict[str, list[str]] = {}
+    if isinstance(coverage_groups, Mapping):
+        for group_name, raw_positions in coverage_groups.items():
+            if not isinstance(group_name, str) or not isinstance(raw_positions, list):
+                continue
+            normalized = [
+                str(position).upper()
+                for position in raw_positions
+                if isinstance(position, str) and str(position).strip()
+            ]
+            if normalized:
+                normalized_groups[str(group_name).upper()] = normalized
+    if not normalized_groups:
+        normalized_groups = dict(DEFAULT_SECONDARY_POSITION_CONFIG["coverage_groups"])
+
+    return {
+        "minimum_positional_games": minimum_value,
+        "coverage_groups": normalized_groups,
+        "utility_bonus_weight": utility_weight,
+    }
+
+
 CHEMISTRY_TYPES, TRAIT_CATALOG = load_trait_catalog()
 VOLUME_PROJECTION_CONFIG = load_volume_projection_config()
 TRAIT_CRITERIA_CONFIG = load_trait_criteria_config()
+SECONDARY_POSITION_CONFIG = load_secondary_position_config()
 
 
 @dataclass(frozen=True)
@@ -697,6 +757,71 @@ def resolved_projected_ip(player: PlayerInput) -> float | None:
         days_on_roster=player.days_on_roster,
         full_season_days=VOLUME_PROJECTION_CONFIG["full_season_days_pitcher"],
     )
+
+
+def normalized_position(position: str | None) -> str | None:
+    if not isinstance(position, str):
+        return None
+    candidate = position.strip().upper()
+    return candidate if candidate in POSITION_GROUPS else None
+
+
+def derive_secondary_positions(player: PlayerInput) -> list[str]:
+    if not isinstance(player.positional_games, Mapping):
+        return []
+
+    minimum_positional_games = SECONDARY_POSITION_CONFIG["minimum_positional_games"]
+    primary_position = normalized_position(player.primary_position)
+    ranked_positions: list[tuple[str, float]] = []
+    for position, raw_value in player.positional_games.items():
+        normalized = normalized_position(position)
+        if normalized is None or normalized == "P" or normalized == primary_position:
+            continue
+        try:
+            positional_games = float(raw_value)
+        except (TypeError, ValueError):
+            continue
+        if positional_games < minimum_positional_games:
+            continue
+        ranked_positions.append((normalized, positional_games))
+
+    ranked_positions.sort(key=lambda item: (-item[1], item[0]))
+    ordered_unique: list[str] = []
+    seen: set[str] = set()
+    for position, _ in ranked_positions:
+        if position in seen:
+            continue
+        seen.add(position)
+        ordered_unique.append(position)
+    return ordered_unique
+
+
+def player_positions_for_coverage(player: PlayerInput, secondary_positions: list[str]) -> set[str]:
+    positions = {position for position in [normalized_position(player.primary_position), *secondary_positions] if position is not None}
+    if "OF" in positions:
+        positions.update({"LF", "CF", "RF"})
+    if "IF" in positions:
+        positions.update({"1B", "2B", "3B", "SS"})
+    return positions
+
+
+def utility_covered_groups(player: PlayerInput, secondary_positions: list[str]) -> list[str]:
+    coverage_groups = SECONDARY_POSITION_CONFIG.get("coverage_groups", {})
+    if not isinstance(coverage_groups, Mapping):
+        return []
+    covered_positions = player_positions_for_coverage(player, secondary_positions)
+    matched_groups: list[str] = []
+    for group_name, required_positions in coverage_groups.items():
+        if not isinstance(group_name, str) or not isinstance(required_positions, list):
+            continue
+        normalized_required = {
+            str(position).upper()
+            for position in required_positions
+            if isinstance(position, str) and str(position).strip()
+        }
+        if normalized_required and normalized_required.issubset(covered_positions):
+            matched_groups.append(group_name)
+    return sorted(matched_groups)
 
 
 def trait_confidence(score: float) -> str:
@@ -1278,6 +1403,7 @@ def recommend_personalities_for_output(
 
 def suggest_traits(state: PlayerState) -> list[TraitSuggestion]:
     suggestions: dict[str, TraitSuggestion] = {}
+    derived_secondary_positions = derive_secondary_positions(state.player)
 
     if state.player.role in {"hitter", "two_way"}:
         contact_pct = state.percentiles.get("contact")
@@ -1421,13 +1547,24 @@ def suggest_traits(state: PlayerState) -> list[TraitSuggestion]:
                 score=45 - fielding_proxy_pct,
                 reason="Handling reliability is poor enough to require a negative fielding trait.",
             )
-        if state.player.secondary_position and (fielding_pct or 0) >= 60:
+        covered_groups = utility_covered_groups(state.player, derived_secondary_positions)
+        if covered_groups:
+            utility_config = TRAIT_CRITERIA_CONFIG.get("traits", {}).get("Utility", {})
+            utility_weight = SECONDARY_POSITION_CONFIG["utility_bonus_weight"]
+            if isinstance(utility_config, Mapping):
+                configured_weight = utility_config.get("coverage_bonus_weight")
+                try:
+                    utility_weight = float(configured_weight)
+                except (TypeError, ValueError):
+                    utility_weight = SECONDARY_POSITION_CONFIG["utility_bonus_weight"]
+            base_score = max((fielding_pct or 55) - 35, 10)
+            utility_score = base_score + len(covered_groups) * (20.0 * utility_weight)
             add_trait(
                 suggestions,
                 name="Utility",
                 polarity="positive",
-                score=(fielding_pct or 60) - 35,
-                reason="A solid fielding profile with multi-position use supports a no-penalty secondary-position trait.",
+                score=utility_score,
+                reason=f"Defensive usage covers full position groups ({', '.join(covered_groups)}), boosting utility profile confidence.",
             )
 
         if power_pct is not None and contact_pct is not None and power_pct >= 75 and contact_pct <= 40:
@@ -1670,8 +1807,15 @@ def rate_players(players: list[PlayerInput | dict], trim_final_traits: bool = Tr
 
     outputs: list[RatingOutput] = []
     for state in states:
+        derived_secondary_positions = derive_secondary_positions(state.player)
+        covered_groups = utility_covered_groups(state.player, derived_secondary_positions)
         overall_numeric = int(round(mean(state.ratings.values()))) if state.ratings else None
         deduped_flags = sorted(set(state.review_flags))
+        output_metadata = dict(state.player.metadata)
+        output_metadata.setdefault("positions", {})
+        if isinstance(output_metadata["positions"], Mapping):
+            output_metadata["positions"] = dict(output_metadata["positions"])
+            output_metadata["positions"]["covered_groups"] = covered_groups
         outputs.append(
             RatingOutput(
                 name=state.player.name,
@@ -1687,12 +1831,13 @@ def rate_players(players: list[PlayerInput | dict], trim_final_traits: bool = Tr
                 suggested_traits=suggest_traits(state),
                 assigned_traits=[],
                 recommended_personalities=[],
-                secondary_position=state.player.secondary_position,
+                secondary_position=derived_secondary_positions[0] if derived_secondary_positions else state.player.secondary_position,
+                secondary_positions=derived_secondary_positions,
                 age=state.player.age,
                 projected_pa=resolved_projected_pa(state.player),
                 projected_ip=resolved_projected_ip(state.player),
                 recommended_pitches=select_pitch_mix(state.player.pitch_mix) if state.player.role in {"pitcher", "two_way"} else [],
-                metadata=dict(state.player.metadata),
+                metadata=output_metadata,
             )
         )
 

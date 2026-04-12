@@ -335,9 +335,10 @@ def _merge_player_records(
 def _ingest_from_mixed_manifest(manifest: IngestManifest) -> list[dict[str, Any]]:
 	baseball_reference_manifest = _clone_manifest_for_source(manifest, "baseball_reference")
 	savant_manifest = _clone_manifest_for_source(manifest, "baseball_savant")
+	fangraphs_manifest = _clone_manifest_for_source(manifest, "fangraphs")
 	baseball_reference_players = ingest_from_baseball_reference_manifest(baseball_reference_manifest)
 	savant_players = ingest_from_savant_manifest(savant_manifest)
-	fangraphs_players: list[dict[str, Any]] = []
+	fangraphs_players = ingest_from_fangraphs_manifest(fangraphs_manifest)
 
 	baseball_reference_by_key = {_player_merge_key(player): player for player in baseball_reference_players}
 	savant_by_key = {_player_merge_key(player): player for player in savant_players}

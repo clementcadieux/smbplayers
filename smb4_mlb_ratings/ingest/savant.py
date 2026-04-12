@@ -414,6 +414,7 @@ class PlayerAccumulator:
     trait_metrics: dict[str, dict[str, float]] = field(default_factory=lambda: defaultdict(dict))
     trait_lists: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
     days_on_roster_by_season: dict[str, float] = field(default_factory=dict)
+    positional_games: dict[str, float] = field(default_factory=dict)
     pitch_mix_by_season: dict[str, dict[str, float]] = field(default_factory=lambda: defaultdict(dict))
     estimated_metrics: dict[str, list[str]] = field(default_factory=lambda: defaultdict(list))
     missing_files: dict[str, list[str]] = field(default_factory=lambda: defaultdict(list))
@@ -459,6 +460,11 @@ class PlayerAccumulator:
         if not pitch_mix:
             return
         self.pitch_mix_by_season[season_key] = dict(sorted(pitch_mix.items()))
+
+    def add_positional_games(self, position: str | None, value: float | None) -> None:
+        if position is None or value is None or value <= 0:
+            return
+        self.positional_games[position] = round(self.positional_games.get(position, 0.0) + float(value), 6)
 
     def aggregated_pitch_mix(self) -> dict[str, float]:
         weighted_totals: dict[str, float] = defaultdict(float)
@@ -517,6 +523,8 @@ class PlayerAccumulator:
         }
         if self.days_on_roster_by_season:
             player_dict["days_on_roster"] = dict(sorted(self.days_on_roster_by_season.items()))
+        if self.positional_games:
+            player_dict["positional_games"] = dict(sorted(self.positional_games.items()))
         pitch_mix = self.aggregated_pitch_mix()
         if pitch_mix:
             player_dict["pitch_mix"] = pitch_mix
@@ -927,7 +935,8 @@ def _apply_fielding_row(player: PlayerAccumulator, season_key: str, row: dict[st
     _apply_identity(player, row)
     player.set_trait_metrics(season_key, _row_trait_metrics(row, HITTER_TRAIT_METRIC_COLUMNS))
     innings = _pick_number(row, "defensive_innings", "innings", "inn", "fielding_innings")
-    position = player.primary_position or _canonical_position(_pick_first(row, "position", "pos", "primary_position"))
+    games = _pick_number(row, "g", "games", "fielding_games")
+    position = _canonical_position(_pick_first(row, "position", "pos", "primary_position")) or player.primary_position
     oaa = _pick_number(row, "oaa", "outs_above_average")
     drs = _pick_number(row, "drs", "defensive_runs_saved", "drs_total")
     uzr = _pick_number(row, "uzr", "uzr_150", "ultimate_zone_rating")
@@ -958,6 +967,7 @@ def _apply_fielding_row(player: PlayerAccumulator, season_key: str, row: dict[st
     player.set_metric("framing_runs", season_key, framing_runs)
     player.set_metric("arm_position_baseline", season_key, _position_metric(position, ARM_POSITION_BASELINE, 0.50), estimated=True)
     player.set_sample("defensive_innings", season_key, innings)
+    player.add_positional_games(position, innings if innings is not None else games)
 
 
 def _apply_running_row(player: PlayerAccumulator, season_key: str, row: dict[str, str]) -> None:
