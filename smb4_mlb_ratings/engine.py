@@ -56,9 +56,11 @@ PERCENTILE_TO_RATING = [
     (35.0, 47),
     (55.0, 62),
     (75.0, 75),
-    (88.0, 84),
-    (95.0, 91),
-    (99.0, 96),
+    (88.0, 85),
+    (93.0, 90),
+    (96.0, 94),
+    (98.0, 96),
+    (99.5, 98),
     (100.0, 99),
 ]
 
@@ -688,6 +690,51 @@ def overall_grade(value: int | None) -> str | None:
         if value >= minimum:
             return grade
     return None
+
+
+ROLE_OVERALL_WEIGHTS: dict[str, dict[str, float]] = {
+    "hitter": {
+        "power": 0.30,
+        "contact": 0.30,
+        "speed": 0.20,
+        "fielding": 0.12,
+        "arm": 0.08,
+    },
+    "pitcher": {
+        "velocity": 0.38,
+        "junk": 0.37,
+        "accuracy": 0.25,
+    },
+    "two_way": {
+        "power": 0.14,
+        "contact": 0.14,
+        "speed": 0.10,
+        "fielding": 0.07,
+        "arm": 0.05,
+        "velocity": 0.18,
+        "junk": 0.18,
+        "accuracy": 0.14,
+    },
+}
+
+
+def role_weighted_overall_numeric(role: str, ratings: Mapping[str, int]) -> int | None:
+    if not ratings:
+        return None
+
+    role_weights = ROLE_OVERALL_WEIGHTS.get(role, {})
+    weighted_total = 0.0
+    total_weight = 0.0
+    for rating_name, weight in role_weights.items():
+        rating_value = ratings.get(rating_name)
+        if rating_value is None:
+            continue
+        weighted_total += float(rating_value) * weight
+        total_weight += weight
+
+    if total_weight > 0:
+        return int(round(weighted_total / total_weight))
+    return int(round(mean(ratings.values())))
 
 
 def confidence_level(flags: list[str]) -> str:
@@ -1877,7 +1924,7 @@ def rate_players(players: list[PlayerInput | dict], trim_final_traits: bool = Tr
     for state in states:
         derived_secondary_positions = derive_secondary_positions(state.player)
         covered_groups = utility_covered_groups(state.player, derived_secondary_positions)
-        overall_numeric = int(round(mean(state.ratings.values()))) if state.ratings else None
+        overall_numeric = role_weighted_overall_numeric(state.player.role, state.ratings)
         deduped_flags = sorted(set(state.review_flags))
         output_metadata = dict(state.player.metadata)
         output_metadata.setdefault("positions", {})
