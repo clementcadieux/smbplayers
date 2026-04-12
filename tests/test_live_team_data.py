@@ -7,6 +7,7 @@ from smb4_mlb_ratings.ingest.live_team_data import (
     build_baseball_reference_pitcher_rows,
     build_mixed_source_manifest,
     build_roster_rows,
+    build_savant_fielding_rows,
     build_savant_hitter_rows,
     build_savant_pitcher_rows,
     parse_savant_statcast_summary,
@@ -21,12 +22,14 @@ class LiveTeamDataTests(unittest.TestCase):
             roster_file="roster.csv",
             savant_hitters_file="savant_hitters.csv",
             savant_pitchers_file="savant_pitchers.csv",
+            savant_fielding_file="savant_fielding.csv",
             baseball_reference_hitters_file="bref_hitters.csv",
             baseball_reference_pitchers_file="bref_pitchers.csv",
         )
 
         self.assertEqual(manifest["roster_filter"], {"team": "TOR", "year": 2026})
         self.assertEqual(manifest["seasons"]["current"]["sources"]["baseball_savant"]["files"]["roster"], "roster.csv")
+        self.assertEqual(manifest["seasons"]["current"]["sources"]["baseball_savant"]["files"]["fielding"], "savant_fielding.csv")
         self.assertEqual(manifest["seasons"]["current"]["sources"]["baseball_reference"]["files"]["pitchers"], "bref_pitchers.csv")
 
     def test_build_rows_include_derived_live_metrics(self) -> None:
@@ -68,6 +71,13 @@ class LiveTeamDataTests(unittest.TestCase):
             "hitting_handedness_splits": {
                 "vl": {"avg": 0.300, "iso": 0.240, "strikeout_rate": 0.18},
                 "vr": {"avg": 0.260, "iso": 0.180, "strikeout_rate": 0.24},
+            },
+            "fielding_stats": {
+                "innings": "812.0",
+                "fielding": "0.982",
+                "putOuts": 120,
+                "assists": 200,
+                "errors": 6,
             },
         }
         pitcher = {
@@ -122,6 +132,7 @@ class LiveTeamDataTests(unittest.TestCase):
         roster_rows = build_roster_rows([hitter, pitcher], team_abbreviation="TOR")
         bref_hitter_rows = build_baseball_reference_hitter_rows([hitter], team_abbreviation="TOR")
         savant_hitter_rows = build_savant_hitter_rows([hitter], team_abbreviation="TOR")
+        savant_fielding_rows = build_savant_fielding_rows([hitter], team_abbreviation="TOR")
         bref_pitcher_rows = build_baseball_reference_pitcher_rows([pitcher], team_abbreviation="TOR")
         savant_pitcher_rows = build_savant_pitcher_rows([pitcher], team_abbreviation="TOR")
 
@@ -135,6 +146,9 @@ class LiveTeamDataTests(unittest.TestCase):
         self.assertEqual(savant_hitter_rows[0]["pressure_hitting"], 67.0)
         self.assertEqual(savant_hitter_rows[0]["late_game_hitting"], 64.5)
         self.assertEqual(savant_hitter_rows[0]["trailing_bases_empty_hitting"], 68.0)
+        self.assertEqual(savant_fielding_rows[0]["Defensive Innings"], 812.0)
+        self.assertEqual(savant_fielding_rows[0]["Fielding %"], 0.982)
+        self.assertEqual(savant_fielding_rows[0]["PO"], 120.0)
         self.assertGreater(bref_pitcher_rows[0]["Same Handed Pitching"], bref_pitcher_rows[0]["Opposite Handed Pitching"])
         self.assertIn("Pitch Quality SL", savant_pitcher_rows[0])
         self.assertEqual(savant_pitcher_rows[0]["Strike %"], 65.4)

@@ -15,6 +15,7 @@ from smb4_mlb_ratings.ingest.live_team_data import (
     build_baseball_reference_pitcher_rows,
     build_mixed_source_manifest,
     build_roster_rows,
+    build_savant_fielding_rows,
     build_savant_hitter_rows,
     build_savant_pitcher_rows,
     fetch_team_players,
@@ -200,6 +201,10 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
             build_savant_pitcher_rows(self.players, team_abbreviation=TEAM_ABBREVIATION),
         )
         self._write_csv(
+            self.exports / "bluejays_savant_fielding_2025.csv",
+            build_savant_fielding_rows(self.players, team_abbreviation=TEAM_ABBREVIATION),
+        )
+        self._write_csv(
             self.exports / "bluejays_bref_hitters_2025.csv",
             build_baseball_reference_hitter_rows(self.players, team_abbreviation=TEAM_ABBREVIATION, extra_players=inactive_players),
         )
@@ -213,6 +218,7 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
             roster_file="bluejays_roster_2026.csv",
             savant_hitters_file="bluejays_savant_hitters_2025.csv",
             savant_pitchers_file="bluejays_savant_pitchers_2025.csv",
+            savant_fielding_file="bluejays_savant_fielding_2025.csv",
             baseball_reference_hitters_file="bluejays_bref_hitters_2025.csv",
             baseball_reference_pitchers_file="bluejays_bref_pitchers_2025.csv",
         )

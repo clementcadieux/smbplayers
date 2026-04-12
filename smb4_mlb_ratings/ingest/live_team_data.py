@@ -208,6 +208,40 @@ def build_savant_hitter_rows(
     return rows
 
 
+def build_savant_fielding_rows(
+    players: Iterable[Mapping[str, Any]],
+    *,
+    team_abbreviation: str,
+) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for player in players:
+        if player.get("type") != "hitter":
+            continue
+        fielding = player.get("fielding_stats") if isinstance(player.get("fielding_stats"), Mapping) else {}
+        rows.append(
+            {
+                "player_id": player.get("player_id"),
+                "player_name": player.get("name"),
+                "team": player.get("team", team_abbreviation),
+                "position": player.get("position"),
+                "Defensive Innings": _as_float(fielding.get("innings")) or _as_float(fielding.get("inningsPlayed")),
+                "OAA": _as_float(fielding.get("outsAboveAverage")) or _as_float(fielding.get("oaa")),
+                "DRS": _as_float(fielding.get("defensiveRunsSaved")) or _as_float(fielding.get("drs")),
+                "UZR": _as_float(fielding.get("uzr")),
+                "Fielding %": _as_float(fielding.get("fielding")),
+                "PO": _as_float(fielding.get("putOuts")),
+                "A": _as_float(fielding.get("assists")),
+                "E": _as_float(fielding.get("errors")),
+                "Arm Strength": _as_float(fielding.get("armStrength")) or _as_float(fielding.get("averageThrowingVelocity")),
+                "Catcher Throw Value": _as_float(fielding.get("catcherThrowValue")) or _as_float(fielding.get("caughtStealingAboveAverage")),
+                "Outfield Arm Runs": _as_float(fielding.get("outfieldArmRuns")) or _as_float(fielding.get("armRuns")),
+                "Pop Time": _as_float(fielding.get("popTime")) or _as_float(fielding.get("avgPopTime2B")),
+                "Framing Runs": _as_float(fielding.get("framingRuns")) or _as_float(fielding.get("catcherFramingRuns")),
+            }
+        )
+    return rows
+
+
 def build_baseball_reference_pitcher_rows(
     players: Iterable[Mapping[str, Any]],
     *,
@@ -306,9 +340,18 @@ def build_mixed_source_manifest(
     roster_file: str,
     savant_hitters_file: str,
     savant_pitchers_file: str,
+    savant_fielding_file: str | None = None,
     baseball_reference_hitters_file: str,
     baseball_reference_pitchers_file: str,
 ) -> dict[str, Any]:
+    savant_files: dict[str, str] = {
+        "roster": roster_file,
+        "hitters": savant_hitters_file,
+        "pitchers": savant_pitchers_file,
+    }
+    if savant_fielding_file:
+        savant_files["fielding"] = savant_fielding_file
+
     return {
         "source": "mixed",
         "roster_filter": {"team": team_abbreviation, "year": roster_season},
@@ -323,11 +366,7 @@ def build_mixed_source_manifest(
                         }
                     },
                     "baseball_savant": {
-                        "files": {
-                            "roster": roster_file,
-                            "hitters": savant_hitters_file,
-                            "pitchers": savant_pitchers_file,
-                        }
+                        "files": savant_files
                     },
                 },
             }
@@ -458,6 +497,14 @@ def _fetch_roster_player(
                 "savant_hitting_summary": savant_hitting_summary,
                 "situational_hitting_metrics": derive_hitter_situational_metrics(situational_hitting_splits),
                 "hitting_handedness_splits": handedness_splits,
+                "fielding_stats": _fetch_stats(
+                    player_id,
+                    "fielding",
+                    seasons=seasons,
+                    ssl_context=ssl_context,
+                    mlb_stats_api=mlb_stats_api,
+                )
+                or {},
             }
         )
         return base_player
