@@ -23,94 +23,13 @@
 - **#45 – Position Players Have Innings Pitched** – Guarded IP assignment in `engine.py` so only SP/RP receive `projected_ip`; discarded pitching-row data for non-pitchers during ingestion; added tests confirming position players emit no IP output.
 - **#48 – Trait Limitations** – Enforced 2-trait maximum in `engine.py` by keeping the top-2 highest-scoring traits; added elite-pitch mutual-exclusivity rule (only the top-scoring elite-pitch trait retained); stored `max_traits_per_player` and `max_elite_pitch_traits` limits in `smb4_player_reference.json`.
 - **#49 – Ensure Anything Done in the Blue Jays Specific Test Flow Was Applied to Full Pipeline** – Audited and removed all team-specific conditionals from `engine.py`, `ingest/`, `roster_selector.py`, and `cli.py`; parameterised the end-to-end test to run against a second synthetic team (DET) confirming the pipeline is team-agnostic.
+- **#52 – Ratings Are Too Conservative** – Recalibrated normalisation bounds, widened upper thresholds for key metrics (ERA-, FIP-, wRC+, barrel rate), adjusted composite weights so elite stat lines (e.g. Skubal-tier) produce overall ratings ≥ 95; added regression assertions for elite and average tiers.
+- **#53 – Hitter Pitch Type/Location Specific Traits** – Identified Baseball Savant as the source for pitch-type and zone-level batting splits; extended `savant.py` and `models.py` with new split fields; wired splits into `engine.py` trait allocation and updated `smb4_player_reference.json` `trait_criteria`; added unit tests for fastball and location-specific traits.
+- **#56 – Potential Undervaluing of Elite Pitches** – Added `pitch_run_values` manifest type; implemented `parse_savant_pitch_run_value_csv()` in `savant.py`; merged `run_value_per_100` into `savant_pitch_details`; added `rv_score` (~30% weight) to `_savant_pitch_quality_score` in `engine.py`; stored normalisation bounds in `smb4_player_reference.json`; added unit tests confirming elite pitches reach the top tier.
 
 ---
 
 ## Open Issues
-
-## Issue #52 – Ratings Are Too Conservative
-
-**Problem:** Overall ratings skew too low. Elite players (e.g. Tarik Skubal, the consensus best pitcher in baseball) receive scores well below expected (88 vs. 95+).
-
-### Steps
-
-1. **Audit current rating formula in `engine.py`:**
-   - Review composite-score weights, normalisation bounds, and the final aggregation that produces the overall rating.
-   - Compare the output distribution against expected SMB4 rating distributions (where elite players typically land 95–99 and average MLB regulars around 75–80).
-
-2. **Recalibrate normalisation bounds in `smb4_player_reference.json`:**
-   - Widen or adjust the upper bounds for key metrics (ERA-, FIP-, xFIP-, wRC+, barrel rate, etc.) so that historically elite seasonal values map closer to the top of the scale rather than being clipped by overly conservative ceilings.
-
-3. **Review and adjust composite weights:**
-   - Ensure that elite indicators (e.g. sub-3.00 ERA with high K/9 and low BB/9) drive the overall rating to the 95+ range rather than being dampened by secondary composites.
-
-4. **Add percentile-based or z-score scaling option:**
-   - Consider replacing hard min/max normalisation with a percentile or z-score approach anchored on a reference population (e.g. all qualified MLB starters/hitters in a given season) so ratings naturally spread across the full 1–99 scale.
-
-5. **Update tests:**
-   - Add regression assertions that synthetic elite-tier stat lines produce ratings ≥ 95.
-   - Confirm average-tier stat lines still land in the 70–82 range to avoid grade inflation throughout the scale.
-
----
-
-## Issue #53 – Hitter Pitch Type/Location Specific Traits
-
-**Problem:** Several hitter traits are conditioned on pitch location (inside, outside, high, low) and pitch type (fastball, breaking ball, offspeed). The current ingestion flow does not capture split-level performance against these pitch categories, resulting in inaccurate trait assignments.
-
-### Steps
-
-1. **Identify required data source:**
-   - Research whether Baseball Savant exports pitch-type or zone-level batting splits (e.g. `woba_against_fastball`, `whiff_rate_inside_zone`).
-   - Determine the correct CSV export endpoint or Statcast query parameters needed to pull these splits.
-
-2. **Extend `ingest/savant.py`:**
-   - Add parsing for pitch-type split columns (e.g. `ba_vs_fastball`, `ba_vs_breaking`, `ba_vs_offspeed`).
-   - Add parsing for zone/location split columns (e.g. `woba_inside`, `woba_outside`, `woba_high`, `woba_low`) if available.
-   - Map new columns to corresponding fields on `PlayerInput`.
-
-3. **Update `models.py`:**
-   - Add optional fields for each new pitch-type / location split on `PlayerInput`.
-
-4. **Wire splits into trait allocation in `engine.py`:**
-   - For each location/pitch-type hitter trait defined in `smb4_player_reference.json`, reference the appropriate new `PlayerInput` split field when computing trait eligibility scores.
-
-5. **Update `smb4_player_reference.json`:**
-   - Add or update `trait_criteria` entries for all location- and pitch-type-specific hitter traits, pointing to the new split fields and appropriate thresholds.
-
-6. **Update tests:**
-   - Add unit tests confirming that a synthetic hitter with strong fastball metrics receives a fastball-related trait.
-   - Add unit tests for at least one location-specific trait (e.g. a hitter with elite inside-pitch performance receives the corresponding inside-pitch trait).
-
----
-
-## Issue #56 – Potential Undervaluing of Elite Pitches
-
-**Problem:** Some elite pitches are being undervalued in the quality-score calculation. For example, Tarik Skubal's changeup is not being recognised as elite despite having strong run-value metrics. The fix is to ingest Statcast pitch-type run value (`run_value_per_100`) as an authoritative signal and incorporate it into `_savant_pitch_quality_score`.
-
-### Steps
-
-1. **Extend the manifest schema in `models.py`:**
-   - Add `pitch_run_values` as a recognised file type so callers can supply the Statcast pitch-type leaderboard CSV alongside existing manifest entries.
-
-2. **Add a new parser in `ingest/savant.py`:**
-   - Implement `parse_savant_pitch_run_value_csv()` that reads the pitch-type detail export and returns a dict keyed by `(player_id, pitch_type)` → `run_value_per_100`.
-
-3. **Merge run-value data into `savant_pitch_details`:**
-   - During ingestion, combine the new per-pitch `run_value_per_100` values alongside the existing `xwoba` / `whiff_rate` inputs so the data is available when `engine.py` scores pitches.
-
-4. **Update `_savant_pitch_quality_score` in `engine.py`:**
-   - Add a `rv_score` component weighted ~25–30%:
-     - Use `bounded_score(−2.0 − rv_per_100, 4.0)` so that elite values (−2.0 to −6.0 RV/100) map toward the top of the scale.
-   - Adjust remaining component weights proportionally so the composite still sums to 100.
-
-5. **Add normalisation bounds to `smb4_player_reference.json`:**
-   - Store `pitch_rv_per_100_elite` (e.g. −2.0) and `pitch_rv_per_100_exceptional` (e.g. −6.0) as reference thresholds for the new bound.
-
-6. **Update tests:**
-   - Add a unit test with a synthetic pitcher whose changeup has `run_value_per_100 ≈ −2.5` and assert the pitch quality score reaches the elite tier.
-   - Confirm that average pitches (RV/100 near 0) do not receive an outsized boost from the new component.
-
----
 
 ## Issue #58 – Perform Data Ingestion
 
@@ -149,3 +68,36 @@
 7. **Commit sanitised outputs (no raw player data):**
    - Do **not** commit the raw CSV or JSON data files.
    - Commit any changes to `smb4_player_reference.json` (updated bounds), `models.py`, or ingestion code that were required to handle real data cleanly.
+
+---
+
+## Issue #64 – Outsized Focus on Current 2026 Minimal Sample Size
+
+**Problem:** The current ratings over-weight the 2026 season, which has a very small sample size. The 2025 full-season data should carry significantly more weight. The general rule: half a season's worth of current-year data should equal one full prior season in importance.
+
+### Steps
+
+1. **Audit current season-weighting logic in `engine.py`:**
+   - Identify where per-season data is aggregated and how weights are currently assigned to each season.
+   - Determine whether weights are static, sample-size-adjusted, or recency-based.
+
+2. **Define a sample-size-based weight formula:**
+   - Establish a "full season" threshold for batters (e.g. 500 PA) and pitchers (e.g. 150 IP) in `smb4_player_reference.json`.
+   - Compute a fractional weight for a partial season as `actual_volume / full_season_threshold`, capped at 1.0.
+   - Apply the rule: a partial season's weight equals `fraction × prior_season_weight`, so half a season ≈ one full prior season.
+
+3. **Implement recency decay:**
+   - Assign a recency multiplier to each historical season (e.g. current season weight × 1.0 after volume adjustment, prior season × 1.0, season −2 × 0.8, season −3 × 0.6, etc.) stored in `smb4_player_reference.json`.
+   - Combine volume-based fractional weight with recency decay to produce the final per-season weight.
+
+4. **Update `engine.py` aggregation:**
+   - Replace static or naïve year weights with the new formula when blending multi-season metrics.
+   - Ensure the weighted blend is normalised so weights sum to 1.0 across all seasons available for a player.
+
+5. **Update `smb4_player_reference.json`:**
+   - Add `full_season_pa_threshold`, `full_season_ip_threshold`, and `season_recency_weights` (list ordered from current to oldest) keys for easy tuning.
+
+6. **Update tests:**
+   - Add a test with a player who has a tiny 2026 sample and a strong 2025 season; assert the overall rating is driven primarily by 2025 data.
+   - Add a test confirming that a player with a half-season of 2026 data receives roughly equal weight to a full 2025 season.
+   - Regression-test that existing average/elite player score ranges are not materially affected by the change.
