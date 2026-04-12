@@ -13,11 +13,69 @@ from smb4_mlb_ratings.engine import (
     resolved_projected_ip,
     resolved_projected_pa,
     surface_weight_factor,
+    weighted_metric_value,
 )
 from smb4_mlb_ratings.models import PlayerInput
 
 
 class SurfaceBlendTests(unittest.TestCase):
+    def test_weighted_metric_value_keeps_tiny_current_hitter_sample_close_to_prior(self) -> None:
+        weighted = weighted_metric_value(
+            {"current": 0.350, "previous": 0.180, "two_years_ago": 0.170},
+            {"current": 80, "previous": 600, "two_years_ago": 550},
+            sample_key="weighted_pa",
+        )
+
+        self.assertIsNotNone(weighted)
+        self.assertLess(abs((weighted or 0.0) - 0.1778), abs((weighted or 0.0) - 0.3500))
+        self.assertLess(weighted or 0.0, 0.20)
+
+    def test_weighted_metric_value_treats_half_current_hitter_season_like_full_previous(self) -> None:
+        weighted = weighted_metric_value(
+            {"current": 0.350, "previous": 0.180},
+            {"current": 250, "previous": 500},
+            sample_key="weighted_pa",
+        )
+
+        self.assertAlmostEqual(weighted or 0.0, 0.265)
+
+    def test_weighted_metric_value_uses_pitcher_full_season_ip_baseline(self) -> None:
+        weighted = weighted_metric_value(
+            {"current": 0.250, "previous": 0.080},
+            {"current": 100, "previous": 700},
+            sample_key="weighted_bf",
+        )
+
+        self.assertIsNotNone(weighted)
+        self.assertLess(abs((weighted or 0.0) - 0.080), abs((weighted or 0.0) - 0.250))
+        self.assertLess(weighted or 0.0, 0.12)
+
+    def test_weighted_metric_value_prefers_metadata_threshold_override_when_available(self) -> None:
+        player = PlayerInput.from_dict(
+            {
+                "name": "Metadata Override",
+                "role": "hitter",
+                "team": "NYM",
+                "primary_position": "CF",
+                "metadata": {"season_weighting": {"full_season_pa_threshold": 1000}},
+            }
+        )
+        default_weighted = weighted_metric_value(
+            {"current": 0.350, "previous": 0.180},
+            {"current": 250, "previous": 500},
+            sample_key="weighted_pa",
+        )
+        overridden_weighted = weighted_metric_value(
+            {"current": 0.350, "previous": 0.180},
+            {"current": 250, "previous": 500},
+            sample_key="weighted_pa",
+            player=player,
+        )
+
+        self.assertIsNotNone(default_weighted)
+        self.assertIsNotNone(overridden_weighted)
+        self.assertLess(overridden_weighted or 0.0, default_weighted or 0.0)
+
     def test_surface_weight_factor_caps_at_half(self) -> None:
         self.assertEqual(surface_weight_factor(0, 425), 0.0)
         self.assertAlmostEqual(surface_weight_factor(212.5, 425), 0.25)

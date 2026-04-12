@@ -126,6 +126,11 @@ class StructuredOutputTests(unittest.TestCase):
         self.assertTrue(roster_path.exists())
         self.assertTrue(structured_path.exists())
 
+        manifest_payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        self.assertIn("previous", manifest_payload["seasons"])
+        self.assertEqual(manifest_payload["seasons"]["current"]["year"], 2026)
+        self.assertEqual(manifest_payload["seasons"]["previous"]["year"], 2025)
+
         normalized_payload = json.loads(normalized_path.read_text(encoding="utf-8"))
         hitter = next(player for player in normalized_payload["players"] if player["role"] == "hitter")
         self.assertAlmostEqual(hitter["metrics"]["barrel_rate"]["current"], 0.114)

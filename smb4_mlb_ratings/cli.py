@@ -27,8 +27,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 BLUE_JAYS_TEAM_ID = 141
 BLUE_JAYS_TEAM_ABBREVIATION = "TOR"
 BLUE_JAYS_ROSTER_SEASON = 2026
-BLUE_JAYS_PRIMARY_STAT_SEASON = 2025
-BLUE_JAYS_FALLBACK_STAT_SEASON = 2026
+BLUE_JAYS_CURRENT_STAT_SEASON = 2026
+BLUE_JAYS_PREVIOUS_STAT_SEASON = 2025
 
 
 
@@ -128,53 +128,106 @@ def run_refresh_bluejays_example(example_root: Path | None = None) -> int:
 
     exports.mkdir(parents=True, exist_ok=True)
     ssl_context = ssl._create_unverified_context()
-    players = fetch_team_players(
+    current_players = fetch_team_players(
         BLUE_JAYS_TEAM_ID,
         team_abbreviation=BLUE_JAYS_TEAM_ABBREVIATION,
         roster_season=BLUE_JAYS_ROSTER_SEASON,
-        primary_stat_season=BLUE_JAYS_PRIMARY_STAT_SEASON,
-        fallback_stat_season=BLUE_JAYS_FALLBACK_STAT_SEASON,
+        primary_stat_season=BLUE_JAYS_CURRENT_STAT_SEASON,
+        fallback_stat_season=BLUE_JAYS_CURRENT_STAT_SEASON,
+        ssl_context=ssl_context,
+        min_players=22,
+    )
+    previous_players = fetch_team_players(
+        BLUE_JAYS_TEAM_ID,
+        team_abbreviation=BLUE_JAYS_TEAM_ABBREVIATION,
+        roster_season=BLUE_JAYS_ROSTER_SEASON,
+        primary_stat_season=BLUE_JAYS_PREVIOUS_STAT_SEASON,
+        fallback_stat_season=BLUE_JAYS_PREVIOUS_STAT_SEASON,
         ssl_context=ssl_context,
         min_players=22,
     )
 
     roster_file = exports / "bluejays_roster_2026.csv"
-    savant_hitters_file = exports / "bluejays_savant_hitters_2025.csv"
-    savant_pitchers_file = exports / "bluejays_savant_pitchers_2025.csv"
-    savant_fielding_file = exports / "bluejays_savant_fielding_2025.csv"
-    baseball_reference_hitters_file = exports / "bluejays_bref_hitters_2025.csv"
-    baseball_reference_pitchers_file = exports / "bluejays_bref_pitchers_2025.csv"
+    current_savant_hitters_file = exports / "bluejays_live_savant_hitters_2026.csv"
+    current_savant_pitchers_file = exports / "bluejays_live_savant_pitchers_2026.csv"
+    current_savant_fielding_file = exports / "bluejays_live_savant_fielding_2026.csv"
+    current_baseball_reference_hitters_file = exports / "bluejays_live_bref_hitters_2026.csv"
+    current_baseball_reference_pitchers_file = exports / "bluejays_live_bref_pitchers_2026.csv"
+    previous_savant_hitters_file = exports / "bluejays_live_savant_hitters_2025.csv"
+    previous_savant_pitchers_file = exports / "bluejays_live_savant_pitchers_2025.csv"
+    previous_savant_fielding_file = exports / "bluejays_live_savant_fielding_2025.csv"
+    previous_baseball_reference_hitters_file = exports / "bluejays_live_bref_hitters_2025.csv"
+    previous_baseball_reference_pitchers_file = exports / "bluejays_live_bref_pitchers_2025.csv"
 
-    write_csv(roster_file, build_roster_rows(players, team_abbreviation=BLUE_JAYS_TEAM_ABBREVIATION))
-    write_csv(savant_hitters_file, build_savant_hitter_rows(players, team_abbreviation=BLUE_JAYS_TEAM_ABBREVIATION))
-    write_csv(savant_pitchers_file, build_savant_pitcher_rows(players, team_abbreviation=BLUE_JAYS_TEAM_ABBREVIATION))
+    write_csv(roster_file, build_roster_rows(current_players, team_abbreviation=BLUE_JAYS_TEAM_ABBREVIATION))
     write_csv(
-        savant_fielding_file,
+        current_savant_hitters_file,
+        build_savant_hitter_rows(current_players, team_abbreviation=BLUE_JAYS_TEAM_ABBREVIATION),
+    )
+    write_csv(
+        current_savant_pitchers_file,
+        build_savant_pitcher_rows(current_players, team_abbreviation=BLUE_JAYS_TEAM_ABBREVIATION),
+    )
+    write_csv(
+        current_savant_fielding_file,
         build_savant_fielding_rows(
-            players,
+            current_players,
             team_abbreviation=BLUE_JAYS_TEAM_ABBREVIATION,
-            season=BLUE_JAYS_PRIMARY_STAT_SEASON,
+            season=BLUE_JAYS_CURRENT_STAT_SEASON,
             ssl_context=ssl_context,
         ),
     )
     write_csv(
-        baseball_reference_hitters_file,
-        build_baseball_reference_hitter_rows(players, team_abbreviation=BLUE_JAYS_TEAM_ABBREVIATION),
+        current_baseball_reference_hitters_file,
+        build_baseball_reference_hitter_rows(current_players, team_abbreviation=BLUE_JAYS_TEAM_ABBREVIATION),
     )
     write_csv(
-        baseball_reference_pitchers_file,
-        build_baseball_reference_pitcher_rows(players, team_abbreviation=BLUE_JAYS_TEAM_ABBREVIATION),
+        current_baseball_reference_pitchers_file,
+        build_baseball_reference_pitcher_rows(current_players, team_abbreviation=BLUE_JAYS_TEAM_ABBREVIATION),
+    )
+
+    write_csv(
+        previous_savant_hitters_file,
+        build_savant_hitter_rows(previous_players, team_abbreviation=BLUE_JAYS_TEAM_ABBREVIATION),
+    )
+    write_csv(
+        previous_savant_pitchers_file,
+        build_savant_pitcher_rows(previous_players, team_abbreviation=BLUE_JAYS_TEAM_ABBREVIATION),
+    )
+    write_csv(
+        previous_savant_fielding_file,
+        build_savant_fielding_rows(
+            previous_players,
+            team_abbreviation=BLUE_JAYS_TEAM_ABBREVIATION,
+            season=BLUE_JAYS_PREVIOUS_STAT_SEASON,
+            ssl_context=ssl_context,
+        ),
+    )
+    write_csv(
+        previous_baseball_reference_hitters_file,
+        build_baseball_reference_hitter_rows(previous_players, team_abbreviation=BLUE_JAYS_TEAM_ABBREVIATION),
+    )
+    write_csv(
+        previous_baseball_reference_pitchers_file,
+        build_baseball_reference_pitcher_rows(previous_players, team_abbreviation=BLUE_JAYS_TEAM_ABBREVIATION),
     )
 
     manifest = build_mixed_source_manifest(
         team_abbreviation=BLUE_JAYS_TEAM_ABBREVIATION,
         roster_season=BLUE_JAYS_ROSTER_SEASON,
+        current_year=BLUE_JAYS_CURRENT_STAT_SEASON,
         roster_file=str(roster_file.relative_to(root)).replace("\\", "/"),
-        savant_hitters_file=str(savant_hitters_file.relative_to(root)).replace("\\", "/"),
-        savant_pitchers_file=str(savant_pitchers_file.relative_to(root)).replace("\\", "/"),
-        savant_fielding_file=str(savant_fielding_file.relative_to(root)).replace("\\", "/"),
-        baseball_reference_hitters_file=str(baseball_reference_hitters_file.relative_to(root)).replace("\\", "/"),
-        baseball_reference_pitchers_file=str(baseball_reference_pitchers_file.relative_to(root)).replace("\\", "/"),
+        savant_hitters_file=str(current_savant_hitters_file.relative_to(root)).replace("\\", "/"),
+        savant_pitchers_file=str(current_savant_pitchers_file.relative_to(root)).replace("\\", "/"),
+        savant_fielding_file=str(current_savant_fielding_file.relative_to(root)).replace("\\", "/"),
+        baseball_reference_hitters_file=str(current_baseball_reference_hitters_file.relative_to(root)).replace("\\", "/"),
+        baseball_reference_pitchers_file=str(current_baseball_reference_pitchers_file.relative_to(root)).replace("\\", "/"),
+        previous_year=BLUE_JAYS_PREVIOUS_STAT_SEASON,
+        previous_savant_hitters_file=str(previous_savant_hitters_file.relative_to(root)).replace("\\", "/"),
+        previous_savant_pitchers_file=str(previous_savant_pitchers_file.relative_to(root)).replace("\\", "/"),
+        previous_savant_fielding_file=str(previous_savant_fielding_file.relative_to(root)).replace("\\", "/"),
+        previous_baseball_reference_hitters_file=str(previous_baseball_reference_hitters_file.relative_to(root)).replace("\\", "/"),
+        previous_baseball_reference_pitchers_file=str(previous_baseball_reference_pitchers_file.relative_to(root)).replace("\\", "/"),
     )
     write_json(manifest_path, manifest)
 

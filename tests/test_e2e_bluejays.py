@@ -35,8 +35,8 @@ TEAM_ABBREVIATION = "TOR"
 TIGERS_TEAM_ID = 116
 TIGERS_TEAM_ABBREVIATION = "DET"
 ROSTER_SEASON = 2026
-PRIMARY_STAT_SEASON = 2025
-FALLBACK_STAT_SEASON = 2026
+CURRENT_STAT_SEASON = 2026
+PREVIOUS_STAT_SEASON = 2025
 INFIELD_POSITIONS = {"1B", "2B", "3B", "SS", "IF"}
 OUTFIELD_POSITIONS = {"LF", "CF", "RF", "OF"}
 
@@ -62,8 +62,17 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
                 TEAM_ID,
                 team_abbreviation=TEAM_ABBREVIATION,
                 roster_season=ROSTER_SEASON,
-                primary_stat_season=PRIMARY_STAT_SEASON,
-                fallback_stat_season=FALLBACK_STAT_SEASON,
+                primary_stat_season=CURRENT_STAT_SEASON,
+                fallback_stat_season=CURRENT_STAT_SEASON,
+                ssl_context=self.ssl_context,
+                min_players=22,
+            )
+            previous_players = fetch_team_players(
+                TEAM_ID,
+                team_abbreviation=TEAM_ABBREVIATION,
+                roster_season=ROSTER_SEASON,
+                primary_stat_season=PREVIOUS_STAT_SEASON,
+                fallback_stat_season=PREVIOUS_STAT_SEASON,
                 ssl_context=self.ssl_context,
                 min_players=22,
             )
@@ -72,6 +81,7 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
 
         manifest_path = self._write_fixture_files(
             self.players,
+            previous_players,
             team_abbreviation=TEAM_ABBREVIATION,
             file_prefix="bluejays",
             include_inactive=True,
@@ -186,8 +196,17 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
                 TIGERS_TEAM_ID,
                 team_abbreviation=TIGERS_TEAM_ABBREVIATION,
                 roster_season=ROSTER_SEASON,
-                primary_stat_season=PRIMARY_STAT_SEASON,
-                fallback_stat_season=FALLBACK_STAT_SEASON,
+                primary_stat_season=CURRENT_STAT_SEASON,
+                fallback_stat_season=CURRENT_STAT_SEASON,
+                ssl_context=self.ssl_context,
+                min_players=22,
+            )
+            previous_players = fetch_team_players(
+                TIGERS_TEAM_ID,
+                team_abbreviation=TIGERS_TEAM_ABBREVIATION,
+                roster_season=ROSTER_SEASON,
+                primary_stat_season=PREVIOUS_STAT_SEASON,
+                fallback_stat_season=PREVIOUS_STAT_SEASON,
                 ssl_context=self.ssl_context,
                 min_players=22,
             )
@@ -196,6 +215,7 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
 
         manifest_path = self._write_fixture_files(
             players,
+            previous_players,
             team_abbreviation=TIGERS_TEAM_ABBREVIATION,
             file_prefix="tigers",
             include_inactive=False,
@@ -238,7 +258,8 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
 
     def _write_fixture_files(
         self,
-        players: list[dict[str, object]],
+        current_players: list[dict[str, object]],
+        previous_players: list[dict[str, object]],
         *,
         team_abbreviation: str,
         file_prefix: str,
@@ -246,46 +267,83 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
     ) -> Path:
         inactive_players = [self._inactive_player()] if include_inactive else []
         roster_file = self.exports / f"{file_prefix}_roster_2026.csv"
-        savant_hitters_file = self.exports / f"{file_prefix}_savant_hitters_2025.csv"
-        savant_pitchers_file = self.exports / f"{file_prefix}_savant_pitchers_2025.csv"
-        savant_fielding_file = self.exports / f"{file_prefix}_savant_fielding_2025.csv"
-        baseball_reference_hitters_file = self.exports / f"{file_prefix}_bref_hitters_2025.csv"
-        baseball_reference_pitchers_file = self.exports / f"{file_prefix}_bref_pitchers_2025.csv"
+        current_savant_hitters_file = self.exports / f"{file_prefix}_savant_hitters_2026.csv"
+        current_savant_pitchers_file = self.exports / f"{file_prefix}_savant_pitchers_2026.csv"
+        current_savant_fielding_file = self.exports / f"{file_prefix}_savant_fielding_2026.csv"
+        current_baseball_reference_hitters_file = self.exports / f"{file_prefix}_bref_hitters_2026.csv"
+        current_baseball_reference_pitchers_file = self.exports / f"{file_prefix}_bref_pitchers_2026.csv"
+        previous_savant_hitters_file = self.exports / f"{file_prefix}_savant_hitters_2025.csv"
+        previous_savant_pitchers_file = self.exports / f"{file_prefix}_savant_pitchers_2025.csv"
+        previous_savant_fielding_file = self.exports / f"{file_prefix}_savant_fielding_2025.csv"
+        previous_baseball_reference_hitters_file = self.exports / f"{file_prefix}_bref_hitters_2025.csv"
+        previous_baseball_reference_pitchers_file = self.exports / f"{file_prefix}_bref_pitchers_2025.csv"
         manifest_path = self.exports / f"{file_prefix}_manifest.json"
 
         self._write_csv(
             roster_file,
-            build_roster_rows(players, team_abbreviation=team_abbreviation),
+            build_roster_rows(current_players, team_abbreviation=team_abbreviation),
         )
         self._write_csv(
-            savant_hitters_file,
-            build_savant_hitter_rows(players, team_abbreviation=team_abbreviation, extra_players=inactive_players),
+            current_savant_hitters_file,
+            build_savant_hitter_rows(current_players, team_abbreviation=team_abbreviation, extra_players=inactive_players),
         )
         self._write_csv(
-            savant_pitchers_file,
-            build_savant_pitcher_rows(players, team_abbreviation=team_abbreviation),
+            current_savant_pitchers_file,
+            build_savant_pitcher_rows(current_players, team_abbreviation=team_abbreviation),
         )
         self._write_csv(
-            savant_fielding_file,
-            build_savant_fielding_rows(players, team_abbreviation=team_abbreviation),
+            current_savant_fielding_file,
+            build_savant_fielding_rows(current_players, team_abbreviation=team_abbreviation),
         )
         self._write_csv(
-            baseball_reference_hitters_file,
-            build_baseball_reference_hitter_rows(players, team_abbreviation=team_abbreviation, extra_players=inactive_players),
+            current_baseball_reference_hitters_file,
+            build_baseball_reference_hitter_rows(
+                current_players,
+                team_abbreviation=team_abbreviation,
+                extra_players=inactive_players,
+            ),
         )
         self._write_csv(
-            baseball_reference_pitchers_file,
-            build_baseball_reference_pitcher_rows(players, team_abbreviation=team_abbreviation),
+            current_baseball_reference_pitchers_file,
+            build_baseball_reference_pitcher_rows(current_players, team_abbreviation=team_abbreviation),
+        )
+
+        self._write_csv(
+            previous_savant_hitters_file,
+            build_savant_hitter_rows(previous_players, team_abbreviation=team_abbreviation),
+        )
+        self._write_csv(
+            previous_savant_pitchers_file,
+            build_savant_pitcher_rows(previous_players, team_abbreviation=team_abbreviation),
+        )
+        self._write_csv(
+            previous_savant_fielding_file,
+            build_savant_fielding_rows(previous_players, team_abbreviation=team_abbreviation),
+        )
+        self._write_csv(
+            previous_baseball_reference_hitters_file,
+            build_baseball_reference_hitter_rows(previous_players, team_abbreviation=team_abbreviation),
+        )
+        self._write_csv(
+            previous_baseball_reference_pitchers_file,
+            build_baseball_reference_pitcher_rows(previous_players, team_abbreviation=team_abbreviation),
         )
         manifest = build_mixed_source_manifest(
             team_abbreviation=team_abbreviation,
             roster_season=ROSTER_SEASON,
+            current_year=CURRENT_STAT_SEASON,
             roster_file=roster_file.name,
-            savant_hitters_file=savant_hitters_file.name,
-            savant_pitchers_file=savant_pitchers_file.name,
-            savant_fielding_file=savant_fielding_file.name,
-            baseball_reference_hitters_file=baseball_reference_hitters_file.name,
-            baseball_reference_pitchers_file=baseball_reference_pitchers_file.name,
+            savant_hitters_file=current_savant_hitters_file.name,
+            savant_pitchers_file=current_savant_pitchers_file.name,
+            savant_fielding_file=current_savant_fielding_file.name,
+            baseball_reference_hitters_file=current_baseball_reference_hitters_file.name,
+            baseball_reference_pitchers_file=current_baseball_reference_pitchers_file.name,
+            previous_year=PREVIOUS_STAT_SEASON,
+            previous_savant_hitters_file=previous_savant_hitters_file.name,
+            previous_savant_pitchers_file=previous_savant_pitchers_file.name,
+            previous_savant_fielding_file=previous_savant_fielding_file.name,
+            previous_baseball_reference_hitters_file=previous_baseball_reference_hitters_file.name,
+            previous_baseball_reference_pitchers_file=previous_baseball_reference_pitchers_file.name,
         )
         manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         return manifest_path

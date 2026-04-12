@@ -38,6 +38,31 @@ class LiveTeamDataTests(unittest.TestCase):
         self.assertEqual(manifest["seasons"]["current"]["sources"]["baseball_savant"]["files"]["fielding"], "savant_fielding.csv")
         self.assertEqual(manifest["seasons"]["current"]["sources"]["baseball_reference"]["files"]["pitchers"], "bref_pitchers.csv")
 
+    def test_build_manifest_can_emit_previous_season_sources(self) -> None:
+        manifest = build_mixed_source_manifest(
+            team_abbreviation="TOR",
+            roster_season=2026,
+            current_year=2026,
+            roster_file="roster_2026.csv",
+            savant_hitters_file="savant_hitters_2026.csv",
+            savant_pitchers_file="savant_pitchers_2026.csv",
+            savant_fielding_file="savant_fielding_2026.csv",
+            baseball_reference_hitters_file="bref_hitters_2026.csv",
+            baseball_reference_pitchers_file="bref_pitchers_2026.csv",
+            previous_year=2025,
+            previous_savant_hitters_file="savant_hitters_2025.csv",
+            previous_savant_pitchers_file="savant_pitchers_2025.csv",
+            previous_savant_fielding_file="savant_fielding_2025.csv",
+            previous_baseball_reference_hitters_file="bref_hitters_2025.csv",
+            previous_baseball_reference_pitchers_file="bref_pitchers_2025.csv",
+        )
+
+        self.assertEqual(manifest["seasons"]["current"]["year"], 2026)
+        self.assertEqual(manifest["seasons"]["previous"]["year"], 2025)
+        self.assertNotIn("roster", manifest["seasons"]["previous"]["sources"]["baseball_savant"]["files"])
+        self.assertEqual(manifest["seasons"]["previous"]["sources"]["baseball_savant"]["files"]["hitters"], "savant_hitters_2025.csv")
+        self.assertEqual(manifest["seasons"]["previous"]["sources"]["baseball_reference"]["files"]["pitchers"], "bref_pitchers_2025.csv")
+
     def test_build_rows_include_derived_live_metrics(self) -> None:
         hitter = {
             "player_id": 1,

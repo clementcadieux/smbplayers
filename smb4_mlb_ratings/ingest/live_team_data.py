@@ -895,6 +895,13 @@ def build_mixed_source_manifest(
     savant_fielding_file: str | None = None,
     baseball_reference_hitters_file: str,
     baseball_reference_pitchers_file: str,
+    current_year: int | None = None,
+    previous_year: int | None = None,
+    previous_savant_hitters_file: str | None = None,
+    previous_savant_pitchers_file: str | None = None,
+    previous_savant_fielding_file: str | None = None,
+    previous_baseball_reference_hitters_file: str | None = None,
+    previous_baseball_reference_pitchers_file: str | None = None,
 ) -> dict[str, Any]:
     savant_files: dict[str, str] = {
         "roster": roster_file,
@@ -916,16 +923,43 @@ def build_mixed_source_manifest(
         },
     }
 
-    return {
+    manifest = {
         "source": "mixed",
         "roster_filter": {"team": team_abbreviation, "year": roster_season},
         "seasons": {
             "current": {
-                "year": roster_season,
+                "year": current_year if current_year is not None else roster_season,
                 "sources": sources,
             }
         },
     }
+
+    previous_savant_files: dict[str, str] = {}
+    if previous_savant_hitters_file:
+        previous_savant_files["hitters"] = previous_savant_hitters_file
+    if previous_savant_pitchers_file:
+        previous_savant_files["pitchers"] = previous_savant_pitchers_file
+    if previous_savant_fielding_file:
+        previous_savant_files["fielding"] = previous_savant_fielding_file
+
+    previous_baseball_reference_files: dict[str, str] = {}
+    if previous_baseball_reference_hitters_file:
+        previous_baseball_reference_files["hitters"] = previous_baseball_reference_hitters_file
+    if previous_baseball_reference_pitchers_file:
+        previous_baseball_reference_files["pitchers"] = previous_baseball_reference_pitchers_file
+
+    if previous_year is not None and (previous_savant_files or previous_baseball_reference_files):
+        previous_sources: dict[str, dict[str, dict[str, str]]] = {}
+        if previous_baseball_reference_files:
+            previous_sources["baseball_reference"] = {"files": previous_baseball_reference_files}
+        if previous_savant_files:
+            previous_sources["baseball_savant"] = {"files": previous_savant_files}
+        manifest["seasons"]["previous"] = {
+            "year": previous_year,
+            "sources": previous_sources,
+        }
+
+    return manifest
 
 
 def _fetch_roster_player(
