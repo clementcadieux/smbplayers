@@ -722,6 +722,53 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertEqual(player["metadata"]["status_code"], "D10")
         self.assertTrue(player["metadata"]["on_il"])
 
+    def test_ingest_flags_injury_shortened_season_from_volume_threshold(self) -> None:
+        roster_path = self.root / "injury_roster_2025.csv"
+        hitters_path = self.root / "injury_hitters_2025.csv"
+        manifest_path = self.root / "injury_manifest.json"
+
+        self._write_csv(
+            roster_path,
+            [
+                {"player_id": 800, "player_name": "Healthy One", "team": "NYM", "age": 27, "position": "CF", "bats": "R", "throws": "R"},
+                {"player_id": 801, "player_name": "Healthy Two", "team": "NYM", "age": 29, "position": "RF", "bats": "L", "throws": "R"},
+                {"player_id": 802, "player_name": "Short Season", "team": "NYM", "age": 25, "position": "LF", "bats": "L", "throws": "R"},
+            ],
+        )
+        self._write_csv(
+            hitters_path,
+            [
+                {"player_id": 800, "player_name": "Healthy One", "team": "NYM", "position": "CF", "PA": 640, "ISO": 0.185, "HR": 24, "Barrel %": 9.5, "SLG": 0.470, "AVG": 0.276, "OBP": 0.344, "K %": 20.4, "Contact %": 78.2, "Two Strike Contact %": 62.5, "Avg Exit Velocity": 90.1, "2B": 30, "3B": 4, "SB": 12, "CS": 3, "BB": 50, "HBP": 4, "H": 160, "Sprint Speed": 28.0},
+                {"player_id": 801, "player_name": "Healthy Two", "team": "NYM", "position": "RF", "PA": 600, "ISO": 0.175, "HR": 22, "Barrel %": 8.8, "SLG": 0.455, "AVG": 0.271, "OBP": 0.338, "K %": 21.0, "Contact %": 77.0, "Two Strike Contact %": 61.7, "Avg Exit Velocity": 89.7, "2B": 29, "3B": 2, "SB": 9, "CS": 2, "BB": 46, "HBP": 3, "H": 151, "Sprint Speed": 27.6},
+                {"player_id": 802, "player_name": "Short Season", "team": "NYM", "position": "LF", "PA": 120, "ISO": 0.180, "HR": 8, "Barrel %": 9.0, "SLG": 0.460, "AVG": 0.274, "OBP": 0.340, "K %": 20.8, "Contact %": 77.8, "Two Strike Contact %": 62.2, "Avg Exit Velocity": 89.9, "2B": 10, "3B": 1, "SB": 4, "CS": 1, "BB": 12, "HBP": 1, "H": 31, "Sprint Speed": 27.8},
+            ],
+        )
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "source": "baseball_savant",
+                    "seasons": {
+                        "current": {
+                            "year": 2025,
+                            "files": {
+                                "roster": "injury_roster_2025.csv",
+                                "hitters": "injury_hitters_2025.csv",
+                            },
+                        }
+                    },
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        players = ingest_from_manifest(load_manifest(manifest_path))
+
+        shortened = next(player for player in players if player["name"] == "Short Season")
+        healthy = next(player for player in players if player["name"] == "Healthy One")
+        self.assertTrue(shortened["metadata"]["ingest"]["injury_shortened"]["current"])
+        self.assertEqual(healthy["metadata"]["ingest"]["injury_shortened"], {})
+
     def test_baseball_reference_manifest_builds_result_based_input(self) -> None:
         manifest = load_manifest(self.root / "br_manifest.json")
         players = ingest_from_manifest(manifest)

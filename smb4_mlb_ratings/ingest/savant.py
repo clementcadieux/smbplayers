@@ -6,6 +6,7 @@ import math
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
+from statistics import median
 from typing import Any
 
 
@@ -90,6 +91,34 @@ PITCH_USAGE_COLUMNS = {
     "sv": ("sv_pct", "sweeper_pct"),
     "kn": ("kn_pct", "knuckleball_pct"),
 }
+
+
+REFERENCE_PATH = Path(__file__).resolve().parents[2] / "smb4_player_reference.json"
+DEFAULT_INJURY_THRESHOLD = {"min_pa_fraction": 0.6, "min_ip_fraction": 0.6}
+
+
+def load_injury_threshold_config() -> dict[str, float]:
+    try:
+        payload = json.loads(REFERENCE_PATH.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return dict(DEFAULT_INJURY_THRESHOLD)
+
+    threshold_payload = payload.get("injury_threshold", {})
+    if not isinstance(threshold_payload, dict):
+        return dict(DEFAULT_INJURY_THRESHOLD)
+
+    min_pa_fraction = threshold_payload.get("min_pa_fraction", DEFAULT_INJURY_THRESHOLD["min_pa_fraction"])
+    min_ip_fraction = threshold_payload.get("min_ip_fraction", DEFAULT_INJURY_THRESHOLD["min_ip_fraction"])
+    try:
+        return {
+            "min_pa_fraction": float(min_pa_fraction),
+            "min_ip_fraction": float(min_ip_fraction),
+        }
+    except (TypeError, ValueError):
+        return dict(DEFAULT_INJURY_THRESHOLD)
+
+
+INJURY_THRESHOLD_CONFIG = load_injury_threshold_config()
 
 
 def _normalized_key(value: str) -> str:
@@ -238,6 +267,7 @@ class PlayerAccumulator:
     samples: dict[str, dict[str, float]] = field(default_factory=lambda: defaultdict(dict))
     estimated_metrics: dict[str, list[str]] = field(default_factory=lambda: defaultdict(list))
     missing_files: dict[str, list[str]] = field(default_factory=lambda: defaultdict(list))
+    injury_shortened_seasons: set[str] = field(default_factory=set)
     source_years: dict[str, int] = field(default_factory=dict)
 
     def set_metric(self, metric_name: str, season_key: str, value: float | None, estimated: bool = False) -> None:
@@ -263,6 +293,7 @@ class PlayerAccumulator:
             "ingest": {
                 "estimated_metrics": {season: sorted(values) for season, values in sorted(self.estimated_metrics.items()) if values},
                 "missing_files": {season: sorted(values) for season, values in sorted(self.missing_files.items()) if values},
+                "injury_shortened": {season: True for season in sorted(self.injury_shortened_seasons)},
             },
         }
         if self.source_id:
@@ -469,6 +500,47 @@ def _position_metric(position: str | None, mapping: dict[str, float], default: f
     if position is None:
         return default
     return mapping.get(position, default)
+
+
+def _pitcher_season_ip(player: PlayerAccumulator, season_key: str) -> float | None:
+    defensive_innings = player.samples.get("defensive_innings", {}).get(season_key)
+    if defensive_innings is not None:
+        return float(defensive_innings)
+    weighted_bf = player.samples.get("weighted_bf", {}).get(season_key)
+    if weighted_bf is None:
+        return None
+    return float(weighted_bf) / 4.25
+
+
+def _flag_injury_shortened_seasons(players: dict[tuple[str, str], PlayerAccumulator]) -> None:
+    season_keys = sorted({season_key for player in players.values() for season_key in player.source_years})
+    min_pa_fraction = INJURY_THRESHOLD_CONFIG["min_pa_fraction"]
+    min_ip_fraction = INJURY_THRESHOLD_CONFIG["min_ip_fraction"]
+
+    for season_key in season_keys:
+        hitter_volumes = [
+            float(volume)
+            for player in players.values()
+            if "hitter" in player.roles and (volume := player.samples.get("weighted_pa", {}).get(season_key)) is not None and volume > 0
+        ]
+        pitcher_volumes = [
+            float(volume)
+            for player in players.values()
+            if "pitcher" in player.roles and (volume := _pitcher_season_ip(player, season_key)) is not None and volume > 0
+        ]
+
+        hitter_median = median(hitter_volumes) if hitter_volumes else None
+        pitcher_median = median(pitcher_volumes) if pitcher_volumes else None
+
+        for player in players.values():
+            if hitter_median is not None and "hitter" in player.roles:
+                plate_appearances = player.samples.get("weighted_pa", {}).get(season_key)
+                if plate_appearances is not None and plate_appearances < hitter_median * min_pa_fraction:
+                    player.injury_shortened_seasons.add(season_key)
+            if pitcher_median is not None and "pitcher" in player.roles:
+                innings_pitched = _pitcher_season_ip(player, season_key)
+                if innings_pitched is not None and innings_pitched < pitcher_median * min_ip_fraction:
+                    player.injury_shortened_seasons.add(season_key)
 
 
 def _apply_hitter_row(player: PlayerAccumulator, season_key: str, row: dict[str, str]) -> None:
@@ -757,6 +829,7 @@ def ingest_from_manifest(manifest: IngestManifest | Path) -> list[dict[str, Any]
             for player in players.values():
                 player.note_missing_file(season_key, "running")
 
+    _flag_injury_shortened_seasons(players)
     outputs = [player.to_player_dict() for player in players.values() if player.roles]
     outputs.sort(key=lambda item: (item["role"], item["name"]))
     return outputs

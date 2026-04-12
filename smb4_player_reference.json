@@ -25,6 +25,10 @@
     "Scholarly",
     "Crafty"
   ],
+  "injury_threshold": {
+    "min_pa_fraction": 0.6,
+    "min_ip_fraction": 0.6
+  },
   "ratings": {
     "overall_grade": {
       "type": "letter_grade",
