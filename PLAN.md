@@ -74,3 +74,34 @@
    - Verify correct mapping (e.g. Sinker → 2-Seam FB, Sweeper → Slider).
    - Verify percentage merging when multiple MLB pitches map to the same SMB4 pitch.
    - Verify the output list is capped at the SMB4 pitch-slot limit.
+
+---
+
+## Issue #28 – Improvements for Volume Predictor
+
+**Problem:** Some players (e.g. Trey Yesavage) are predicted to have much lower volume than expected because they were called up late in the season or missed time due to injury. Using raw IP or AB totals under-represents their true performance rate.
+
+### Proposed Solution
+
+Replace raw seasonal volume totals with a **per-day rate metric** (PA per active day for hitters, IP per active day for pitchers) so that partial-season call-ups and injury absences don't artificially deflate projections.
+
+### Steps
+
+1. **Expose days-on-roster in ingestion:**
+   - In `savant.py` (and `baseball_reference.py` if applicable), parse or compute the number of days a player was on the active MLB roster for each season.
+   - Store this as a `days_on_roster: int | None` field in the per-season data structure (alongside existing PA/IP fields).
+
+2. **Add a `days_on_roster` field to `PlayerInput`:**
+   - Add per-season `days_on_roster` entries in the same shape as existing sample-season dictionaries (`current`, `previous`, `two_years_ago`).
+   - Keep it optional so existing data files without the field remain valid.
+
+3. **Compute volume rate in the projection logic:**
+   - In `engine.py`, in `resolved_projected_pa` / `resolved_projected_ip` (and wherever season volume is derived), if `days_on_roster` is available and > 0, compute the **rate** (PA / days or IP / days) and multiply by a configurable full-season day target.
+   - Fall back to raw totals when `days_on_roster` is absent.
+
+4. **Add configurable full-season day targets to `smb4_player_reference.json`:**
+   - Add a `volume_projection` block with keys `full_season_days_hitter` and `full_season_days_pitcher` (e.g. `162` and `180`) so the targets are not hard-coded.
+
+5. **Update tests:**
+   - Add a test for a call-up scenario (partial season with high rate) and confirm the projected volume is closer to a full-season estimate than the raw total.
+   - Confirm fallback to raw totals when `days_on_roster` is `None`.
