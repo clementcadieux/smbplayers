@@ -22,12 +22,23 @@ class PlayerInput:
     projected_ip: float | None = None
     days_on_roster: dict[str, float] = field(default_factory=dict)
     pitch_mix: dict[str, float] = field(default_factory=dict)
+    trait_metrics: dict[str, SeasonValue] | None = None
+    trait_lists: dict[str, list[str]] | None = None
     metrics: dict[str, SeasonValue] = field(default_factory=dict)
     samples: dict[str, SeasonValue] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "PlayerInput":
+        raw_trait_lists = data.get("trait_lists")
+        if isinstance(raw_trait_lists, dict):
+            trait_lists = {
+                str(key): [str(item) for item in value]
+                for key, value in raw_trait_lists.items()
+                if isinstance(value, list)
+            } or None
+        else:
+            trait_lists = None
         return cls(
             name=data["name"],
             role=data["role"],
@@ -42,6 +53,8 @@ class PlayerInput:
             projected_ip=data.get("projected_ip"),
             days_on_roster={str(key): float(value) for key, value in data.get("days_on_roster", {}).items()},
             pitch_mix={str(key): float(value) for key, value in data.get("pitch_mix", {}).items()},
+            trait_metrics=data.get("trait_metrics"),
+            trait_lists=trait_lists,
             metrics=data.get("metrics", {}),
             samples=data.get("samples", {}),
             metadata=data.get("metadata", {}),

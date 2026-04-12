@@ -22,6 +22,8 @@ Trait inference now supports two full-catalog pathways:
 - automatic metadata family rules for splits, pitch-type strengths, zone strengths, leverage, durability, volatility, running-game control, and two-way usage
 - direct per-trait signals through `metadata.trait_hints`, `metadata.trait_signals`, `metadata.trait_scores`, or normalized per-trait keys in metadata
 
+Issue 31 adds a third path for the in-depth situational traits: season-aware `trait_metrics` and `trait_lists` supplied by ingestion, then scored through the configurable `trait_criteria` table in [smb4_player_reference.json](smb4_player_reference.json). This keeps most situational thresholds editable in reference data instead of hard-coded inside the engine.
+
 This means every SMB4 trait can be suggested automatically when the relevant source signal is present, even if that signal comes from custom preprocessing rather than the core metric set.
 
 Final trait assignment uses priority and conflict rules so the engine can keep a broad discovery list in `suggested_traits` while also emitting a smaller `assigned_traits` list intended to be closer to an actual SMB4 roster build. The default final trait limit is 3, and can be overridden per player with `metadata.final_trait_limit` or `metadata.trait_limit`. If you call `rate_players(..., trim_final_traits=False)`, `assigned_traits` will return the full combined trait set instead.

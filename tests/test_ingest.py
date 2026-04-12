@@ -80,6 +80,9 @@ class IngestFrameworkTests(unittest.TestCase):
                     "HBP": 7,
                     "H": 162,
                     "Sprint Speed": 28.6,
+                    "First Pitch Hitting": 81,
+                    "Pressure Hitting": 77,
+                    "O-Contact %": 71,
                 }
             ],
         )
@@ -126,6 +129,7 @@ class IngestFrameworkTests(unittest.TestCase):
                     "OAA": 8,
                     "DRS": 6,
                     "UZR": 4.1,
+                    "Dive Recovery": 72,
                     "Fielding %": 0.992,
                     "Arm Strength": 89.4,
                     "Outfield Arm Runs": 2.9,
@@ -170,6 +174,20 @@ class IngestFrameworkTests(unittest.TestCase):
                     "SL %": 27.0,
                     "CH %": 15.0,
                     "CU %": 10.0,
+                    "Pressure Pitching": 78,
+                    "Runners On Pitching": 74,
+                    "First Pitch Pitching": 73,
+                    "Running Game Control": 68,
+                    "Same Handed Pitching": 72,
+                    "Same Handed Pitching Gap": 14,
+                    "Opposite Handed Pitching": 58,
+                    "Opposite Handed Pitching Gap": -14,
+                    "Pitch Quality 4F": 80,
+                    "Pitch Quality 2F": 76,
+                    "Pitch Quality CF": 74,
+                    "Pitch Quality FK": 82,
+                    "Pitch Quality SB": 71,
+                    "Secondary Field Positions": "OF",
                 }
             ],
         )
@@ -244,6 +262,7 @@ class IngestFrameworkTests(unittest.TestCase):
                     "OBP": 0.352,
                     "SLG": 0.521,
                     "BsR": 3.7,
+                    "Pinch Hitting": 67,
                 }
             ],
         )
@@ -264,6 +283,11 @@ class IngestFrameworkTests(unittest.TestCase):
                     "IP": "184.2",
                     "Pitches": 2875,
                     "Strikes": 1896,
+                    "Pressure Pitching": 71,
+                    "Same Handed Pitching": 69,
+                    "Same Handed Pitching Gap": 11,
+                    "Opposite Handed Pitching": 58,
+                    "Opposite Handed Pitching Gap": -11,
                 }
             ],
         )
@@ -318,6 +342,8 @@ class IngestFrameworkTests(unittest.TestCase):
                     "Sprint Speed": 29.1,
                     "K %": 24.0,
                     "Contact %": 73.2,
+                    "First Pitch Hitting": 79,
+                    "O-Contact %": 69,
                 }
             ],
         )
@@ -344,6 +370,10 @@ class IngestFrameworkTests(unittest.TestCase):
                     "Hard Hit %": 32.0,
                     "SL %": 28.0,
                     "CH %": 12.0,
+                    "Pitch Quality 4F": 77,
+                    "Pitch Quality FK": 83,
+                    "Running Game Control": 66,
+                    "Secondary Field Positions": "OF",
                 }
             ],
         )
@@ -382,6 +412,7 @@ class IngestFrameworkTests(unittest.TestCase):
                     "OBP": 0.347,
                     "SLG": 0.498,
                     "BsR": 4.2,
+                    "Bunt Value": 70,
                 }
             ],
         )
@@ -402,6 +433,7 @@ class IngestFrameworkTests(unittest.TestCase):
                     "IP": "181.1",
                     "Pitches": 2798,
                     "Strikes": 1855,
+                    "Pressure Pitching": 69,
                 }
             ],
         )
@@ -447,6 +479,10 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertEqual(hitter["days_on_roster"]["current"], 154.0)
         self.assertAlmostEqual(hitter["metrics"]["position_difficulty"]["current"], 0.82)
         self.assertEqual(hitter["metadata"]["source_player_id"], "100")
+        self.assertEqual(hitter["trait_metrics"]["first_pitch_hitting"]["current"], 81.0)
+        self.assertEqual(hitter["trait_metrics"]["pressure_hitting"]["current"], 77.0)
+        self.assertEqual(hitter["trait_metrics"]["out_of_zone_contact_pct"]["current"], 71.0)
+        self.assertEqual(hitter["trait_metrics"]["dive_recovery"]["current"], 72.0)
 
         self.assertEqual(pitcher["role"], "pitcher")
         self.assertEqual(pitcher["primary_position"], "P")
@@ -455,6 +491,15 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertIn("tracked_pitches", pitcher["samples"])
         self.assertAlmostEqual(pitcher["pitch_mix"]["ff"], 0.48)
         self.assertAlmostEqual(pitcher["pitch_mix"]["sl"], 0.27)
+        self.assertEqual(pitcher["trait_metrics"]["pitch_quality_4f"]["current"], 80.0)
+        self.assertEqual(pitcher["trait_metrics"]["pitch_quality_2f"]["current"], 76.0)
+        self.assertEqual(pitcher["trait_metrics"]["pitch_quality_cf"]["current"], 74.0)
+        self.assertEqual(pitcher["trait_metrics"]["pitch_quality_fk"]["current"], 82.0)
+        self.assertEqual(pitcher["trait_metrics"]["pitch_quality_sb"]["current"], 71.0)
+        self.assertEqual(pitcher["trait_metrics"]["steal_suppression"]["current"], 68.0)
+        self.assertEqual(pitcher["trait_metrics"]["same_handed_pitching_gap"]["current"], 14.0)
+        self.assertEqual(pitcher["trait_metrics"]["opposite_handed_pitching_gap"]["current"], -14.0)
+        self.assertEqual(pitcher["trait_lists"]["secondary_field_positions"], ["OF"])
         self.assertIn("arsenal_diversity", pitcher["metadata"]["ingest"]["estimated_metrics"]["current"])
 
     def test_cli_ingest_and_legacy_rate_flow(self) -> None:
@@ -794,11 +839,16 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertEqual(hitter["days_on_roster"]["current"], 158.0)
         self.assertAlmostEqual(hitter["metrics"]["iso"]["current"], 0.23)
         self.assertAlmostEqual(hitter["metrics"]["adjusted_obp"]["current"], 0.352)
+        self.assertEqual(hitter["trait_metrics"]["pinch_hitting"]["current"], 67.0)
         self.assertIn("contact_rate", hitter["metadata"]["ingest"]["estimated_metrics"]["current"])
 
         self.assertEqual(pitcher["metadata"]["source"], "baseball_reference")
         self.assertEqual(pitcher["days_on_roster"]["current"], 172.0)
         self.assertAlmostEqual(pitcher["metrics"]["walk_rate"]["current"], 58 / 701, places=6)
+        self.assertEqual(pitcher["trait_metrics"]["pressure_pitching"]["current"], 71.0)
+        self.assertEqual(pitcher["trait_metrics"]["same_handed_pitching"]["current"], 69.0)
+        self.assertEqual(pitcher["trait_metrics"]["same_handed_pitching_gap"]["current"], 11.0)
+        self.assertEqual(pitcher["trait_metrics"]["opposite_handed_pitching_gap"]["current"], -11.0)
         self.assertIn("stuff_metric", pitcher["metadata"]["ingest"]["estimated_metrics"]["current"])
         self.assertIn("running", pitcher["metadata"]["ingest"]["missing_files"]["current"])
 
@@ -818,6 +868,8 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertAlmostEqual(hitter["metrics"]["avg_exit_velocity"]["current"], 92.8)
         self.assertAlmostEqual(hitter["metrics"]["sprint_speed"]["current"], 29.1)
         self.assertEqual(hitter["days_on_roster"]["current"], 141.0)
+        self.assertEqual(hitter["trait_metrics"]["first_pitch_hitting"]["current"], 79.0)
+        self.assertEqual(hitter["trait_metrics"]["bunt_value"]["current"], 70.0)
         self.assertIn("baseball_reference:contact_rate", hitter["metadata"]["ingest"]["estimated_metrics"]["current"])
         self.assertIn("baseball_savant:fielding", hitter["metadata"]["ingest"]["missing_files"]["current"])
 
@@ -828,6 +880,10 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertEqual(pitcher["days_on_roster"]["current"], 168.0)
         self.assertAlmostEqual(pitcher["pitch_mix"]["ff"], 0.565217, places=6)
         self.assertAlmostEqual(pitcher["pitch_mix"]["sl"], 0.304348, places=6)
+        self.assertEqual(pitcher["trait_metrics"]["pitch_quality_4f"]["current"], 77.0)
+        self.assertEqual(pitcher["trait_metrics"]["pitch_quality_fk"]["current"], 83.0)
+        self.assertEqual(pitcher["trait_metrics"]["pressure_pitching"]["current"], 69.0)
+        self.assertEqual(pitcher["trait_lists"]["secondary_field_positions"], ["OF"])
         self.assertIn("baseball_reference:running", pitcher["metadata"]["ingest"]["missing_files"]["current"])
 
 
