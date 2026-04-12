@@ -12,6 +12,7 @@ jobs:
       contents: write
       issues: read
       models: read
+      pull-requests: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -89,12 +90,26 @@ jobs:
             console.log(`Updated PLAN.md with steps for issue #${issueNumber}.`);
             core.setOutput('changed', 'true');
 
-      - name: Commit and push PLAN.md
+      - name: Create branch, commit, open PR, and merge
         if: steps.update-plan.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
         run: |
+          BRANCH="plan/issue-${ISSUE_NUMBER}"
+
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
           git add PLAN.md
-          git diff --staged --quiet \
-            || git commit -m "docs: update PLAN.md with steps for issue #${{ github.event.issue.number }}"
-          git push
+          git commit -m "docs: update PLAN.md with steps for issue #${ISSUE_NUMBER}"
+          git push origin "$BRANCH"
+
+          PR_URL=$(gh pr create \
+            --title "docs: update PLAN.md for issue #${ISSUE_NUMBER}" \
+            --body "Automated update of PLAN.md with implementation steps for issue #${ISSUE_NUMBER} (${ISSUE_TITLE})." \
+            --base main \
+            --head "$BRANCH")
+
+          gh pr merge "$PR_URL" --merge --admin
