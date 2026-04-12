@@ -272,17 +272,20 @@ def parse_fangraphs_fielding_csv(payload: str) -> list[dict[str, Any]]:
 
 
 def parse_savant_fielding_run_value_csv(payload: str) -> list[dict[str, Any]]:
-    reader = csv.DictReader(io.StringIO(payload))
+    reader = csv.DictReader(io.StringIO(payload.lstrip("\ufeff")))
     parsed_rows: list[dict[str, Any]] = []
     for row in reader:
         if not isinstance(row, dict):
             continue
-        name = _as_str(row.get("Player") or row.get("Name") or row.get("player_name"))
+        name = _player_name_from_row(row)
         if not name:
             continue
-        team = _as_str(row.get("Team") or row.get("Tm") or row.get("team"))
+        team = _as_str(row.get("Team") or row.get("Tm") or row.get("team") or row.get("display_team_name"))
         fielding_run_value = _as_float(
-            row.get("Fielding Run Value") or row.get("fielding_run_value") or row.get("FRV")
+            row.get("Fielding Run Value")
+            or row.get("fielding_run_value")
+            or row.get("FRV")
+            or row.get("total_runs")
         )
         range_runs = _as_float(row.get("Range") or row.get("range") or row.get("range_runs"))
         arm_runs = _as_float(row.get("Arm") or row.get("arm") or row.get("arm_runs"))
@@ -305,17 +308,25 @@ def parse_savant_fielding_run_value_csv(payload: str) -> list[dict[str, Any]]:
 
 
 def parse_savant_oaa_csv(payload: str) -> list[dict[str, Any]]:
-    reader = csv.DictReader(io.StringIO(payload))
+    reader = csv.DictReader(io.StringIO(payload.lstrip("\ufeff")))
     parsed_rows: list[dict[str, Any]] = []
     for row in reader:
         if not isinstance(row, dict):
             continue
-        name = _as_str(row.get("Player") or row.get("Name") or row.get("player_name"))
+        name = _player_name_from_row(row)
         if not name:
             continue
-        team = _as_str(row.get("Team") or row.get("Tm") or row.get("team"))
-        oaa = _as_float(row.get("OAA") or row.get("outs_above_average") or row.get("outs above average"))
-        runs_prevented = _as_float(row.get("Runs Prevented") or row.get("runs_prevented"))
+        team = _as_str(row.get("Team") or row.get("Tm") or row.get("team") or row.get("display_team_name"))
+        oaa = _as_float(
+            row.get("OAA")
+            or row.get("outs_above_average")
+            or row.get("outs above average")
+        )
+        runs_prevented = _as_float(
+            row.get("Runs Prevented")
+            or row.get("runs_prevented")
+            or row.get("fielding_runs_prevented")
+        )
         if oaa is None and runs_prevented is None:
             continue
         parsed_rows.append(
@@ -976,7 +987,7 @@ def _fetch_savant_fielding_run_value_csv(
     )
     return _fetch_first_valid_csv(
         candidate_urls,
-        required_headers=("Player", "Fielding Run Value"),
+        required_headers=("name", "total_runs"),
         ssl_context=ssl_context,
     )
 
@@ -1000,7 +1011,7 @@ def _fetch_savant_oaa_csv(
     )
     return _fetch_first_valid_csv(
         candidate_urls,
-        required_headers=("Player", "OAA"),
+        required_headers=("outs_above_average",),
         ssl_context=ssl_context,
     )
 
@@ -1017,9 +1028,35 @@ def _fetch_first_valid_csv(
         except (HTTPError, URLError, TimeoutError, OSError):
             continue
         header_line = payload.splitlines()[0] if payload.splitlines() else ""
-        if all(header in header_line for header in required_headers):
+        header_line_normalized = header_line.lstrip("\ufeff").lower()
+        if all(header.lower() in header_line_normalized for header in required_headers):
             return payload
     return None
+
+
+def _player_name_from_row(row: Mapping[str, Any]) -> str | None:
+    preferred_name = _as_str(
+        row.get("Player")
+        or row.get("Name")
+        or row.get("player_name")
+        or row.get("name")
+    )
+    if preferred_name:
+        return _normalize_last_first_name(preferred_name)
+
+    last_first_name = _as_str(row.get("last_name, first_name"))
+    if last_first_name:
+        return _normalize_last_first_name(last_first_name)
+    return None
+
+
+def _normalize_last_first_name(name: str) -> str:
+    stripped = name.strip()
+    if "," not in stripped:
+        return stripped
+    last, first = stripped.split(",", 1)
+    reordered = f"{first.strip()} {last.strip()}".strip()
+    return " ".join(reordered.split())
 
 
 def _fetch_handedness_splits(

@@ -223,6 +223,20 @@ class LiveTeamDataTests(unittest.TestCase):
         self.assertEqual(rows[0]["range_runs"], 1.0)
         self.assertEqual(rows[0]["framing_runs"], 4.0)
 
+    def test_parse_savant_fielding_run_value_csv_handles_current_savant_schema(self) -> None:
+        payload = (
+            '"name","id","total_runs","range_runs","arm_runs","framing_runs","throwing_runs"\n'
+            '"Kirk, Alejandro",672386,6,1,0,4,1\n'
+        )
+
+        rows = parse_savant_fielding_run_value_csv(payload)
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["name"], "Alejandro Kirk")
+        self.assertEqual(rows[0]["fielding_run_value"], 6.0)
+        self.assertEqual(rows[0]["range_runs"], 1.0)
+        self.assertEqual(rows[0]["framing_runs"], 4.0)
+
     def test_parse_savant_oaa_csv_extracts_oaa_and_runs_prevented(self) -> None:
         payload = """Player,Team,Runs Prevented,OAA\nAlejandro Kirk,TOR,5,4\n"""
 
@@ -231,6 +245,19 @@ class LiveTeamDataTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["name"], "Alejandro Kirk")
         self.assertEqual(rows[0]["team"], "TOR")
+        self.assertEqual(rows[0]["runs_prevented"], 5.0)
+        self.assertEqual(rows[0]["oaa"], 4.0)
+
+    def test_parse_savant_oaa_csv_handles_current_savant_schema(self) -> None:
+        payload = (
+            '"last_name, first_name","player_id","display_team_name","fielding_runs_prevented","outs_above_average"\n'
+            '"Kirk, Alejandro","672386","Blue Jays",5,4\n'
+        )
+
+        rows = parse_savant_oaa_csv(payload)
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["name"], "Alejandro Kirk")
         self.assertEqual(rows[0]["runs_prevented"], 5.0)
         self.assertEqual(rows[0]["oaa"], 4.0)
 
