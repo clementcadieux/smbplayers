@@ -1318,6 +1318,7 @@ ELITE_PITCH_QUALITY_METRICS = frozenset(
     }
 )
 ELITE_PITCH_PERCENTILE_MIN_PEERS = 8
+ELITE_FASTBALL_TRAIT_NAMES = frozenset({"Elite 4F", "Elite 2F", "Elite CF"})
 
 
 def cache_elite_pitch_quality_percentiles(states: list[PlayerState]) -> None:
@@ -1337,7 +1338,20 @@ def cache_elite_pitch_quality_percentiles(states: list[PlayerState]) -> None:
             continue
         percentile_values: dict[str, float] = {}
         peer_counts: dict[str, int] = {}
+        mlb_percentiles = metadata_lookup(state.player.metadata, "mlb_trait_metric_percentiles")
+        mlb_peer_counts = metadata_lookup(state.player.metadata, "mlb_trait_metric_percentile_peer_counts")
+        if not isinstance(mlb_percentiles, Mapping):
+            mlb_percentiles = metadata_lookup(state.player.metadata, "source_details.baseball_savant.mlb_trait_metric_percentiles")
+        if not isinstance(mlb_peer_counts, Mapping):
+            mlb_peer_counts = metadata_lookup(state.player.metadata, "source_details.baseball_savant.mlb_trait_metric_percentile_peer_counts")
         for metric_name, peers in peer_values_by_metric.items():
+            if isinstance(mlb_percentiles, Mapping) and isinstance(mlb_peer_counts, Mapping):
+                mlb_percentile = mlb_percentiles.get(metric_name)
+                mlb_peers = mlb_peer_counts.get(metric_name)
+                if isinstance(mlb_percentile, (int, float)) and isinstance(mlb_peers, (int, float)):
+                    percentile_values[metric_name] = round(float(mlb_percentile), 2)
+                    peer_counts[metric_name] = int(mlb_peers)
+                    continue
             if not peers:
                 continue
             value = player_trait_metric(state.player, metric_name)
@@ -1727,6 +1741,9 @@ def final_trait_priority(
     # Keep elite pitch traits visible for pitcher outputs when capped selection trims to top traits.
     if player_role in {"pitcher", "two_way"} and trait.name in elite_trait_names:
         score += 22.0
+        # If both are elite, prefer breaking/offspeed elite traits over fastball elite traits.
+        if trait.name not in ELITE_FASTBALL_TRAIT_NAMES:
+            score += 7.0
     return score
 
 
@@ -2258,7 +2275,8 @@ def rate_players(players: list[PlayerInput | dict], trim_final_traits: bool = Tr
                         if state.position_group == group:
                             state.review_flags.append(f"{spec.name}: peer group '{group}' is small ({count})")
 
-    # Elite pitch trait thresholds are interpreted as relative percentiles within the active pitcher pool.
+    # Elite pitch trait thresholds prefer MLB-wide percentile metadata when available,
+    # then fall back to percentiles within the active pitcher pool.
     cache_elite_pitch_quality_percentiles(states)
 
     outputs: list[RatingOutput] = []

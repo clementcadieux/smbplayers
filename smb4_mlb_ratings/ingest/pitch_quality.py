@@ -76,8 +76,8 @@ ELITE_PITCH_SPECS = {
 
 REFERENCE_PATH = Path(__file__).resolve().parents[2] / "smb4_player_reference.json"
 DEFAULT_PITCH_RV_THRESHOLDS = {
-    "elite": -2.0,
-    "exceptional": -6.0,
+    "elite": 2.0,
+    "exceptional": 6.0,
 }
 
 
@@ -99,7 +99,7 @@ def _load_pitch_rv_thresholds() -> dict[str, float]:
     except (TypeError, ValueError):
         exceptional = DEFAULT_PITCH_RV_THRESHOLDS["exceptional"]
 
-    if exceptional > elite:
+    if exceptional < elite:
         elite, exceptional = exceptional, elite
     return {
         "elite": elite,
@@ -113,8 +113,8 @@ PITCH_RV_THRESHOLDS = _load_pitch_rv_thresholds()
 def pitch_rv_per_100_score(run_value_per_100: float) -> float:
     elite_rv = PITCH_RV_THRESHOLDS["elite"]
     exceptional_rv = PITCH_RV_THRESHOLDS["exceptional"]
-    scale = max(elite_rv - exceptional_rv, 0.001)
-    normalized = _bounded_score(elite_rv - run_value_per_100, scale)
+    scale = max(exceptional_rv - elite_rv, 0.001)
+    normalized = _bounded_score(run_value_per_100 - elite_rv, scale)
     return round(normalized * 99.0, 3)
 
 

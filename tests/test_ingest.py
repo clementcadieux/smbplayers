@@ -199,7 +199,7 @@ class IngestFrameworkTests(unittest.TestCase):
                 {
                     "player_id": 200,
                     "pitch_type": "CH",
-                    "run_value_per_100": -5.0,
+                    "run_value_per_100": 5.0,
                 }
             ],
         )
@@ -435,6 +435,21 @@ class IngestFrameworkTests(unittest.TestCase):
             ],
         )
         self._write_csv(
+            self.root / "mixed_savant_pitch_run_values_2025.csv",
+            [
+                {
+                    "player_id": 600,
+                    "pitch_type": "FF",
+                    "run_value_per_100": 3.5,
+                },
+                {
+                    "player_id": 600,
+                    "pitch_type": "SL",
+                    "run_value_per_100": 4.1,
+                },
+            ],
+        )
+        self._write_csv(
             self.root / "mixed_running_2025.csv",
             [
                 {
@@ -528,6 +543,7 @@ class IngestFrameworkTests(unittest.TestCase):
                                 "hitters": "mixed_savant_hitters_2025.csv",
                                 "pitchers": "mixed_savant_pitchers_2025.csv",
                                 "running": "mixed_running_2025.csv",
+                                "pitch_run_values": "mixed_savant_pitch_run_values_2025.csv",
                             }
                         },
                         "fangraphs": {
@@ -1191,10 +1207,17 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertEqual(pitcher["days_on_roster"]["current"], 168.0)
         self.assertAlmostEqual(pitcher["pitch_mix"]["ff"], 0.565217, places=6)
         self.assertAlmostEqual(pitcher["pitch_mix"]["sl"], 0.304348, places=6)
-        self.assertEqual(pitcher["trait_metrics"]["pitch_quality_4f"]["current"], 77.0)
+        self.assertAlmostEqual(pitcher["trait_metrics"]["pitch_quality_4f"]["current"], 57.062, places=3)
         self.assertEqual(pitcher["trait_metrics"]["pitch_quality_fk"]["current"], 83.0)
         self.assertEqual(pitcher["trait_metrics"]["pressure_pitching"]["current"], 69.0)
         self.assertEqual(pitcher["trait_lists"]["secondary_field_positions"], ["OF"])
+        self.assertIn("mlb_trait_metric_percentiles", pitcher["metadata"])
+        self.assertIn("mlb_trait_metric_percentile_peer_counts", pitcher["metadata"])
+        self.assertIn("pitch_quality_4f", pitcher["metadata"]["mlb_trait_metric_percentiles"])
+        self.assertGreaterEqual(
+            pitcher["metadata"]["mlb_trait_metric_percentile_peer_counts"]["pitch_quality_4f"],
+            1,
+        )
         self.assertIn("baseball_reference:running", pitcher["metadata"]["ingest"]["missing_files"]["current"])
 
     def test_pitcher_metric_aliases_are_parsed_from_savant_csv(self) -> None:
@@ -1238,6 +1261,18 @@ class IngestFrameworkTests(unittest.TestCase):
                 }
             ],
         )
+        run_values_path = self.root / "alias_pitcher_run_values.csv"
+
+        self._write_csv(
+            run_values_path,
+            [
+                {
+                    "player_id": 920,
+                    "pitch_type": "FF",
+                    "run_value_per_100": 2.1,
+                }
+            ],
+        )
         manifest_path.write_text(
             json.dumps(
                 {
@@ -1248,6 +1283,7 @@ class IngestFrameworkTests(unittest.TestCase):
                             "files": {
                                 "roster": roster_path.name,
                                 "pitchers": pitchers_path.name,
+                                "pitch_run_values": run_values_path.name,
                             },
                         }
                     },
@@ -1325,6 +1361,18 @@ class IngestFrameworkTests(unittest.TestCase):
                 }
             ],
         )
+        fallback_run_values_path = self.root / "fallback_pitch_run_values.csv"
+
+        self._write_csv(
+            fallback_run_values_path,
+            [
+                {
+                    "player_id": 930,
+                    "pitch_type": "FF",
+                    "run_value_per_100": 1.8,
+                }
+            ],
+        )
         manifest_path.write_text(
             json.dumps(
                 {
@@ -1342,6 +1390,7 @@ class IngestFrameworkTests(unittest.TestCase):
                                     "files": {
                                         "roster": roster_path.name,
                                         "pitchers": savant_pitchers_path.name,
+                                        "pitch_run_values": fallback_run_values_path.name,
                                     }
                                 },
                             },
