@@ -170,6 +170,32 @@ def derive_hitter_situational_metrics(splits: Mapping[str, Mapping[str, float]])
     }
 
 
+def derive_hitter_pitch_type_metrics(splits: Mapping[str, Mapping[str, float]]) -> dict[str, float | None]:
+    fastball_score = hitter_split_score(splits.get("fastball", {}))
+    offspeed_score = hitter_split_score(splits.get("offspeed", {}))
+    breaking_score = hitter_split_score(splits.get("breaking", {}))
+
+    combined_offspeed_score = None
+    if offspeed_score is not None and breaking_score is not None:
+        combined_offspeed_score = round((offspeed_score + breaking_score) / 2.0, 3)
+    else:
+        combined_offspeed_score = offspeed_score if offspeed_score is not None else breaking_score
+
+    return {
+        "fastball_hitting": fastball_score,
+        "offspeed_hitting": combined_offspeed_score,
+    }
+
+
+def derive_hitter_zone_metrics(splits: Mapping[str, Mapping[str, float]]) -> dict[str, float | None]:
+    return {
+        "zone_hitting_high": hitter_split_score(splits.get("high", {})),
+        "zone_hitting_low": hitter_split_score(splits.get("low", {})),
+        "zone_hitting_inside": hitter_split_score(splits.get("inside", {})),
+        "zone_hitting_outside": hitter_split_score(splits.get("outside", {})),
+    }
+
+
 def pitcher_split_score(split: Mapping[str, float]) -> float | None:
     if not isinstance(split, Mapping):
         return None

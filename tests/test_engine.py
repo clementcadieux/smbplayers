@@ -378,6 +378,10 @@ class SurfaceBlendTests(unittest.TestCase):
                         "first_pitch_hitting": {"current": 82},
                         "pressure_hitting": {"current": 79},
                         "out_of_zone_contact_pct": {"current": 74},
+                        "fastball_hitting": {"current": 78},
+                        "offspeed_hitting": {"current": 76},
+                        "zone_hitting_high": {"current": 74},
+                        "zone_hitting_inside": {"current": 72},
                     },
                 },
                 self._player("Peer 1", 0.500, 425, iso=0.220, hr_per_pa=0.045, barrel_rate=0.110, avg_exit_velocity=91.0),
@@ -391,6 +395,10 @@ class SurfaceBlendTests(unittest.TestCase):
         self.assertIn("First Pitch Slayer", trait_names)
         self.assertIn("Clutch", trait_names)
         self.assertIn("Bad Ball Hitter", trait_names)
+        self.assertIn("Fastball Hitter", trait_names)
+        self.assertIn("Off-Speed Hitter", trait_names)
+        self.assertIn("High Pitch", trait_names)
+        self.assertIn("Inside Pitch", trait_names)
 
     def test_missing_trait_metrics_do_not_crash_trait_evaluation(self) -> None:
         outputs = rate_players(
