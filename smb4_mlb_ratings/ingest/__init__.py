@@ -12,7 +12,6 @@ SAVANT_TOOL_METRICS = frozenset(
 	{
 		"barrel_rate",
 		"avg_exit_velocity",
-		"two_strike_contact_rate",
 		"sprint_speed",
 		"oaa",
 		"arm_strength",

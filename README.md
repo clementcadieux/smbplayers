@@ -73,7 +73,6 @@ Example:
         "contact_rate": 0.768,
         "batting_average": 0.281,
         "adjusted_obp": 0.352,
-        "two_strike_contact_rate": 0.642,
         "sprint_speed": 28.7,
         "baserunning_value": 3.8,
         "sb_attempt_rate": 0.076,
@@ -113,7 +112,6 @@ Hitters:
 - `contact_rate`
 - `batting_average`
 - `adjusted_obp`
-- `two_strike_contact_rate`
 - `sprint_speed`
 - `baserunning_value`
 - `sb_attempt_rate`

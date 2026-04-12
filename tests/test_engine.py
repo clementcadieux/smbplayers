@@ -897,7 +897,7 @@ class SurfaceBlendTests(unittest.TestCase):
 
 
 class MissingFieldConsumptionTests(unittest.TestCase):
-    """Issue 41: verify oaa/drs/uzr/two_strike_contact_rate are active in rating composites."""
+    """Issue 41: verify oaa/drs/uzr are active in rating composites."""
 
     def _build_fielder(self, name: str, oaa: float, drs: float, uzr: float) -> dict:
         """Build a hitter with controlled defensive metrics and identical offensive stats."""
@@ -916,7 +916,6 @@ class MissingFieldConsumptionTests(unittest.TestCase):
                 "contact_rate": 0.780,
                 "batting_average": 0.272,
                 "adjusted_obp": 0.340,
-                "two_strike_contact_rate": 0.630,
                 "oaa": oaa,
                 "drs": drs,
                 "uzr": uzr,
@@ -945,7 +944,7 @@ class MissingFieldConsumptionTests(unittest.TestCase):
         self.assertGreater(elite_pct, average_pct)
         self.assertGreater(average_pct, poor_pct)
 
-    def test_two_strike_contact_rate_improves_contact_rating(self) -> None:
+    def test_two_strike_contact_rate_is_ignored_for_contact_rating(self) -> None:
         base_metrics = {
             "iso": 0.160,
             "hr_per_pa": 0.028,
@@ -986,7 +985,7 @@ class MissingFieldConsumptionTests(unittest.TestCase):
         outputs = rate_players(players)
         by_name = {output.name: output for output in outputs}
 
-        self.assertGreater(
+        self.assertEqual(
             by_name["High Two Strike"].percentiles["contact"],
             by_name["Low Two Strike"].percentiles["contact"],
         )

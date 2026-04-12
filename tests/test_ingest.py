@@ -572,13 +572,11 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertEqual(pitcher["trait_lists"]["secondary_field_positions"], ["OF"])
         self.assertIn("arsenal_diversity", pitcher["metadata"]["ingest"]["estimated_metrics"]["current"])
 
-    def test_two_strike_contact_rate_parsed_from_hitter_csv(self) -> None:
+    def test_two_strike_contact_rate_is_ignored_from_hitter_csv(self) -> None:
         manifest = load_manifest(self.root / "manifest.json")
         players = ingest_from_manifest(manifest)
         hitter = next(player for player in players if player["name"] == "Test Hitter")
-        # "Two Strike Contact %" column is 63.1, which should be coerced to a rate
-        two_strike = hitter["metrics"]["two_strike_contact_rate"]["current"]
-        self.assertAlmostEqual(two_strike, 0.631, places=3)
+        self.assertNotIn("two_strike_contact_rate", hitter["metrics"])
 
     def test_defensive_metrics_parsed_from_fielding_csv(self) -> None:
         manifest = load_manifest(self.root / "manifest.json")
