@@ -129,6 +129,7 @@ class IngestFrameworkTests(unittest.TestCase):
                     "OAA": 8,
                     "DRS": 6,
                     "UZR": 4.1,
+                    "Dive Recovery": 72,
                     "Fielding %": 0.992,
                     "Arm Strength": 89.4,
                     "Outfield Arm Runs": 2.9,
@@ -469,6 +470,7 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertEqual(hitter["trait_metrics"]["first_pitch_hitting"]["current"], 81.0)
         self.assertEqual(hitter["trait_metrics"]["pressure_hitting"]["current"], 77.0)
         self.assertEqual(hitter["trait_metrics"]["out_of_zone_contact_pct"]["current"], 71.0)
+        self.assertEqual(hitter["trait_metrics"]["dive_recovery"]["current"], 72.0)
 
         self.assertEqual(pitcher["role"], "pitcher")
         self.assertEqual(pitcher["primary_position"], "P")

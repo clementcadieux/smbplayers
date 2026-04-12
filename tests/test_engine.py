@@ -251,6 +251,146 @@ class SurfaceBlendTests(unittest.TestCase):
         pitcher = next(output for output in outputs if output.name == "Sparse Pitcher")
         self.assertIsInstance(pitcher.assigned_traits, list)
 
+    def test_rate_players_allocates_dive_recovery_traits(self) -> None:
+        outputs = rate_players(
+            [
+                {
+                    "name": "Dive Wizard Candidate",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "CF",
+                    "metrics": {
+                        "iso": 0.175,
+                        "hr_per_pa": 0.030,
+                        "barrel_rate": 0.080,
+                        "slugging": 0.430,
+                        "avg_exit_velocity": 88.7,
+                        "strikeout_rate": 0.195,
+                        "contact_rate": 0.790,
+                        "batting_average": 0.278,
+                        "adjusted_obp": 0.345,
+                        "two_strike_contact_rate": 0.650,
+                        "oaa": 7.0,
+                        "drs": 5.0,
+                        "uzr": 4.0,
+                        "fielding_pct_proxy": 0.992,
+                        "position_difficulty": 0.82,
+                        "arm_strength": 87.0,
+                        "outfield_arm_runs": 3.0,
+                        "arm_position_baseline": 0.68,
+                    },
+                    "samples": {"weighted_pa": 550, "defensive_innings": 1120},
+                    "trait_metrics": {
+                        "dive_recovery": {"current": 74},
+                    },
+                },
+                {
+                    "name": "Butter Fingers Candidate",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "LF",
+                    "metrics": {
+                        "iso": 0.155,
+                        "hr_per_pa": 0.022,
+                        "barrel_rate": 0.060,
+                        "slugging": 0.401,
+                        "avg_exit_velocity": 87.4,
+                        "strikeout_rate": 0.210,
+                        "contact_rate": 0.760,
+                        "batting_average": 0.266,
+                        "adjusted_obp": 0.330,
+                        "two_strike_contact_rate": 0.610,
+                        "oaa": -2.0,
+                        "drs": -3.0,
+                        "uzr": -1.5,
+                        "fielding_pct_proxy": 0.965,
+                        "position_difficulty": 0.62,
+                        "arm_strength": 79.0,
+                        "outfield_arm_runs": -1.0,
+                        "arm_position_baseline": 0.58,
+                    },
+                    "samples": {"weighted_pa": 505, "defensive_innings": 980},
+                    "trait_metrics": {
+                        "dive_recovery": {"current": 29},
+                    },
+                },
+                self._player("Peer 1", 0.500, 425, iso=0.220, hr_per_pa=0.045, barrel_rate=0.110, avg_exit_velocity=91.0),
+                self._player("Peer 2", 0.360, 425, iso=0.120, hr_per_pa=0.025, barrel_rate=0.060, avg_exit_velocity=87.5),
+            ],
+            trim_final_traits=False,
+        )
+
+        dive_wizard = next(output for output in outputs if output.name == "Dive Wizard Candidate")
+        butter_fingers = next(output for output in outputs if output.name == "Butter Fingers Candidate")
+
+        self.assertIn("Dive Wizard", {trait.name for trait in dive_wizard.assigned_traits})
+        self.assertIn("Butter Fingers", {trait.name for trait in butter_fingers.assigned_traits})
+
+    def test_stimulated_triggers_from_role_specific_late_game_metric(self) -> None:
+        outputs = rate_players(
+            [
+                {
+                    "name": "Late Game Hitter",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "CF",
+                    "metrics": {
+                        "iso": 0.185,
+                        "hr_per_pa": 0.031,
+                        "barrel_rate": 0.083,
+                        "slugging": 0.444,
+                        "avg_exit_velocity": 89.2,
+                        "strikeout_rate": 0.201,
+                        "contact_rate": 0.782,
+                        "batting_average": 0.275,
+                        "adjusted_obp": 0.343,
+                        "two_strike_contact_rate": 0.636,
+                    },
+                    "samples": {"weighted_pa": 545},
+                    "trait_metrics": {
+                        "late_game_hitting": {"current": 71},
+                    },
+                },
+                {
+                    "name": "Late Game Pitcher",
+                    "role": "pitcher",
+                    "team": "NYM",
+                    "primary_position": "P",
+                    "metrics": {
+                        "avg_fastball_velocity": 95.1,
+                        "peak_fastball_velocity": 97.3,
+                        "fastball_usage": 0.49,
+                        "swinging_strike_rate": 0.125,
+                        "chase_rate": 0.295,
+                        "movement_quality": 23.0,
+                        "stuff_metric": 124.0,
+                        "arsenal_diversity": 0.77,
+                        "weak_contact_rate": 0.64,
+                        "walk_rate": 0.074,
+                        "strike_pct": 0.651,
+                        "zone_pct": 0.487,
+                        "first_pitch_strike_pct": 0.618,
+                        "command_error_rate": 0.349,
+                    },
+                    "samples": {"weighted_bf": 670, "tracked_pitches": 2680, "tracked_fastballs": 1313},
+                    "trait_metrics": {
+                        "late_game_pitching": {"current": 73},
+                    },
+                },
+                self._player("Peer 1", 0.500, 425, iso=0.220, hr_per_pa=0.045, barrel_rate=0.110, avg_exit_velocity=91.0),
+                self._player("Peer 2", 0.360, 425, iso=0.120, hr_per_pa=0.025, barrel_rate=0.060, avg_exit_velocity=87.5),
+                self._pitcher_peer("Pitcher Peer 1", 95.0, 0.13, 0.30, 0.075),
+                self._pitcher_peer("Pitcher Peer 2", 93.5, 0.11, 0.28, 0.085),
+            ],
+            trim_final_traits=False,
+        )
+
+        hitter = next(output for output in outputs if output.name == "Late Game Hitter")
+        pitcher = next(output for output in outputs if output.name == "Late Game Pitcher")
+
+        self.assertIn("Stimulated", {trait.name for trait in hitter.assigned_traits})
+        self.assertIn("Stimulated", {trait.name for trait in pitcher.assigned_traits})
+
     def test_trait_criteria_reference_known_player_input_roots(self) -> None:
         reference_path = Path(__file__).resolve().parents[1] / "smb4_player_reference.json"
         payload = json.loads(reference_path.read_text(encoding="utf-8"))
