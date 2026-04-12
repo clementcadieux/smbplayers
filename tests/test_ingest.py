@@ -132,6 +132,8 @@ class IngestFrameworkTests(unittest.TestCase):
                     "Dive Recovery": 72,
                     "Fielding %": 0.992,
                     "Arm Strength": 89.4,
+                    "Pop Time": 1.92,
+                    "Framing Runs": 8.1,
                     "Outfield Arm Runs": 2.9,
                 }
             ],
@@ -326,6 +328,50 @@ class IngestFrameworkTests(unittest.TestCase):
         (self.root / "br_manifest.json").write_text(json.dumps(br_manifest, indent=2), encoding="utf-8")
 
         self._write_csv(
+            self.root / "fg_roster_2025.csv",
+            [
+                {
+                    "player_id": 500,
+                    "player_name": "Merge Hitter",
+                    "team": "ATL",
+                    "age": 27,
+                    "position": "C",
+                    "bats": "R",
+                    "throws": "R",
+                }
+            ],
+        )
+        self._write_csv(
+            self.root / "fg_fielding_2025.csv",
+            [
+                {
+                    "player_id": 500,
+                    "player_name": "Merge Hitter",
+                    "team": "ATL",
+                    "position": "C",
+                    "Defensive Innings": 901,
+                    "DRS": 11,
+                    "UZR": 7.4,
+                    "Pop Time": 1.90,
+                    "Framing Runs": 9.2,
+                }
+            ],
+        )
+        fg_manifest = {
+            "source": "fangraphs",
+            "seasons": {
+                "current": {
+                    "year": 2025,
+                    "files": {
+                        "roster": "fg_roster_2025.csv",
+                        "fielding": "fg_fielding_2025.csv",
+                    },
+                }
+            },
+        }
+        (self.root / "fg_manifest.json").write_text(json.dumps(fg_manifest, indent=2), encoding="utf-8")
+
+        self._write_csv(
             self.root / "mixed_savant_hitters_2025.csv",
             [
                 {
@@ -437,6 +483,22 @@ class IngestFrameworkTests(unittest.TestCase):
                 }
             ],
         )
+        self._write_csv(
+            self.root / "mixed_fg_fielding_2025.csv",
+            [
+                {
+                    "player_id": 500,
+                    "player_name": "Merge Hitter",
+                    "team": "ATL",
+                    "position": "C",
+                    "Defensive Innings": 905,
+                    "DRS": 12,
+                    "UZR": 8.0,
+                    "Pop Time": 1.89,
+                    "Framing Runs": 10.1,
+                }
+            ],
+        )
 
         mixed_manifest = {
             "source": "mixed",
@@ -455,6 +517,11 @@ class IngestFrameworkTests(unittest.TestCase):
                                 "hitters": "mixed_savant_hitters_2025.csv",
                                 "pitchers": "mixed_savant_pitchers_2025.csv",
                                 "running": "mixed_running_2025.csv",
+                            }
+                        },
+                        "fangraphs": {
+                            "files": {
+                                "fielding": "mixed_fg_fielding_2025.csv",
                             }
                         },
                     },
@@ -483,6 +550,8 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertEqual(hitter["trait_metrics"]["pressure_hitting"]["current"], 77.0)
         self.assertEqual(hitter["trait_metrics"]["out_of_zone_contact_pct"]["current"], 71.0)
         self.assertEqual(hitter["trait_metrics"]["dive_recovery"]["current"], 72.0)
+        self.assertAlmostEqual(hitter["metrics"]["pop_time"]["current"], 1.92)
+        self.assertAlmostEqual(hitter["metrics"]["framing_runs"]["current"], 8.1)
 
         self.assertEqual(pitcher["role"], "pitcher")
         self.assertEqual(pitcher["primary_position"], "P")
@@ -501,6 +570,86 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertEqual(pitcher["trait_metrics"]["opposite_handed_pitching_gap"]["current"], -14.0)
         self.assertEqual(pitcher["trait_lists"]["secondary_field_positions"], ["OF"])
         self.assertIn("arsenal_diversity", pitcher["metadata"]["ingest"]["estimated_metrics"]["current"])
+
+    def test_ingest_handles_missing_specialized_fielding_columns(self) -> None:
+        roster_path = self.root / "defense_sparse_roster.csv"
+        hitters_path = self.root / "defense_sparse_hitters.csv"
+        fielding_path = self.root / "defense_sparse_fielding.csv"
+        manifest_path = self.root / "defense_sparse_manifest.json"
+
+        self._write_csv(
+            roster_path,
+            [
+                {
+                    "player_id": 710,
+                    "player_name": "Sparse Catcher",
+                    "team": "NYM",
+                    "age": 26,
+                    "position": "C",
+                    "bats": "R",
+                    "throws": "R",
+                }
+            ],
+        )
+        self._write_csv(
+            hitters_path,
+            [
+                {
+                    "player_id": 710,
+                    "player_name": "Sparse Catcher",
+                    "team": "NYM",
+                    "position": "C",
+                    "PA": 330,
+                    "ISO": 0.145,
+                    "HR": 10,
+                    "SLG": 0.403,
+                    "AVG": 0.254,
+                    "OBP": 0.319,
+                    "K %": 19.8,
+                    "Contact %": 78.6,
+                    "H": 81,
+                }
+            ],
+        )
+        self._write_csv(
+            fielding_path,
+            [
+                {
+                    "player_id": 710,
+                    "player_name": "Sparse Catcher",
+                    "team": "NYM",
+                    "position": "C",
+                    "Defensive Innings": 640,
+                    "Fielding %": 0.994,
+                }
+            ],
+        )
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "source": "baseball_savant",
+                    "seasons": {
+                        "current": {
+                            "year": 2025,
+                            "files": {
+                                "roster": roster_path.name,
+                                "hitters": hitters_path.name,
+                                "fielding": fielding_path.name,
+                            },
+                        }
+                    },
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        players = ingest_from_manifest(load_manifest(manifest_path))
+        catcher = next(player for player in players if player["name"] == "Sparse Catcher")
+
+        self.assertIn("fielding_pct_proxy", catcher["metrics"])
+        self.assertNotIn("pop_time", catcher["metrics"])
+        self.assertNotIn("framing_runs", catcher["metrics"])
 
     def test_cli_ingest_and_legacy_rate_flow(self) -> None:
         normalized_path = self.root / "normalized.json"
@@ -861,16 +1010,19 @@ class IngestFrameworkTests(unittest.TestCase):
         pitcher = next(player for player in players if player["name"] == "Merge Pitcher")
 
         self.assertEqual(hitter["metadata"]["source"], "mixed")
-        self.assertEqual(sorted(hitter["metadata"]["source_components"]), ["baseball_reference", "baseball_savant"])
+        self.assertEqual(sorted(hitter["metadata"]["source_components"]), ["baseball_reference", "baseball_savant", "fangraphs"])
         self.assertAlmostEqual(hitter["metrics"]["iso"]["current"], 0.216)
         self.assertAlmostEqual(hitter["metrics"]["adjusted_obp"]["current"], 0.347)
         self.assertAlmostEqual(hitter["metrics"]["barrel_rate"]["current"], 0.144)
         self.assertAlmostEqual(hitter["metrics"]["avg_exit_velocity"]["current"], 92.8)
         self.assertAlmostEqual(hitter["metrics"]["sprint_speed"]["current"], 29.1)
+        self.assertAlmostEqual(hitter["metrics"]["drs"]["current"], 12.0)
+        self.assertAlmostEqual(hitter["metrics"]["uzr"]["current"], 8.0)
         self.assertEqual(hitter["days_on_roster"]["current"], 141.0)
         self.assertEqual(hitter["trait_metrics"]["first_pitch_hitting"]["current"], 79.0)
         self.assertEqual(hitter["trait_metrics"]["bunt_value"]["current"], 70.0)
         self.assertIn("baseball_reference:contact_rate", hitter["metadata"]["ingest"]["estimated_metrics"]["current"])
+        self.assertIn("fangraphs", hitter["metadata"]["source_components"])
         self.assertIn("baseball_savant:fielding", hitter["metadata"]["ingest"]["missing_files"]["current"])
 
         self.assertEqual(pitcher["metadata"]["source"], "mixed")
@@ -885,6 +1037,18 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertEqual(pitcher["trait_metrics"]["pressure_pitching"]["current"], 69.0)
         self.assertEqual(pitcher["trait_lists"]["secondary_field_positions"], ["OF"])
         self.assertIn("baseball_reference:running", pitcher["metadata"]["ingest"]["missing_files"]["current"])
+
+    def test_fangraphs_manifest_builds_fielding_input(self) -> None:
+        manifest = load_manifest(self.root / "fg_manifest.json")
+        players = ingest_from_manifest(manifest)
+        self.assertEqual(len(players), 1)
+
+        catcher = players[0]
+        self.assertEqual(catcher["metadata"]["source"], "fangraphs")
+        self.assertAlmostEqual(catcher["metrics"]["drs"]["current"], 11.0)
+        self.assertAlmostEqual(catcher["metrics"]["uzr"]["current"], 7.4)
+        self.assertAlmostEqual(catcher["metrics"]["pop_time"]["current"], 1.9)
+        self.assertAlmostEqual(catcher["metrics"]["framing_runs"]["current"], 9.2)
 
 
 if __name__ == "__main__":

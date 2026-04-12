@@ -551,6 +551,104 @@ class SurfaceBlendTests(unittest.TestCase):
         self.assertIn("Elite FK", assigned)
         self.assertIn("Elite SB", assigned)
 
+    def test_pop_time_boosts_catcher_arm_rating(self) -> None:
+        outputs = rate_players(
+            [
+                {
+                    "name": "Quick Exchange",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "C",
+                    "metrics": {
+                        "iso": 0.150,
+                        "hr_per_pa": 0.020,
+                        "barrel_rate": 0.060,
+                        "slugging": 0.395,
+                        "avg_exit_velocity": 87.6,
+                        "strikeout_rate": 0.175,
+                        "contact_rate": 0.815,
+                        "batting_average": 0.276,
+                        "adjusted_obp": 0.338,
+                        "two_strike_contact_rate": 0.665,
+                        "oaa": 1.0,
+                        "drs": 4.0,
+                        "uzr": 2.0,
+                        "fielding_pct_proxy": 0.995,
+                        "position_difficulty": 0.98,
+                        "arm_strength": 84.0,
+                        "catcher_throw_value": 5.0,
+                        "pop_time": 1.89,
+                        "framing_runs": 8.0,
+                        "arm_position_baseline": 0.95,
+                    },
+                    "samples": {"weighted_pa": 420, "defensive_innings": 930},
+                },
+                {
+                    "name": "Average Exchange",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "C",
+                    "metrics": {
+                        "iso": 0.150,
+                        "hr_per_pa": 0.020,
+                        "barrel_rate": 0.060,
+                        "slugging": 0.395,
+                        "avg_exit_velocity": 87.6,
+                        "strikeout_rate": 0.175,
+                        "contact_rate": 0.815,
+                        "batting_average": 0.276,
+                        "adjusted_obp": 0.338,
+                        "two_strike_contact_rate": 0.665,
+                        "oaa": 1.0,
+                        "drs": 4.0,
+                        "uzr": 2.0,
+                        "fielding_pct_proxy": 0.995,
+                        "position_difficulty": 0.98,
+                        "arm_strength": 84.0,
+                        "catcher_throw_value": 5.0,
+                        "framing_runs": 8.0,
+                        "arm_position_baseline": 0.95,
+                    },
+                    "samples": {"weighted_pa": 420, "defensive_innings": 930},
+                },
+                {
+                    "name": "Slow Exchange Peer",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "C",
+                    "metrics": {
+                        "iso": 0.132,
+                        "hr_per_pa": 0.016,
+                        "barrel_rate": 0.050,
+                        "slugging": 0.372,
+                        "avg_exit_velocity": 86.8,
+                        "strikeout_rate": 0.188,
+                        "contact_rate": 0.798,
+                        "batting_average": 0.261,
+                        "adjusted_obp": 0.324,
+                        "two_strike_contact_rate": 0.642,
+                        "oaa": -1.0,
+                        "drs": 0.0,
+                        "uzr": -1.0,
+                        "fielding_pct_proxy": 0.989,
+                        "position_difficulty": 0.98,
+                        "arm_strength": 78.0,
+                        "catcher_throw_value": -1.0,
+                        "pop_time": 2.08,
+                        "framing_runs": -4.0,
+                        "arm_position_baseline": 0.95,
+                    },
+                    "samples": {"weighted_pa": 390, "defensive_innings": 870},
+                },
+            ]
+        )
+
+        quick_exchange = next(output for output in outputs if output.name == "Quick Exchange")
+        average_exchange = next(output for output in outputs if output.name == "Average Exchange")
+
+        self.assertGreater(quick_exchange.ratings["arm"], average_exchange.ratings["arm"])
+        self.assertGreater(quick_exchange.percentiles["arm"], average_exchange.percentiles["arm"])
+
     def test_trait_criteria_reference_known_player_input_roots(self) -> None:
         reference_path = Path(__file__).resolve().parents[1] / "smb4_player_reference.json"
         payload = json.loads(reference_path.read_text(encoding="utf-8"))

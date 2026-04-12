@@ -5,10 +5,17 @@ import unittest
 from smb4_mlb_ratings.ingest.live_team_data import (
     build_baseball_reference_hitter_rows,
     build_baseball_reference_pitcher_rows,
+    build_fangraphs_fielding_rows,
     build_mixed_source_manifest,
     build_roster_rows,
+    parse_fangraphs_fielding_csv,
+    build_savant_fielding_rows,
     build_savant_hitter_rows,
     build_savant_pitcher_rows,
+    parse_savant_fielding_run_value_csv,
+    parse_savant_oaa_csv,
+    parse_savant_arm_strength_csv,
+    parse_savant_catcher_throwing_csv,
     parse_savant_statcast_summary,
 )
 
@@ -21,12 +28,14 @@ class LiveTeamDataTests(unittest.TestCase):
             roster_file="roster.csv",
             savant_hitters_file="savant_hitters.csv",
             savant_pitchers_file="savant_pitchers.csv",
+            savant_fielding_file="savant_fielding.csv",
             baseball_reference_hitters_file="bref_hitters.csv",
             baseball_reference_pitchers_file="bref_pitchers.csv",
         )
 
         self.assertEqual(manifest["roster_filter"], {"team": "TOR", "year": 2026})
         self.assertEqual(manifest["seasons"]["current"]["sources"]["baseball_savant"]["files"]["roster"], "roster.csv")
+        self.assertEqual(manifest["seasons"]["current"]["sources"]["baseball_savant"]["files"]["fielding"], "savant_fielding.csv")
         self.assertEqual(manifest["seasons"]["current"]["sources"]["baseball_reference"]["files"]["pitchers"], "bref_pitchers.csv")
 
     def test_build_rows_include_derived_live_metrics(self) -> None:
@@ -68,6 +77,13 @@ class LiveTeamDataTests(unittest.TestCase):
             "hitting_handedness_splits": {
                 "vl": {"avg": 0.300, "iso": 0.240, "strikeout_rate": 0.18},
                 "vr": {"avg": 0.260, "iso": 0.180, "strikeout_rate": 0.24},
+            },
+            "fielding_stats": {
+                "innings": "812.0",
+                "fielding": "0.982",
+                "putOuts": 120,
+                "assists": 200,
+                "errors": 6,
             },
         }
         pitcher = {
@@ -122,6 +138,7 @@ class LiveTeamDataTests(unittest.TestCase):
         roster_rows = build_roster_rows([hitter, pitcher], team_abbreviation="TOR")
         bref_hitter_rows = build_baseball_reference_hitter_rows([hitter], team_abbreviation="TOR")
         savant_hitter_rows = build_savant_hitter_rows([hitter], team_abbreviation="TOR")
+        savant_fielding_rows = build_savant_fielding_rows([hitter], team_abbreviation="TOR")
         bref_pitcher_rows = build_baseball_reference_pitcher_rows([pitcher], team_abbreviation="TOR")
         savant_pitcher_rows = build_savant_pitcher_rows([pitcher], team_abbreviation="TOR")
 
@@ -135,6 +152,9 @@ class LiveTeamDataTests(unittest.TestCase):
         self.assertEqual(savant_hitter_rows[0]["pressure_hitting"], 67.0)
         self.assertEqual(savant_hitter_rows[0]["late_game_hitting"], 64.5)
         self.assertEqual(savant_hitter_rows[0]["trailing_bases_empty_hitting"], 68.0)
+        self.assertEqual(savant_fielding_rows[0]["Defensive Innings"], 812.0)
+        self.assertEqual(savant_fielding_rows[0]["Fielding %"], 0.982)
+        self.assertEqual(savant_fielding_rows[0]["PO"], 120.0)
         self.assertGreater(bref_pitcher_rows[0]["Same Handed Pitching"], bref_pitcher_rows[0]["Opposite Handed Pitching"])
         self.assertIn("Pitch Quality SL", savant_pitcher_rows[0])
         self.assertEqual(savant_pitcher_rows[0]["Strike %"], 65.4)
@@ -157,6 +177,151 @@ class LiveTeamDataTests(unittest.TestCase):
         summary = parse_savant_statcast_summary(payload, season=2025)
 
         self.assertEqual(summary, {"zone_contact_pct": 84.1, "out_of_zone_contact_pct": 59.1})
+
+    def test_parse_fangraphs_fielding_csv_extracts_drs_and_uzr(self) -> None:
+        payload = """Name,Team,DRS,UZR\nAlejandro Kirk,TOR,9,7.1\nPitcher Example,TOR,,\n"""
+
+        rows = parse_fangraphs_fielding_csv(payload)
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["name"], "Alejandro Kirk")
+        self.assertEqual(rows[0]["team"], "TOR")
+        self.assertEqual(rows[0]["drs"], 9.0)
+        self.assertEqual(rows[0]["uzr"], 7.1)
+
+    def test_build_fangraphs_fielding_rows_matches_players_by_name_and_team(self) -> None:
+        players = [
+            {
+                "player_id": 672386,
+                "name": "Alejandro Kirk",
+                "team": "TOR",
+                "type": "hitter",
+                "position": "C",
+            }
+        ]
+        payload = """Name,Team,DRS,UZR\nAlejandro Kirk,TOR,8,6.4\n"""
+
+        rows = build_fangraphs_fielding_rows(
+            players,
+            team_abbreviation="TOR",
+            season=2025,
+            csv_payload=payload,
+        )
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["player_id"], 672386)
+        self.assertEqual(rows[0]["DRS"], 8.0)
+        self.assertEqual(rows[0]["UZR"], 6.4)
+
+    def test_parse_savant_fielding_run_value_csv_extracts_components(self) -> None:
+        payload = """Player,Team,Fielding Run Value,Range,Arm,Framing,Throwing\nAlejandro Kirk,TOR,6,1,0,4,1\n"""
+
+        rows = parse_savant_fielding_run_value_csv(payload)
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["name"], "Alejandro Kirk")
+        self.assertEqual(rows[0]["team"], "TOR")
+        self.assertEqual(rows[0]["fielding_run_value"], 6.0)
+        self.assertEqual(rows[0]["range_runs"], 1.0)
+        self.assertEqual(rows[0]["framing_runs"], 4.0)
+
+    def test_parse_savant_fielding_run_value_csv_handles_current_savant_schema(self) -> None:
+        payload = (
+            '"name","id","total_runs","range_runs","arm_runs","framing_runs","throwing_runs"\n'
+            '"Kirk, Alejandro",672386,6,1,0,4,1\n'
+        )
+
+        rows = parse_savant_fielding_run_value_csv(payload)
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["name"], "Alejandro Kirk")
+        self.assertEqual(rows[0]["fielding_run_value"], 6.0)
+        self.assertEqual(rows[0]["range_runs"], 1.0)
+        self.assertEqual(rows[0]["framing_runs"], 4.0)
+
+    def test_parse_savant_oaa_csv_extracts_oaa_and_runs_prevented(self) -> None:
+        payload = """Player,Team,Runs Prevented,OAA\nAlejandro Kirk,TOR,5,4\n"""
+
+        rows = parse_savant_oaa_csv(payload)
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["name"], "Alejandro Kirk")
+        self.assertEqual(rows[0]["team"], "TOR")
+        self.assertEqual(rows[0]["runs_prevented"], 5.0)
+        self.assertEqual(rows[0]["oaa"], 4.0)
+
+    def test_parse_savant_oaa_csv_handles_current_savant_schema(self) -> None:
+        payload = (
+            '"last_name, first_name","player_id","display_team_name","fielding_runs_prevented","outs_above_average"\n'
+            '"Kirk, Alejandro","672386","Blue Jays",5,4\n'
+        )
+
+        rows = parse_savant_oaa_csv(payload)
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["name"], "Alejandro Kirk")
+        self.assertEqual(rows[0]["runs_prevented"], 5.0)
+        self.assertEqual(rows[0]["oaa"], 4.0)
+
+    def test_parse_savant_arm_strength_csv_handles_current_savant_schema(self) -> None:
+        payload = (
+            '"fielder_name","player_id","team_name","arm_overall","max_arm_strength"\n'
+            '"Varsho, Daulton","662139","TOR","92.1","98.2"\n'
+        )
+
+        rows = parse_savant_arm_strength_csv(payload)
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["name"], "Daulton Varsho")
+        self.assertEqual(rows[0]["player_id"], 662139)
+        self.assertEqual(rows[0]["team"], "TOR")
+        self.assertEqual(rows[0]["arm_strength"], 92.1)
+
+    def test_parse_savant_catcher_throwing_csv_handles_current_savant_schema(self) -> None:
+        payload = (
+            '"player_id","player_name","team_name","caught_stealing_above_average","pop_time","arm_strength"\n'
+            '"672386","Kirk, Alejandro","TOR","0.20","1.9676","78.96"\n'
+        )
+
+        rows = parse_savant_catcher_throwing_csv(payload)
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["name"], "Alejandro Kirk")
+        self.assertEqual(rows[0]["player_id"], 672386)
+        self.assertEqual(rows[0]["team"], "TOR")
+        self.assertEqual(rows[0]["catcher_throw_value"], 0.2)
+        self.assertEqual(rows[0]["pop_time"], 1.9676)
+        self.assertEqual(rows[0]["arm_strength"], 78.96)
+
+    def test_build_fangraphs_fielding_rows_uses_savant_fallback_when_fangraphs_missing(self) -> None:
+        players = [
+            {
+                "player_id": 672386,
+                "name": "Alejandro Kirk",
+                "team": "TOR",
+                "type": "hitter",
+                "position": "C",
+            }
+        ]
+        savant_frv_payload = """Player,Team,Fielding Run Value,Range,Arm,Framing,Throwing\nAlejandro Kirk,TOR,6,1,0,4,1\n"""
+        savant_oaa_payload = """Player,Team,Runs Prevented,OAA\nAlejandro Kirk,TOR,5,4\n"""
+
+        rows = build_fangraphs_fielding_rows(
+            players,
+            team_abbreviation="TOR",
+            season=2025,
+            csv_payload="",
+            savant_fielding_run_value_payload=savant_frv_payload,
+            savant_oaa_payload=savant_oaa_payload,
+        )
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["player_id"], 672386)
+        self.assertEqual(rows[0]["DRS"], 6.0)
+        self.assertEqual(rows[0]["UZR"], 1.0)
+        self.assertEqual(rows[0]["OAA"], 4.0)
+        self.assertEqual(rows[0]["Framing Runs"], 4.0)
+        self.assertEqual(rows[0]["Catcher Throw Value"], 1.0)
 
 
 if __name__ == "__main__":

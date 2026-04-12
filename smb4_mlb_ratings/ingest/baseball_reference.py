@@ -6,6 +6,11 @@ from typing import Any
 # Baseball Reference result files can carry some of the situational trait columns directly,
 # but deeper plate-discipline and batted-ball split gaps may still need Fangraphs-style exports.
 # Keep those future source additions aligned to the shared trait metric keys used by issue 31.
+# Defensive tool/result split reference for fielding CSVs:
+# - https://www.baseballsavant.mlb.com/leaderboard/outs_above_average -> oaa / outs_above_average, innings
+# - https://baseballsavant.mlb.com/leaderboard/arm-strength -> arm_strength
+# - https://baseballsavant.mlb.com/leaderboard/poptime and https://baseballsavant.mlb.com/catcher_framing -> pop_time, catcher_throw_value, framing_runs
+# - https://www.fangraphs.com/leaders/major-league?stats=fld -> drs, uzr exports used by _apply_fielding_row
 
 from .savant import (
     HITTER_TRAIT_METRIC_COLUMNS,

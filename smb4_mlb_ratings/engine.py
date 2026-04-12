@@ -263,11 +263,12 @@ RATING_SPECS = (
         review_threshold=150,
         peer_mode="position_group",
         components=(
-            ComponentSpec("oaa", 0.40),
-            ComponentSpec("drs", 0.25),
-            ComponentSpec("uzr", 0.15),
-            ComponentSpec("fielding_pct_proxy", 0.10),
-            ComponentSpec("position_difficulty", 0.10),
+            ComponentSpec("oaa", 0.35),
+            ComponentSpec("drs", 0.22),
+            ComponentSpec("uzr", 0.12),
+            ComponentSpec("fielding_pct_proxy", 0.08),
+            ComponentSpec("position_difficulty", 0.08),
+            ComponentSpec("framing_runs", 0.15, position_groups=frozenset({"catcher"})),
         ),
     ),
     RatingSpec(
@@ -280,10 +281,11 @@ RATING_SPECS = (
         volume_exponent=0.60,
         raw_tools_bias=True,
         components=(
-            ComponentSpec("arm_strength", 0.45),
-            ComponentSpec("catcher_throw_value", 0.20, position_groups=frozenset({"catcher"})),
-            ComponentSpec("outfield_arm_runs", 0.20, position_groups=frozenset({"outfield"})),
-            ComponentSpec("arm_position_baseline", 0.15),
+            ComponentSpec("arm_strength", 0.35),
+            ComponentSpec("catcher_throw_value", 0.18, position_groups=frozenset({"catcher"})),
+            ComponentSpec("outfield_arm_runs", 0.18, position_groups=frozenset({"outfield"})),
+            ComponentSpec("arm_position_baseline", 0.10),
+            ComponentSpec("pop_time", 0.20, higher_is_better=False, position_groups=frozenset({"catcher"})),
         ),
     ),
     RatingSpec(
