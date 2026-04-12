@@ -59,9 +59,13 @@ PITCHER_TRAIT_METRIC_COLUMNS: dict[str, tuple[tuple[str, ...], bool]] = {
     "crossed_up_risk": (("crossed_up_risk", "catcher_handling_risk"), False),
     "metal_head": (("metal_head", "comeback_recovery"), False),
     "pitch_quality_4f": (("pitch_quality_4f", "pitch_quality_ff", "pitch_quality_four_seam"), False),
+    "pitch_quality_2f": (("pitch_quality_2f", "pitch_quality_ft", "pitch_quality_si", "pitch_quality_two_seam", "pitch_quality_sinker"), False),
+    "pitch_quality_cf": (("pitch_quality_cf", "pitch_quality_fc", "pitch_quality_cut_fastball", "pitch_quality_cutter"), False),
     "pitch_quality_cb": (("pitch_quality_cb", "pitch_quality_curveball"), False),
     "pitch_quality_ch": (("pitch_quality_ch", "pitch_quality_changeup"), False),
+    "pitch_quality_fk": (("pitch_quality_fk", "pitch_quality_fo", "pitch_quality_fs", "pitch_quality_forkball", "pitch_quality_splitter"), False),
     "pitch_quality_sl": (("pitch_quality_sl", "pitch_quality_slider"), False),
+    "pitch_quality_sb": (("pitch_quality_sb", "pitch_quality_sc", "pitch_quality_screwball"), False),
 }
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -141,12 +145,15 @@ ARM_POSITION_BASELINE = {
 
 PITCH_USAGE_COLUMNS = {
     "ff": ("ff_pct", "four_seam_pct", "fourseam_pct", "fb_pct"),
+    "ft": ("ft_pct", "two_seam_pct", "twoseam_pct", "two_seamer_pct"),
     "si": ("si_pct", "sinker_pct"),
     "fc": ("fc_pct", "cutter_pct"),
     "sl": ("sl_pct", "slider_pct"),
     "cu": ("cu_pct", "curve_pct", "curveball_pct", "kc_pct"),
     "ch": ("ch_pct", "changeup_pct"),
     "fs": ("fs_pct", "splitter_pct", "splitfinger_pct"),
+    "fo": ("fo_pct", "forkball_pct"),
+    "sc": ("sc_pct", "screwball_pct"),
     "sv": ("sv_pct", "sweeper_pct"),
     "kn": ("kn_pct", "knuckleball_pct"),
 }

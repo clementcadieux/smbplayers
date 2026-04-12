@@ -183,6 +183,10 @@ class IngestFrameworkTests(unittest.TestCase):
                     "Opposite Handed Pitching": 58,
                     "Opposite Handed Pitching Gap": -14,
                     "Pitch Quality 4F": 80,
+                    "Pitch Quality 2F": 76,
+                    "Pitch Quality CF": 74,
+                    "Pitch Quality FK": 82,
+                    "Pitch Quality SB": 71,
                     "Secondary Field Positions": "OF",
                 }
             ],
@@ -367,6 +371,7 @@ class IngestFrameworkTests(unittest.TestCase):
                     "SL %": 28.0,
                     "CH %": 12.0,
                     "Pitch Quality 4F": 77,
+                    "Pitch Quality FK": 83,
                     "Running Game Control": 66,
                     "Secondary Field Positions": "OF",
                 }
@@ -487,6 +492,10 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertAlmostEqual(pitcher["pitch_mix"]["ff"], 0.48)
         self.assertAlmostEqual(pitcher["pitch_mix"]["sl"], 0.27)
         self.assertEqual(pitcher["trait_metrics"]["pitch_quality_4f"]["current"], 80.0)
+        self.assertEqual(pitcher["trait_metrics"]["pitch_quality_2f"]["current"], 76.0)
+        self.assertEqual(pitcher["trait_metrics"]["pitch_quality_cf"]["current"], 74.0)
+        self.assertEqual(pitcher["trait_metrics"]["pitch_quality_fk"]["current"], 82.0)
+        self.assertEqual(pitcher["trait_metrics"]["pitch_quality_sb"]["current"], 71.0)
         self.assertEqual(pitcher["trait_metrics"]["steal_suppression"]["current"], 68.0)
         self.assertEqual(pitcher["trait_metrics"]["same_handed_pitching_gap"]["current"], 14.0)
         self.assertEqual(pitcher["trait_metrics"]["opposite_handed_pitching_gap"]["current"], -14.0)
@@ -872,6 +881,7 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertAlmostEqual(pitcher["pitch_mix"]["ff"], 0.565217, places=6)
         self.assertAlmostEqual(pitcher["pitch_mix"]["sl"], 0.304348, places=6)
         self.assertEqual(pitcher["trait_metrics"]["pitch_quality_4f"]["current"], 77.0)
+        self.assertEqual(pitcher["trait_metrics"]["pitch_quality_fk"]["current"], 83.0)
         self.assertEqual(pitcher["trait_metrics"]["pressure_pitching"]["current"], 69.0)
         self.assertEqual(pitcher["trait_lists"]["secondary_field_positions"], ["OF"])
         self.assertIn("baseball_reference:running", pitcher["metadata"]["ingest"]["missing_files"]["current"])

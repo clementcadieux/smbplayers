@@ -466,6 +466,91 @@ class SurfaceBlendTests(unittest.TestCase):
         self.assertIn("Reverse Splits", {trait.name for trait in reverse_splits.assigned_traits})
         self.assertNotIn("Specialist", {trait.name for trait in reverse_splits.assigned_traits})
 
+    def test_elite_4f_heuristic_defers_to_explicit_pitch_quality_metric(self) -> None:
+        outputs = rate_players(
+            [
+                {
+                    "name": "Explicit Metric Pitcher",
+                    "role": "pitcher",
+                    "team": "NYM",
+                    "primary_position": "P",
+                    "metrics": {
+                        "avg_fastball_velocity": 98.0,
+                        "peak_fastball_velocity": 99.5,
+                        "fastball_usage": 0.62,
+                        "swinging_strike_rate": 0.13,
+                        "chase_rate": 0.31,
+                        "movement_quality": 24.0,
+                        "stuff_metric": 130.0,
+                        "arsenal_diversity": 0.78,
+                        "weak_contact_rate": 0.66,
+                        "walk_rate": 0.068,
+                        "strike_pct": 0.67,
+                        "zone_pct": 0.50,
+                        "first_pitch_strike_pct": 0.63,
+                        "command_error_rate": 0.33,
+                    },
+                    "samples": {"weighted_bf": 700, "tracked_pitches": 2800, "tracked_fastballs": 1736},
+                    "trait_metrics": {
+                        "pitch_quality_4f": {"current": 72},
+                    },
+                    "metadata": {"pitch_repertoire_codes": ["4F", "SL"]},
+                },
+                self._pitcher_peer("Pitcher Peer 1", 95.0, 0.13, 0.30, 0.075),
+                self._pitcher_peer("Pitcher Peer 2", 93.5, 0.11, 0.28, 0.085),
+            ],
+            trim_final_traits=False,
+        )
+
+        pitcher = next(output for output in outputs if output.name == "Explicit Metric Pitcher")
+        self.assertNotIn("Elite 4F", {trait.name for trait in pitcher.assigned_traits})
+
+    def test_additional_elite_pitch_traits_assign_from_trait_metrics(self) -> None:
+        outputs = rate_players(
+            [
+                {
+                    "name": "Expanded Arsenal Pitcher",
+                    "role": "pitcher",
+                    "team": "NYM",
+                    "primary_position": "P",
+                    "metrics": {
+                        "avg_fastball_velocity": 95.4,
+                        "peak_fastball_velocity": 97.6,
+                        "fastball_usage": 0.55,
+                        "swinging_strike_rate": 0.128,
+                        "chase_rate": 0.301,
+                        "movement_quality": 24.0,
+                        "stuff_metric": 127.0,
+                        "arsenal_diversity": 0.82,
+                        "weak_contact_rate": 0.65,
+                        "walk_rate": 0.071,
+                        "strike_pct": 0.659,
+                        "zone_pct": 0.493,
+                        "first_pitch_strike_pct": 0.626,
+                        "command_error_rate": 0.341,
+                    },
+                    "samples": {"weighted_bf": 690, "tracked_pitches": 2760, "tracked_fastballs": 1518},
+                    "trait_metrics": {
+                        "pitch_quality_2f": {"current": 83},
+                        "pitch_quality_cf": {"current": 84},
+                        "pitch_quality_fk": {"current": 85},
+                        "pitch_quality_sb": {"current": 82},
+                    },
+                },
+                self._pitcher_peer("Pitcher Peer 1", 95.0, 0.13, 0.30, 0.075),
+                self._pitcher_peer("Pitcher Peer 2", 93.5, 0.11, 0.28, 0.085),
+            ],
+            trim_final_traits=False,
+        )
+
+        pitcher = next(output for output in outputs if output.name == "Expanded Arsenal Pitcher")
+        assigned = {trait.name for trait in pitcher.assigned_traits}
+
+        self.assertIn("Elite 2F", assigned)
+        self.assertIn("Elite CF", assigned)
+        self.assertIn("Elite FK", assigned)
+        self.assertIn("Elite SB", assigned)
+
     def test_trait_criteria_reference_known_player_input_roots(self) -> None:
         reference_path = Path(__file__).resolve().parents[1] / "smb4_player_reference.json"
         payload = json.loads(reference_path.read_text(encoding="utf-8"))

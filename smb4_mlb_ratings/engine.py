@@ -1487,15 +1487,21 @@ def suggest_traits(state: PlayerState) -> list[TraitSuggestion]:
                 score=walk_pct - 48,
                 reason="Walk suppression remains strong enough to warrant a count-control accuracy trait.",
             )
-        if velocity_pct is not None and fastball_pct is not None and fastball_pct >= 85:
+        if (
+            player_trait_metric(state.player, "pitch_quality_4f") is None
+            and velocity_pct is not None
+            and fastball_pct is not None
+            and velocity_pct >= 85
+            and fastball_pct >= 92
+        ):
             repertoire = set(state.player.metadata.get("pitch_repertoire_codes", []))
             if "4F" in repertoire:
                 add_trait(
                     suggestions,
                     name="Elite 4F",
                     polarity="positive",
-                    score=fastball_pct - 55,
-                    reason="Fastball velocity is an elite carrying tool and the repertoire includes a four-seamer.",
+                    score=fastball_pct - 65,
+                    reason="Fallback heuristic: fastball velocity is an elite carrying tool and the repertoire includes a four-seamer.",
                 )
 
     if state.player.role in {"hitter", "two_way"}:

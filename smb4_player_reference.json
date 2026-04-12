@@ -40,6 +40,11 @@
       "smb4_name": "4-Seam Fastball",
       "merge_target": null
     },
+      "ft": {
+        "mlb_name": "Two-Seam Fastball",
+        "smb4_name": "2-Seam Fastball",
+        "merge_target": null
+      },
     "si": {
       "mlb_name": "Sinker",
       "smb4_name": "2-Seam Fastball",
@@ -70,6 +75,16 @@
       "smb4_name": "Forkball",
       "merge_target": null
     },
+      "fo": {
+        "mlb_name": "Forkball",
+        "smb4_name": "Forkball",
+        "merge_target": null
+      },
+      "sc": {
+        "mlb_name": "Screwball",
+        "smb4_name": "Screwball",
+        "merge_target": null
+      },
     "sv": {
       "mlb_name": "Sweeper",
       "smb4_name": null,
@@ -725,6 +740,22 @@
         "description": "Increased pitch speed when pitching a 4-seam fastball."
       },
       {
+        "name": "Elite 2F",
+        "chemistry_type": "Scholarly",
+        "polarity": "positive",
+        "role_scope": "pitcher",
+        "chemistry_scaled": false,
+        "description": "Increased movement and life when pitching a 2-seam fastball."
+      },
+      {
+        "name": "Elite CF",
+        "chemistry_type": "Scholarly",
+        "polarity": "positive",
+        "role_scope": "pitcher",
+        "chemistry_scaled": false,
+        "description": "Increased cut and late action when pitching a cut fastball."
+      },
+      {
         "name": "Elite CB",
         "chemistry_type": "Scholarly",
         "polarity": "positive",
@@ -741,12 +772,28 @@
         "description": "Decreased pitch speed and increased break when pitching a change-up."
       },
       {
+        "name": "Elite FK",
+        "chemistry_type": "Scholarly",
+        "polarity": "positive",
+        "role_scope": "pitcher",
+        "chemistry_scaled": false,
+        "description": "Increased dive and late drop when pitching a forkball."
+      },
+      {
         "name": "Elite SL",
         "chemistry_type": "Scholarly",
         "polarity": "positive",
         "role_scope": "pitcher",
         "chemistry_scaled": false,
         "description": "Increased pitch speed and break when pitching a slider."
+      },
+      {
+        "name": "Elite SB",
+        "chemistry_type": "Scholarly",
+        "polarity": "positive",
+        "role_scope": "pitcher",
+        "chemistry_scaled": false,
+        "description": "Increased bend and deception when pitching a screwball."
       },
       {
         "name": "Gets Ahead",
@@ -1088,22 +1135,42 @@
       "Elite 4F": {
         "description": "Award when four-seam pitch quality is clearly above average.",
         "sources": ["baseball_savant"],
-        "criteria": [{"stat": "trait_metrics.pitch_quality_4f", "operator": ">=", "value": 65, "weight": 1.0}]
+        "criteria": [{"stat": "trait_metrics.pitch_quality_4f", "operator": ">=", "value": 80, "weight": 1.0}]
+      },
+      "Elite 2F": {
+        "description": "Award when two-seam fastball quality is clearly above average.",
+        "sources": ["baseball_savant"],
+        "criteria": [{"stat": "trait_metrics.pitch_quality_2f", "operator": ">=", "value": 80, "weight": 1.0}]
+      },
+      "Elite CF": {
+        "description": "Award when cut fastball quality is clearly above average.",
+        "sources": ["baseball_savant"],
+        "criteria": [{"stat": "trait_metrics.pitch_quality_cf", "operator": ">=", "value": 80, "weight": 1.0}]
       },
       "Elite CB": {
         "description": "Award when curveball quality is clearly above average.",
         "sources": ["baseball_savant"],
-        "criteria": [{"stat": "trait_metrics.pitch_quality_cb", "operator": ">=", "value": 65, "weight": 1.0}]
+        "criteria": [{"stat": "trait_metrics.pitch_quality_cb", "operator": ">=", "value": 80, "weight": 1.0}]
       },
       "Elite CH": {
         "description": "Award when changeup quality is clearly above average.",
         "sources": ["baseball_savant"],
-        "criteria": [{"stat": "trait_metrics.pitch_quality_ch", "operator": ">=", "value": 65, "weight": 1.0}]
+        "criteria": [{"stat": "trait_metrics.pitch_quality_ch", "operator": ">=", "value": 80, "weight": 1.0}]
+      },
+      "Elite FK": {
+        "description": "Award when forkball quality is clearly above average.",
+        "sources": ["baseball_savant"],
+        "criteria": [{"stat": "trait_metrics.pitch_quality_fk", "operator": ">=", "value": 80, "weight": 1.0}]
       },
       "Elite SL": {
         "description": "Award when slider quality is clearly above average.",
         "sources": ["baseball_savant"],
-        "criteria": [{"stat": "trait_metrics.pitch_quality_sl", "operator": ">=", "value": 65, "weight": 1.0}]
+        "criteria": [{"stat": "trait_metrics.pitch_quality_sl", "operator": ">=", "value": 85, "weight": 1.0}]
+      },
+      "Elite SB": {
+        "description": "Award when screwball quality is clearly above average.",
+        "sources": ["baseball_savant"],
+        "criteria": [{"stat": "trait_metrics.pitch_quality_sb", "operator": ">=", "value": 80, "weight": 1.0}]
       },
       "Gets Ahead": {
         "description": "Award when 0-0 count command is clearly above average.",
