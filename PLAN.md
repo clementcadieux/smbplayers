@@ -105,6 +105,38 @@ Two leagues (AL / NL), each with three divisions (East / Central / West), totall
 
 ---
 
+## Issue #20 – Players from Non-Active Roster (Other Team) Are Getting Recommended
+
+**Problem:** Players who are no longer on a team's active 2026 roster (e.g. traded or released players like Kiner-Falefa for the Blue Jays) are still appearing in the recommended roster output. Only players on the team's current active roster should be rated and recommended.
+
+### Steps
+
+1. **Add a `roster_year` and `active_roster` filter to the ingestion pipeline:**
+   - In the manifest schema, add an optional `roster_filter: { team: str, year: int }` field so callers can declare which team and season to restrict ingestion to.
+   - In `savant.py` and `baseball_reference.py`, after parsing each player row, skip (or flag) any player whose `team` column does not match the requested `roster_filter.team` for the target `roster_filter.year`.
+
+2. **Add an `active` flag to `PlayerInput`:**
+   - Add `active: bool = True` to the `PlayerInput` dataclass in `models.py`.
+   - During ingestion, set `active = False` for any player whose most-recent season (`current`) was played for a different team than the manifest's target team, rather than hard-dropping them (preserves historical data while marking them inactive).
+
+3. **Filter inactive players before rating and roster selection:**
+   - In `engine.py` (or the CLI pipeline), skip players where `player.active is False` before computing ratings.
+   - In `roster_selector.py`, add a guard at the top of `select_roster` to reject any `RatingOutput` whose `team` does not match the target team abbreviation passed in (raise or warn if `team` is `None`).
+
+4. **Expose a `--team` filter on the CLI:**
+   - Add an optional `--team <ABBR>` flag to both the `rate` and `ingest-rate` subcommands in `cli.py`.
+   - When provided, filter the loaded player list to only include players whose `PlayerInput.team` matches the flag value (case-insensitive) before rating.
+
+5. **Update the integration test (`tests/test_e2e_bluejays.py`):**
+   - Add a synthetic player assigned to a different team (e.g. `team="NYY"`) to the Blue Jays test dataset.
+   - Assert that this player does **not** appear in the rated output or roster selection results when `--team TOR` (or equivalent programmatic filter) is applied.
+
+6. **Update `README.md`:**
+   - Document the `--team` filter flag under the CLI usage section.
+   - Note that only players whose `team` field matches the target team are included in rating and roster selection.
+
+---
+
 ## Issue #10 – Run a Full Process Test Using the Toronto Blue Jays
 
 **Problem:** The complete pipeline (ingest → rate → structured output → roster selection) has not been validated end-to-end with real team data. Using the Toronto Blue Jays as the test team will confirm that every stage produces correct, consistent output for a real MLB roster.
