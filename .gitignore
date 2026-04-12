@@ -19,6 +19,7 @@ output/
 ratings/
 normalized_*.json
 ratings_*.json
+examples/bluejays_result_example.json
 
 # Keep the SMB4 reference catalog tracked even as local JSON outputs are ignored.
 !smb4_player_reference.json
