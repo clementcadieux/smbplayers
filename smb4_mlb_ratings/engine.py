@@ -11,11 +11,7 @@ from .models import PersonalityRecommendation, PlayerInput, RatingOutput, Season
 from .pitch_selector import select_pitch_mix
 
 
-SEASON_WEIGHTS = {
-    "current": 0.50,
-    "previous": 0.30,
-    "two_years_ago": 0.20,
-}
+SEASON_KEYS = ("current", "previous", "two_years_ago")
 
 
 POSITION_GROUPS = {
@@ -78,6 +74,16 @@ DEFAULT_VOLUME_PROJECTION = {
     "full_season_days_pitcher": 180.0,
     "max_projected_pa": 700.0,
     "max_projected_ip": 250.0,
+}
+
+DEFAULT_SEASON_WEIGHTING = {
+    "full_season_pa_threshold": 500.0,
+    "full_season_ip_threshold": 150.0,
+    "season_recency_weights": {
+        "current": 2.0,
+        "previous": 1.0,
+        "two_years_ago": 0.8,
+    },
 }
 
 DEFAULT_SECONDARY_POSITION_CONFIG = {
@@ -170,6 +176,52 @@ def load_volume_projection_config() -> dict[str, float]:
         }
     except (TypeError, ValueError):
         return dict(DEFAULT_VOLUME_PROJECTION)
+
+
+def load_season_weighting_config() -> dict[str, object]:
+    try:
+        payload = json.loads(REFERENCE_PATH.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {
+            "full_season_pa_threshold": DEFAULT_SEASON_WEIGHTING["full_season_pa_threshold"],
+            "full_season_ip_threshold": DEFAULT_SEASON_WEIGHTING["full_season_ip_threshold"],
+            "season_recency_weights": dict(DEFAULT_SEASON_WEIGHTING["season_recency_weights"]),
+        }
+
+    try:
+        full_season_pa_threshold = float(
+            payload.get("full_season_pa_threshold", DEFAULT_SEASON_WEIGHTING["full_season_pa_threshold"])
+        )
+    except (TypeError, ValueError):
+        full_season_pa_threshold = DEFAULT_SEASON_WEIGHTING["full_season_pa_threshold"]
+
+    try:
+        full_season_ip_threshold = float(
+            payload.get("full_season_ip_threshold", DEFAULT_SEASON_WEIGHTING["full_season_ip_threshold"])
+        )
+    except (TypeError, ValueError):
+        full_season_ip_threshold = DEFAULT_SEASON_WEIGHTING["full_season_ip_threshold"]
+
+    recency_payload = payload.get("season_recency_weights", DEFAULT_SEASON_WEIGHTING["season_recency_weights"])
+    recency_weights = dict(DEFAULT_SEASON_WEIGHTING["season_recency_weights"])
+    if isinstance(recency_payload, Mapping):
+        for season_key in SEASON_KEYS:
+            try:
+                recency_weights[season_key] = float(recency_payload.get(season_key, recency_weights[season_key]))
+            except (TypeError, ValueError):
+                continue
+    elif isinstance(recency_payload, list):
+        for season_key, weight in zip(SEASON_KEYS, recency_payload):
+            try:
+                recency_weights[season_key] = float(weight)
+            except (TypeError, ValueError):
+                continue
+
+    return {
+        "full_season_pa_threshold": full_season_pa_threshold,
+        "full_season_ip_threshold": full_season_ip_threshold,
+        "season_recency_weights": recency_weights,
+    }
 
 
 def load_trait_criteria_config() -> dict[str, object]:
@@ -285,6 +337,7 @@ def load_secondary_position_config() -> dict[str, object]:
 
 CHEMISTRY_TYPES, TRAIT_CATALOG = load_trait_catalog()
 VOLUME_PROJECTION_CONFIG = load_volume_projection_config()
+SEASON_WEIGHTING_CONFIG = load_season_weighting_config()
 TRAIT_CRITERIA_CONFIG = load_trait_criteria_config()
 TRAIT_LIMIT_CONFIG = load_trait_limit_config()
 SECONDARY_POSITION_CONFIG = load_secondary_position_config()
@@ -483,7 +536,8 @@ def weighted_value(value: SeasonValue) -> float | None:
 
     total_weight = 0.0
     total_value = 0.0
-    for season_key, weight in SEASON_WEIGHTS.items():
+    season_weights = SEASON_WEIGHTING_CONFIG["season_recency_weights"]
+    for season_key, weight in season_weights.items():
         season_value = value.get(season_key)
         if season_value is None:
             continue
@@ -526,10 +580,186 @@ def season_dict(value: SeasonValue) -> dict[str, float] | None:
     return normalized or None
 
 
+def season_recency_weights() -> dict[str, float]:
+    return dict(SEASON_WEIGHTING_CONFIG["season_recency_weights"])
+
+
+def _player_metadata(player: PlayerInput | None) -> Mapping[str, object]:
+    if player is None or not isinstance(player.metadata, Mapping):
+        return {}
+    return player.metadata
+
+
+def resolve_full_season_threshold(
+    sample_key: str | None,
+    sample_seasons: Mapping[str, float] | None,
+    *,
+    player: PlayerInput | None = None,
+) -> float | None:
+    metadata = _player_metadata(player)
+    if sample_key is not None:
+        sample_specific_threshold = metadata_number(
+            metadata,
+            f"season_weighting.full_season_thresholds.{sample_key}",
+            f"season_weighting.{sample_key}_threshold",
+        )
+        if sample_specific_threshold is not None and sample_specific_threshold > 0:
+            return sample_specific_threshold
+
+    if sample_key == "weighted_pa":
+        threshold = metadata_number(metadata, "season_weighting.full_season_pa_threshold")
+        if threshold is None:
+            threshold = float(SEASON_WEIGHTING_CONFIG["full_season_pa_threshold"])
+        return threshold if threshold > 0 else None
+
+    if sample_key == "weighted_bf":
+        threshold = metadata_number(
+            metadata,
+            "season_weighting.full_season_bf_threshold",
+            "season_weighting.full_season_ip_threshold",
+        )
+        if threshold is None:
+            threshold = float(SEASON_WEIGHTING_CONFIG["full_season_ip_threshold"])
+        if threshold <= 0:
+            return None
+        if metadata_lookup(metadata, "season_weighting.full_season_bf_threshold") is not None:
+            return threshold
+        return threshold * 4.25
+
+    if sample_seasons is None:
+        return None
+
+    available_seasons = [volume for volume in sample_seasons.values() if volume > 0]
+    if not available_seasons:
+        return None
+    return max(available_seasons)
+
+
+def season_progress(
+    season_volume: float,
+    *,
+    sample_key: str | None,
+    sample_seasons: Mapping[str, float] | None,
+    player: PlayerInput | None,
+    volume_exponent: float,
+) -> float:
+    threshold = resolve_full_season_threshold(sample_key, sample_seasons, player=player)
+    if threshold is None or threshold <= 0 or season_volume <= 0:
+        return 0.0
+    return clamp(season_volume / threshold, 0.0, 1.0) ** volume_exponent
+
+
+def metric_season_weights(
+    metric_seasons: Mapping[str, float],
+    sample_seasons: Mapping[str, float] | None,
+    *,
+    sample_key: str | None,
+    player: PlayerInput | None,
+    volume_exponent: float,
+) -> dict[str, float]:
+    weights: dict[str, float] = {}
+    recency_weights = season_recency_weights()
+
+    for season_key in metric_seasons:
+        recency_weight = recency_weights.get(season_key, 0.0)
+        if recency_weight <= 0:
+            continue
+
+        if sample_seasons is None:
+            weights[season_key] = recency_weight
+            continue
+
+        season_volume = sample_seasons.get(season_key)
+        if season_volume is None or season_volume <= 0:
+            continue
+
+        progress = season_progress(
+            season_volume,
+            sample_key=sample_key,
+            sample_seasons=sample_seasons,
+            player=player,
+            volume_exponent=volume_exponent,
+        )
+        if progress <= 0:
+            continue
+        weights[season_key] = recency_weight * progress
+
+    return weights
+
+
+def prior_season_baseline(metric_seasons: Mapping[str, float]) -> float | None:
+    recency_weights = season_recency_weights()
+    total_weight = 0.0
+    total_value = 0.0
+    for season_key in ("previous", "two_years_ago"):
+        metric_value = metric_seasons.get(season_key)
+        recency_weight = recency_weights.get(season_key, 0.0)
+        if metric_value is None or recency_weight <= 0:
+            continue
+        total_weight += recency_weight
+        total_value += metric_value * recency_weight
+
+    if total_weight == 0:
+        return None
+    return total_value / total_weight
+
+
+def regress_current_season_toward_prior(
+    blended_value: float,
+    metric_seasons: Mapping[str, float],
+    season_weights: Mapping[str, float],
+    sample_seasons: Mapping[str, float] | None,
+    *,
+    sample_key: str | None,
+    player: PlayerInput | None,
+) -> float:
+    current_value = metric_seasons.get("current")
+    prior_baseline = prior_season_baseline(metric_seasons)
+    current_weight = season_weights.get("current", 0.0)
+    total_weight = sum(season_weights.values())
+    if current_value is None or prior_baseline is None or current_weight <= 0 or total_weight <= 0:
+        return blended_value
+
+    if sample_seasons is None:
+        return blended_value
+
+    current_volume = sample_seasons.get("current", 0.0)
+    if current_volume <= 0:
+        return blended_value
+
+    threshold = resolve_full_season_threshold(sample_key, sample_seasons, player=player)
+    if threshold is None or threshold <= 0:
+        return blended_value
+
+    current_progress = clamp(current_volume / threshold, 0.0, 1.0)
+    recency_weights = season_recency_weights()
+    strongest_prior_weight = max(
+        recency_weights.get(season_key, 0.0)
+        for season_key in ("previous", "two_years_ago")
+        if season_key in metric_seasons
+    )
+    if strongest_prior_weight <= 0:
+        return blended_value
+
+    current_full_weight = recency_weights.get("current", 0.0)
+    if current_full_weight <= 0:
+        return blended_value
+
+    equivalence_progress = clamp(strongest_prior_weight / current_full_weight, 0.0, 1.0)
+    if equivalence_progress == 0 or current_progress >= equivalence_progress:
+        return blended_value
+
+    regression_share = clamp((equivalence_progress - current_progress) / equivalence_progress, 0.0, 1.0)
+    current_weight_share = current_weight / total_weight
+    return blended_value - (current_value - prior_baseline) * current_weight_share * regression_share
+
+
 def weighted_metric_value(
     metric_value: SeasonValue,
     sample_value: SeasonValue | None,
     *,
+    sample_key: str | None = None,
+    player: PlayerInput | None = None,
     volume_exponent: float = 1.0,
     age: int | None = None,
     raw_tools_bias: bool = False,
@@ -544,29 +774,27 @@ def weighted_metric_value(
         return None
 
     sample_seasons = season_dict(sample_value)
-    total_weight = 0.0
-    total_value = 0.0
-
-    for season_key, metric in metric_seasons.items():
-        recency_weight = SEASON_WEIGHTS.get(season_key, 0.0)
-        if recency_weight == 0:
-            continue
-
-        volume = 1.0
-        if sample_seasons is not None:
-            season_volume = sample_seasons.get(season_key)
-            if season_volume is None or season_volume <= 0:
-                continue
-            volume = season_volume ** volume_exponent
-
-        combined_weight = recency_weight * volume
-        total_weight += combined_weight
-        total_value += metric * combined_weight
+    season_weights = metric_season_weights(
+        metric_seasons,
+        sample_seasons,
+        sample_key=sample_key,
+        player=player,
+        volume_exponent=volume_exponent,
+    )
+    total_weight = sum(season_weights.values())
 
     if total_weight == 0:
         return None
 
-    blended_value = total_value / total_weight
+    blended_value = sum(metric_seasons[season_key] * weight for season_key, weight in season_weights.items()) / total_weight
+    blended_value = regress_current_season_toward_prior(
+        blended_value,
+        metric_seasons,
+        season_weights,
+        sample_seasons,
+        sample_key=sample_key,
+        player=player,
+    )
     if not raw_tools_bias or age is None or not isinstance(metric_value, Mapping):
         return blended_value
 
@@ -1862,6 +2090,8 @@ def rate_players(players: list[PlayerInput | dict], trim_final_traits: bool = Tr
                 raw_value = weighted_metric_value(
                     state.player.metrics.get(component.metric),
                     state.player.samples.get(spec.sample_key),
+                    sample_key=spec.sample_key,
+                    player=state.player,
                     volume_exponent=spec.volume_exponent,
                     age=state.player.age,
                     raw_tools_bias=spec.raw_tools_bias,
@@ -1875,6 +2105,8 @@ def rate_players(players: list[PlayerInput | dict], trim_final_traits: bool = Tr
                     weighted_metric_value(
                         peer.player.metrics.get(component.metric),
                         peer.player.samples.get(spec.sample_key),
+                        sample_key=spec.sample_key,
+                        player=peer.player,
                         volume_exponent=spec.volume_exponent,
                         age=peer.player.age,
                         raw_tools_bias=spec.raw_tools_bias,
@@ -1907,6 +2139,8 @@ def rate_players(players: list[PlayerInput | dict], trim_final_traits: bool = Tr
                             weighted_metric_value(
                                 peer.player.metrics.get(component.metric),
                                 peer.player.samples.get(spec.sample_key),
+                                sample_key=spec.sample_key,
+                                player=peer.player,
                                 volume_exponent=spec.volume_exponent,
                                 age=peer.player.age,
                                 raw_tools_bias=spec.raw_tools_bias,
