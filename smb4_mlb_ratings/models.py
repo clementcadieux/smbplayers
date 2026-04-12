@@ -20,6 +20,7 @@ class PlayerInput:
     throws: str | None = None
     projected_pa: float | None = None
     projected_ip: float | None = None
+    pitch_mix: dict[str, float] = field(default_factory=dict)
     metrics: dict[str, SeasonValue] = field(default_factory=dict)
     samples: dict[str, SeasonValue] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -38,6 +39,7 @@ class PlayerInput:
             throws=data.get("throws"),
             projected_pa=data.get("projected_pa"),
             projected_ip=data.get("projected_ip"),
+            pitch_mix={str(key): float(value) for key, value in data.get("pitch_mix", {}).items()},
             metrics=data.get("metrics", {}),
             samples=data.get("samples", {}),
             metadata=data.get("metadata", {}),
@@ -119,6 +121,7 @@ class RatingOutput:
     age: int | None = None
     projected_pa: float | None = None
     projected_ip: float | None = None
+    recommended_pitches: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -131,6 +134,7 @@ class RatingOutput:
             "age": self.age,
             "projected_pa": self.projected_pa,
             "projected_ip": self.projected_ip,
+            "recommended_pitches": self.recommended_pitches,
             "ratings": self.ratings,
             "percentiles": self.percentiles,
             "overall_numeric": self.overall_numeric,
@@ -163,5 +167,6 @@ class RatingOutput:
             age=data.get("age"),
             projected_pa=float(data["projected_pa"]) if data.get("projected_pa") is not None else None,
             projected_ip=float(data["projected_ip"]) if data.get("projected_ip") is not None else None,
+            recommended_pitches=[str(item) for item in data.get("recommended_pitches", [])],
             metadata=data.get("metadata", {}),
         )

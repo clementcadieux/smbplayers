@@ -442,6 +442,8 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertEqual(pitcher["primary_position"], "P")
         self.assertAlmostEqual(pitcher["metrics"]["avg_fastball_velocity"]["current"], 96.3)
         self.assertIn("tracked_pitches", pitcher["samples"])
+        self.assertAlmostEqual(pitcher["pitch_mix"]["ff"], 0.48)
+        self.assertAlmostEqual(pitcher["pitch_mix"]["sl"], 0.27)
         self.assertIn("arsenal_diversity", pitcher["metadata"]["ingest"]["estimated_metrics"]["current"])
 
     def test_cli_ingest_and_legacy_rate_flow(self) -> None:
@@ -809,6 +811,8 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertAlmostEqual(pitcher["metrics"]["walk_rate"]["current"], 54 / 684, places=6)
         self.assertAlmostEqual(pitcher["metrics"]["avg_fastball_velocity"]["current"], 97.1)
         self.assertAlmostEqual(pitcher["metrics"]["swinging_strike_rate"]["current"], 0.144)
+        self.assertAlmostEqual(pitcher["pitch_mix"]["ff"], 0.565217, places=6)
+        self.assertAlmostEqual(pitcher["pitch_mix"]["sl"], 0.304348, places=6)
         self.assertIn("baseball_reference:running", pitcher["metadata"]["ingest"]["missing_files"]["current"])
 
 

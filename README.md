@@ -14,6 +14,7 @@ This workspace now includes a small Python tool that converts MLB-style player m
 - Recommends a ranked list of SMB4 personality types per player using a personal-traits-first and team-traits-second blend
 - Produces both a broad suggestion pool and a trimmed SMB4-realistic final trait assignment set
 - Produces SMB4-style numeric ratings, overall grades, and manual-review flags
+- Recommends pitcher repertoires from Baseball Savant pitch-usage mix using SMB4 pitch mappings in [smb4_player_reference.json](smb4_player_reference.json)
 
 Personality ranking considers the full SMB4 trait catalog from [smb4_player_reference.json](smb4_player_reference.json). Suggested traits and any explicit player traits provided in `metadata.traits`, `metadata.existing_traits`, or `metadata.manual_traits` all contribute to chemistry ranking.
 
@@ -178,7 +179,9 @@ When `--team` is provided to `rate` or `ingest-rate`, only players whose `team` 
 
 Projected plate appearances and innings now ignore seasons flagged as injury-shortened during ingestion. The flagging thresholds come from the `injury_threshold` block in [smb4_player_reference.json](smb4_player_reference.json), so low-volume injury years do not drag down roster-priority projections.
 
-The Blue Jays end-to-end integration test now fetches the live 2026 Blue Jays active-plus-IL subset of the 40-man roster from the public MLB Stats API, then pairs that roster with the most recent completed MLB season stats to build local Baseball Reference-style CSV fixtures in a temp directory before running the full ingest-rate-rank pipeline.
+Pitchers with Savant pitch-usage data now also receive `recommended_pitches` in the rating output, capped by the SMB4 slot limit and translated through the configured MLB-to-SMB4 pitch mappings in [smb4_player_reference.json](smb4_player_reference.json).
+
+The Blue Jays end-to-end integration test now fetches the live 2026 Blue Jays active-plus-IL subset of the 40-man roster from the public MLB Stats API, then builds a mixed-source temp fixture set with Baseball Reference-style result files and Baseball Savant-style hitter and pitcher files before running the full ingest-rate-rank pipeline.
 
 ## Full Pipeline Walkthrough
 

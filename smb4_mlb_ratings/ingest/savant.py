@@ -189,6 +189,13 @@ def _safe_divide(numerator: float | None, denominator: float | None) -> float | 
     return numerator / denominator
 
 
+def _normalize_distribution(values: dict[str, float]) -> dict[str, float]:
+    total = sum(values.values())
+    if total <= 0:
+        return {}
+    return {key: round(value / total, 6) for key, value in sorted(values.items()) if value > 0}
+
+
 def _clamp(value: float | None, minimum: float, maximum: float) -> float | None:
     if value is None:
         return None
@@ -225,6 +232,15 @@ def _row_player_id(row: dict[str, str]) -> str | None:
 
 def _normalized_name(name: str) -> str:
     return " ".join(name.lower().split())
+
+
+def _row_pitch_mix(row: dict[str, str]) -> dict[str, float]:
+    pitch_mix: dict[str, float] = {}
+    for pitch_code, aliases in PITCH_USAGE_COLUMNS.items():
+        value = _pick_number(row, *aliases, rate=True)
+        if value is not None and value > 0:
+            pitch_mix[pitch_code] = value
+    return _normalize_distribution(pitch_mix)
 
 
 @dataclass(slots=True)
@@ -265,6 +281,7 @@ class PlayerAccumulator:
     roles: set[str] = field(default_factory=set)
     metrics: dict[str, dict[str, float]] = field(default_factory=lambda: defaultdict(dict))
     samples: dict[str, dict[str, float]] = field(default_factory=lambda: defaultdict(dict))
+    pitch_mix_by_season: dict[str, dict[str, float]] = field(default_factory=lambda: defaultdict(dict))
     estimated_metrics: dict[str, list[str]] = field(default_factory=lambda: defaultdict(list))
     missing_files: dict[str, list[str]] = field(default_factory=lambda: defaultdict(list))
     injury_shortened_seasons: set[str] = field(default_factory=set)
@@ -286,6 +303,34 @@ class PlayerAccumulator:
         if file_type not in self.missing_files[season_key]:
             self.missing_files[season_key].append(file_type)
 
+    def set_pitch_mix(self, season_key: str, pitch_mix: dict[str, float]) -> None:
+        if not pitch_mix:
+            return
+        self.pitch_mix_by_season[season_key] = dict(sorted(pitch_mix.items()))
+
+    def aggregated_pitch_mix(self) -> dict[str, float]:
+        weighted_totals: dict[str, float] = defaultdict(float)
+        total_weight = 0.0
+        fallback_totals: dict[str, float] = defaultdict(float)
+        fallback_count = 0
+        for season_key, season_mix in sorted(self.pitch_mix_by_season.items()):
+            if not season_mix:
+                continue
+            tracked_pitches = self.samples.get("tracked_pitches", {}).get(season_key)
+            if tracked_pitches is not None and tracked_pitches > 0:
+                total_weight += tracked_pitches
+                for pitch_code, usage in season_mix.items():
+                    weighted_totals[pitch_code] += usage * tracked_pitches
+                continue
+            fallback_count += 1
+            for pitch_code, usage in season_mix.items():
+                fallback_totals[pitch_code] += usage
+        if total_weight > 0:
+            return _normalize_distribution(weighted_totals)
+        if fallback_count > 0:
+            return _normalize_distribution(fallback_totals)
+        return {}
+
     def to_player_dict(self) -> dict[str, Any]:
         metadata: dict[str, Any] = {
             "source": self.source,
@@ -304,7 +349,7 @@ class PlayerAccumulator:
         if self.roster_status_code:
             metadata["status_code"] = self.roster_status_code
         role = "two_way" if {"hitter", "pitcher"}.issubset(self.roles) else ("pitcher" if "pitcher" in self.roles else "hitter")
-        return {
+        player_dict = {
             "name": self.name,
             "role": role,
             "active": self.active,
@@ -318,6 +363,10 @@ class PlayerAccumulator:
             "samples": {name: dict(sorted(values.items())) for name, values in sorted(self.samples.items()) if values},
             "metadata": metadata,
         }
+        pitch_mix = self.aggregated_pitch_mix()
+        if pitch_mix:
+            player_dict["pitch_mix"] = pitch_mix
+        return player_dict
 
 
 def load_manifest(path: Path) -> IngestManifest:
@@ -616,6 +665,7 @@ def _apply_pitcher_row(player: PlayerAccumulator, season_key: str, row: dict[str
     player.roles.add("pitcher")
     _apply_identity(player, row, default_position="P")
 
+    pitch_mix = _row_pitch_mix(row)
     tracked_pitches = _pick_number(row, "pitches", "tracked_pitches", "pitch_count", "total_pitches")
     batters_faced = _pick_number(row, "bf", "batters_faced")
     fastball_usage = _pick_number(row, "fastball_usage", "fastball_pct", "ff_pct", rate=True)
@@ -648,11 +698,7 @@ def _apply_pitcher_row(player: PlayerAccumulator, season_key: str, row: dict[str
     arsenal_diversity = _pick_number(row, "arsenal_diversity", "pitch_mix_diversity")
     arsenal_estimated = False
     if arsenal_diversity is None:
-        usage_values: list[float] = []
-        for aliases in PITCH_USAGE_COLUMNS.values():
-            value = _pick_number(row, *aliases, rate=True)
-            if value and value > 0:
-                usage_values.append(value)
+        usage_values = list(pitch_mix.values())
         usage_sum = sum(usage_values)
         if usage_sum > 0 and len(usage_values) > 1:
             normalized_values = [value / usage_sum for value in usage_values]
@@ -696,6 +742,7 @@ def _apply_pitcher_row(player: PlayerAccumulator, season_key: str, row: dict[str
     player.set_sample("weighted_bf", season_key, batters_faced)
     player.set_sample("tracked_pitches", season_key, tracked_pitches)
     player.set_sample("tracked_fastballs", season_key, tracked_fastballs)
+    player.set_pitch_mix(season_key, pitch_mix)
 
 
 def _apply_fielding_row(player: PlayerAccumulator, season_key: str, row: dict[str, str]) -> None:

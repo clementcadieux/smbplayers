@@ -98,6 +98,7 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
         filtered_normalized_players = filtered_normalized_payload["players"]
         self.assertEqual(len(filtered_normalized_players), len(self.players))
         self.assertTrue(all(player["team"] == "TOR" for player in filtered_normalized_players))
+        self.assertTrue(all(player["metadata"]["source"] == "mixed" for player in filtered_normalized_players))
         self.assertEqual(sorted(player["name"] for player in filtered_normalized_players), expected_names)
         self.assertNotIn(inactive_name, {player["name"] for player in filtered_normalized_players})
 
@@ -107,6 +108,8 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
         self.assertTrue(all(1 <= player["overall_numeric"] <= 99 for player in ratings_payload if player["overall_numeric"] is not None))
         self.assertEqual(sorted(player["name"] for player in ratings_payload), expected_names)
         self.assertNotIn(inactive_name, {player["name"] for player in ratings_payload})
+        pitcher_outputs = [player for player in ratings_payload if player["role"] in {"pitcher", "two_way"}]
+        self.assertTrue(any(player["recommended_pitches"] for player in pitcher_outputs))
         injured_players = {
             player["name"]
             for player in ratings_payload
@@ -169,19 +172,31 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
 
     def _write_fixture_files(self) -> None:
         self._write_csv(self.exports / "bluejays_roster_2026.csv", self._roster_rows())
+        self._write_csv(self.exports / "bluejays_savant_hitters_2025.csv", self._savant_hitter_rows())
+        self._write_csv(self.exports / "bluejays_savant_pitchers_2025.csv", self._savant_pitcher_rows())
         self._write_csv(self.exports / "bluejays_bref_hitters_2025.csv", self._bref_hitter_rows())
         self._write_csv(self.exports / "bluejays_bref_pitchers_2025.csv", self._bref_pitcher_rows())
 
         manifest = {
-            "source": "baseball_reference",
+            "source": "mixed",
             "roster_filter": {"team": TEAM_ABBREVIATION, "year": ROSTER_SEASON},
             "seasons": {
                 "current": {
                     "year": ROSTER_SEASON,
-                    "files": {
-                        "roster": "bluejays_roster_2026.csv",
-                        "hitters": "bluejays_bref_hitters_2025.csv",
-                        "pitchers": "bluejays_bref_pitchers_2025.csv",
+                    "sources": {
+                        "baseball_reference": {
+                            "files": {
+                                "hitters": "bluejays_bref_hitters_2025.csv",
+                                "pitchers": "bluejays_bref_pitchers_2025.csv",
+                            }
+                        },
+                        "baseball_savant": {
+                            "files": {
+                                "roster": "bluejays_roster_2026.csv",
+                                "hitters": "bluejays_savant_hitters_2025.csv",
+                                "pitchers": "bluejays_savant_pitchers_2025.csv",
+                            }
+                        },
                     },
                 }
             },
@@ -233,6 +248,42 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
             )
         return rows
 
+    def _savant_hitter_rows(self) -> list[dict[str, object]]:
+        rows: list[dict[str, object]] = []
+        for player in self.players + [self._inactive_player()]:
+            if player["type"] != "hitter":
+                continue
+            advanced = player.get("advanced_hitting") if isinstance(player.get("advanced_hitting"), dict) else {}
+            total_swings = self._as_int(advanced.get("totalSwings"))
+            swing_and_misses = self._as_int(advanced.get("swingAndMisses"))
+            contact_pct = None
+            if total_swings not in (None, 0) and swing_and_misses is not None:
+                contact_pct = round((1.0 - (swing_and_misses / total_swings)) * 100.0, 3)
+            rows.append(
+                {
+                    "player_id": player["player_id"],
+                    "player_name": player["name"],
+                    "team": player.get("team", TEAM_ABBREVIATION),
+                    "position": player["position"],
+                    "PA": player["plate_appearances"],
+                    "ISO": self._as_str(advanced.get("iso")) or self._format_decimal(float(player["slg"]) - float(player["avg"])),
+                    "HR": player["home_runs"],
+                    "SLG": player["slg"],
+                    "AVG": player["avg"],
+                    "OBP": player["obp"],
+                    "K %": self._percentage(player["strikeouts"], player["plate_appearances"]),
+                    "Contact %": contact_pct,
+                    "2B": player["doubles"],
+                    "3B": player["triples"],
+                    "SB": player["stolen_bases"],
+                    "CS": player["caught_stealing"],
+                    "BB": player["walks"],
+                    "HBP": player["hit_by_pitch"],
+                    "H": player["hits"],
+                }
+            )
+        return rows
+
     def _inactive_player(self) -> dict[str, object]:
         return {
             "player_id": 999001,
@@ -278,6 +329,38 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
                     "IP": player["innings_pitched"],
                     "Pitches": player["number_of_pitches"],
                     "Strikes": player["strikes"],
+                }
+            )
+        return rows
+
+    def _savant_pitcher_rows(self) -> list[dict[str, object]]:
+        rows: list[dict[str, object]] = []
+        for player in self.players:
+            if player["type"] != "pitcher":
+                continue
+            advanced = player.get("advanced_pitching") if isinstance(player.get("advanced_pitching"), dict) else {}
+            arsenal = player.get("pitch_arsenal") if isinstance(player.get("pitch_arsenal"), dict) else {}
+            rows.append(
+                {
+                    "player_id": player["player_id"],
+                    "player_name": player["name"],
+                    "team": TEAM_ABBREVIATION,
+                    "position": "P",
+                    "BF": player["batters_faced"],
+                    "Pitches": player["number_of_pitches"],
+                    "Avg Fastball Velocity": self._fastball_velocity(arsenal, mode="average"),
+                    "Peak Fastball Velocity": self._fastball_velocity(arsenal, mode="peak"),
+                    "FF %": self._arsenal_percentage(arsenal, "FF"),
+                    "SI %": self._arsenal_percentage(arsenal, "SI"),
+                    "FC %": self._arsenal_percentage(arsenal, "FC"),
+                    "SL %": self._arsenal_percentage(arsenal, "SL"),
+                    "CU %": self._arsenal_percentage(arsenal, "CU"),
+                    "CH %": self._arsenal_percentage(arsenal, "CH"),
+                    "FS %": self._arsenal_percentage(arsenal, "FS"),
+                    "SV %": self._arsenal_percentage(arsenal, "SV"),
+                    "SwStr %": self._as_percentage_string(advanced.get("whiffPercentage")),
+                    "BB %": self._percentage(player["walks"], player["batters_faced"]),
+                    "Strike %": self._as_percentage_string(player.get("strike_percentage")),
                 }
             )
         return rows
@@ -333,6 +416,7 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
             stats = self._fetch_stats(player_id, stat_group)
             if stats is None:
                 continue
+            advanced_stats = self._fetch_stats(player_id, stat_group, stats_type="seasonAdvanced") or {}
 
             base_player = {
                 "player_id": player_id,
@@ -365,9 +449,11 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
                         "avg": self._as_str(stats.get("avg")) or "0.000",
                         "obp": self._as_str(stats.get("obp")) or "0.000",
                         "slg": self._as_str(stats.get("slg")) or "0.000",
+                        "advanced_hitting": advanced_stats,
                     }
                 )
             else:
+                pitch_arsenal = self._fetch_pitch_arsenal(player_id)
                 batters_faced = self._as_int(stats.get("battersFaced")) or 0
                 if batters_faced == 0:
                     continue
@@ -381,6 +467,9 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
                         "innings_pitched": self._as_str(stats.get("inningsPitched")) or "0.0",
                         "number_of_pitches": self._as_int(stats.get("numberOfPitches")) or 0,
                         "strikes": self._as_int(stats.get("strikes")) or 0,
+                        "strike_percentage": self._as_str(stats.get("strikePercentage")) or self._as_str(advanced_stats.get("strikePercentage")),
+                        "advanced_pitching": advanced_stats,
+                        "pitch_arsenal": pitch_arsenal,
                     }
                 )
             players.append(base_player)
@@ -393,9 +482,9 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
         with urlopen(url, timeout=30, context=self.ssl_context) as response:
             return json.load(response)
 
-    def _fetch_stats(self, player_id: int, group: str) -> dict[str, Any] | None:
+    def _fetch_stats(self, player_id: int, group: str, *, stats_type: str = "season") -> dict[str, Any] | None:
         for season in (PRIMARY_STAT_SEASON, FALLBACK_STAT_SEASON):
-            payload = self._fetch_json(f"{MLB_STATS_API}/people/{player_id}/stats?stats=season&group={group}&season={season}")
+            payload = self._fetch_json(f"{MLB_STATS_API}/people/{player_id}/stats?stats={stats_type}&group={group}&season={season}")
             stats = payload.get("stats", [])
             if not isinstance(stats, list) or not stats:
                 continue
@@ -412,6 +501,71 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
             if isinstance(stat_line, dict):
                 return stat_line
         return None
+
+    def _fetch_pitch_arsenal(self, player_id: int) -> dict[str, dict[str, Any]]:
+        for season in (PRIMARY_STAT_SEASON, FALLBACK_STAT_SEASON):
+            payload = self._fetch_json(f"{MLB_STATS_API}/people/{player_id}/stats?stats=pitchArsenal&group=pitching&season={season}")
+            stats = payload.get("stats", [])
+            if not isinstance(stats, list) or not stats:
+                continue
+            first_stats = stats[0]
+            if not isinstance(first_stats, dict):
+                continue
+            splits = first_stats.get("splits", [])
+            if not isinstance(splits, list) or not splits:
+                continue
+            arsenal: dict[str, dict[str, Any]] = {}
+            for split in splits:
+                if not isinstance(split, dict):
+                    continue
+                stat_line = split.get("stat", {})
+                if not isinstance(stat_line, dict):
+                    continue
+                pitch_type = stat_line.get("type", {})
+                if not isinstance(pitch_type, dict):
+                    continue
+                pitch_code = self._as_str(pitch_type.get("code"))
+                if not pitch_code:
+                    continue
+                arsenal[pitch_code.upper()] = stat_line
+            if arsenal:
+                return arsenal
+        return {}
+
+    def _arsenal_percentage(self, arsenal: dict[str, dict[str, Any]], pitch_code: str) -> float | None:
+        stat_line = arsenal.get(pitch_code)
+        if not isinstance(stat_line, dict):
+            return None
+        raw_percentage = self._as_float(stat_line.get("percentage"))
+        if raw_percentage is None:
+            return None
+        return round(raw_percentage * 100.0, 3)
+
+    def _fastball_velocity(self, arsenal: dict[str, dict[str, Any]], *, mode: str) -> float | None:
+        fastball_codes = ("FF", "SI", "FC")
+        if mode == "peak":
+            velocities = [
+                velocity
+                for code in fastball_codes
+                if code in arsenal and (velocity := self._as_float(arsenal[code].get("averageSpeed"))) is not None
+            ]
+            return round(max(velocities), 3) if velocities else None
+
+        weighted_velocity = 0.0
+        total_percentage = 0.0
+        for code in fastball_codes:
+            stat_line = arsenal.get(code)
+            if not isinstance(stat_line, dict):
+                continue
+            percentage = self._as_float(stat_line.get("percentage"))
+            velocity = self._as_float(stat_line.get("averageSpeed"))
+            if percentage is None or velocity is None:
+                continue
+            weighted_velocity += percentage * velocity
+            total_percentage += percentage
+        if total_percentage <= 0:
+            return None
+        return round(weighted_velocity / total_percentage, 3)
 
     def _output_sort_key(self, player: dict[str, Any]) -> tuple[float, int, int, str]:
         projected_ip = player.get("projected_ip")
@@ -570,6 +724,22 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
             except ValueError:
                 return None
         return None
+
+    def _percentage(self, numerator: Any, denominator: Any) -> float | None:
+        numerator_value = self._as_float(numerator)
+        denominator_value = self._as_float(denominator)
+        if numerator_value is None or denominator_value in (None, 0.0):
+            return None
+        return round((numerator_value / denominator_value) * 100.0, 3)
+
+    def _as_percentage_string(self, value: Any) -> float | None:
+        numeric = self._as_float(value)
+        if numeric is None:
+            return None
+        return round(numeric * 100.0 if numeric <= 1.0 else numeric, 3)
+
+    def _format_decimal(self, value: float) -> str:
+        return f"{value:.3f}"
 
     def _as_str(self, value: Any) -> str | None:
         if value is None:

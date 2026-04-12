@@ -8,6 +8,7 @@ from statistics import mean
 from typing import Mapping
 
 from .models import PersonalityRecommendation, PlayerInput, RatingOutput, SeasonValue, TraitSuggestion
+from .pitch_selector import select_pitch_mix
 
 
 SEASON_WEIGHTS = {
@@ -1702,6 +1703,7 @@ def rate_players(players: list[PlayerInput | dict], trim_final_traits: bool = Tr
                 age=state.player.age,
                 projected_pa=resolved_projected_pa(state.player),
                 projected_ip=resolved_projected_ip(state.player),
+                recommended_pitches=select_pitch_mix(state.player.pitch_mix) if state.player.role in {"pitcher", "two_way"} else [],
                 metadata=dict(state.player.metadata),
             )
         )

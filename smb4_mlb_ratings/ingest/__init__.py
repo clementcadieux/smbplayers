@@ -170,6 +170,27 @@ def _merge_player_records(
 			for season_key, value in years.items():
 				merged_years[season_key] = value
 
+	merged_source_player_id = None
+	for metadata in (sv_metadata, br_metadata):
+		source_player_id = metadata.get("source_player_id") if isinstance(metadata, dict) else None
+		if isinstance(source_player_id, str) and source_player_id:
+			merged_source_player_id = source_player_id
+			break
+
+	merged_status = None
+	merged_status_code = None
+	merged_on_il = None
+	for metadata in (sv_metadata, br_metadata):
+		status = metadata.get("status") if isinstance(metadata, dict) else None
+		status_code = metadata.get("status_code") if isinstance(metadata, dict) else None
+		on_il = metadata.get("on_il") if isinstance(metadata, dict) else None
+		if merged_status is None and isinstance(status, str) and status:
+			merged_status = status
+		if merged_status_code is None and isinstance(status_code, str) and status_code:
+			merged_status_code = status_code
+		if merged_on_il is None and isinstance(on_il, bool):
+			merged_on_il = on_il
+
 	metadata = {
 		"source": "mixed",
 		"source_components": [source for source, payload in (("baseball_reference", baseball_reference), ("baseball_savant", savant)) if payload],
@@ -185,9 +206,18 @@ def _merge_player_records(
 			"baseball_savant": sv_metadata,
 		},
 	}
+	if isinstance(merged_source_player_id, str):
+		metadata["source_player_id"] = merged_source_player_id
+	if isinstance(merged_status, str):
+		metadata["status"] = merged_status
+	if isinstance(merged_status_code, str):
+		metadata["status_code"] = merged_status_code
+	if isinstance(merged_on_il, bool):
+		metadata["on_il"] = merged_on_il
 	active = bool(baseball_reference.get("active", True)) and bool(savant.get("active", True))
+	pitch_mix = savant.get("pitch_mix", {}) if isinstance(savant.get("pitch_mix"), dict) else {}
 
-	return {
+	merged_player = {
 		"name": baseball_reference.get("name") or savant.get("name"),
 		"role": role,
 		"active": active,
@@ -201,6 +231,9 @@ def _merge_player_records(
 		"samples": samples,
 		"metadata": metadata,
 	}
+	if pitch_mix:
+		merged_player["pitch_mix"] = {str(key): float(value) for key, value in sorted(pitch_mix.items())}
+	return merged_player
 
 
 def _ingest_from_mixed_manifest(manifest: IngestManifest) -> list[dict[str, Any]]:
