@@ -572,6 +572,86 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertEqual(pitcher["trait_lists"]["secondary_field_positions"], ["OF"])
         self.assertIn("arsenal_diversity", pitcher["metadata"]["ingest"]["estimated_metrics"]["current"])
 
+    def test_pitcher_csv_rows_for_non_pitchers_are_ignored(self) -> None:
+        roster_path = self.root / "position_player_roster.csv"
+        hitters_path = self.root / "position_player_hitters.csv"
+        pitchers_path = self.root / "position_player_pitchers.csv"
+        manifest_path = self.root / "position_player_manifest.json"
+
+        self._write_csv(
+            roster_path,
+            [
+                {
+                    "player_id": 990,
+                    "player_name": "Outfielder With Bad Pitching Row",
+                    "team": "DET",
+                    "age": 25,
+                    "position": "CF",
+                    "bats": "R",
+                    "throws": "R",
+                }
+            ],
+        )
+        self._write_csv(
+            hitters_path,
+            [
+                {
+                    "player_id": 990,
+                    "player_name": "Outfielder With Bad Pitching Row",
+                    "team": "DET",
+                    "position": "CF",
+                    "PA": 490,
+                    "ISO": 0.180,
+                    "HR": 18,
+                    "SLG": 0.440,
+                    "AVG": 0.271,
+                    "OBP": 0.333,
+                    "K %": 21.0,
+                    "Contact %": 77.0,
+                    "H": 132,
+                }
+            ],
+        )
+        self._write_csv(
+            pitchers_path,
+            [
+                {
+                    "player_id": 990,
+                    "player_name": "Outfielder With Bad Pitching Row",
+                    "team": "DET",
+                    "position": "CF",
+                    "BF": 140,
+                    "Pitches": 510,
+                    "BB %": 9.1,
+                }
+            ],
+        )
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "source": "baseball_savant",
+                    "seasons": {
+                        "current": {
+                            "year": 2025,
+                            "files": {
+                                "roster": roster_path.name,
+                                "hitters": hitters_path.name,
+                                "pitchers": pitchers_path.name,
+                            },
+                        }
+                    },
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        players = ingest_from_manifest(load_manifest(manifest_path))
+        outfielder = next(player for player in players if player["name"] == "Outfielder With Bad Pitching Row")
+
+        self.assertEqual(outfielder["role"], "hitter")
+        self.assertNotIn("weighted_bf", outfielder["samples"])
+
     def test_two_strike_contact_rate_is_ignored_from_hitter_csv(self) -> None:
         manifest = load_manifest(self.root / "manifest.json")
         players = ingest_from_manifest(manifest)

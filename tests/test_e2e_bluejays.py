@@ -32,6 +32,8 @@ if pytest is not None:
 
 TEAM_ID = 141
 TEAM_ABBREVIATION = "TOR"
+TIGERS_TEAM_ID = 116
+TIGERS_TEAM_ABBREVIATION = "DET"
 ROSTER_SEASON = 2026
 PRIMARY_STAT_SEASON = 2025
 FALLBACK_STAT_SEASON = 2026
@@ -68,15 +70,18 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
         except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError) as error:
             self.skipTest(f"Live MLB Stats API unavailable: {error}")
 
-        self._write_fixture_files()
+        manifest_path = self._write_fixture_files(
+            self.players,
+            team_abbreviation=TEAM_ABBREVIATION,
+            file_prefix="bluejays",
+            include_inactive=True,
+        )
 
         normalized_path = self.output / "tor_normalized.json"
         filtered_normalized_path = self.output / "tor_filtered_normalized.json"
         ratings_path = self.output / "tor_ratings.json"
         structured_path = self.output / "tor_structured"
         roster_path = self.output / "tor_roster.json"
-        manifest_path = self.exports / "bluejays_manifest.json"
-
         ingest_result = main(["ingest", str(manifest_path), str(normalized_path)])
         self.assertEqual(ingest_result, 0)
 
@@ -175,6 +180,53 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
         self.assertTrue(injured_slots)
         self.assertTrue(all(slot["player"]["name"] in injured_players for slot in injured_slots))
 
+    def test_detroit_tigers_ingest_rate_pipeline(self) -> None:
+        try:
+            players = fetch_team_players(
+                TIGERS_TEAM_ID,
+                team_abbreviation=TIGERS_TEAM_ABBREVIATION,
+                roster_season=ROSTER_SEASON,
+                primary_stat_season=PRIMARY_STAT_SEASON,
+                fallback_stat_season=FALLBACK_STAT_SEASON,
+                ssl_context=self.ssl_context,
+                min_players=22,
+            )
+        except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError) as error:
+            self.skipTest(f"Live MLB Stats API unavailable: {error}")
+
+        manifest_path = self._write_fixture_files(
+            players,
+            team_abbreviation=TIGERS_TEAM_ABBREVIATION,
+            file_prefix="tigers",
+            include_inactive=False,
+        )
+
+        filtered_normalized_path = self.output / "det_filtered_normalized.json"
+        ratings_path = self.output / "det_ratings.json"
+
+        ingest_rate_result = main(
+            [
+                "ingest-rate",
+                str(manifest_path),
+                str(ratings_path),
+                "--team",
+                TIGERS_TEAM_ABBREVIATION,
+                "--normalized-output",
+                str(filtered_normalized_path),
+            ]
+        )
+        self.assertEqual(ingest_rate_result, 0)
+
+        normalized_payload = json.loads(filtered_normalized_path.read_text(encoding="utf-8"))
+        normalized_players = normalized_payload["players"]
+        self.assertTrue(normalized_players)
+        self.assertTrue(all(player["team"] == TIGERS_TEAM_ABBREVIATION for player in normalized_players))
+
+        ratings_payload = json.loads(ratings_path.read_text(encoding="utf-8"))
+        self.assertTrue(ratings_payload)
+        self.assertTrue(all(player["team"] == TIGERS_TEAM_ABBREVIATION for player in ratings_payload))
+        self.assertTrue(all(1 <= player["overall_numeric"] <= 99 for player in ratings_payload if player["overall_numeric"] is not None))
+
     def _write_csv(self, path: Path, rows: list[dict[str, object]]) -> None:
         if not rows:
             raise ValueError("CSV fixtures require at least one row")
@@ -184,43 +236,59 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
             for row in rows:
                 writer.writerow(row)
 
-    def _write_fixture_files(self) -> None:
-        inactive_players = [self._inactive_player()]
+    def _write_fixture_files(
+        self,
+        players: list[dict[str, object]],
+        *,
+        team_abbreviation: str,
+        file_prefix: str,
+        include_inactive: bool,
+    ) -> Path:
+        inactive_players = [self._inactive_player()] if include_inactive else []
+        roster_file = self.exports / f"{file_prefix}_roster_2026.csv"
+        savant_hitters_file = self.exports / f"{file_prefix}_savant_hitters_2025.csv"
+        savant_pitchers_file = self.exports / f"{file_prefix}_savant_pitchers_2025.csv"
+        savant_fielding_file = self.exports / f"{file_prefix}_savant_fielding_2025.csv"
+        baseball_reference_hitters_file = self.exports / f"{file_prefix}_bref_hitters_2025.csv"
+        baseball_reference_pitchers_file = self.exports / f"{file_prefix}_bref_pitchers_2025.csv"
+        manifest_path = self.exports / f"{file_prefix}_manifest.json"
+
         self._write_csv(
-            self.exports / "bluejays_roster_2026.csv",
-            build_roster_rows(self.players, team_abbreviation=TEAM_ABBREVIATION),
+            roster_file,
+            build_roster_rows(players, team_abbreviation=team_abbreviation),
         )
         self._write_csv(
-            self.exports / "bluejays_savant_hitters_2025.csv",
-            build_savant_hitter_rows(self.players, team_abbreviation=TEAM_ABBREVIATION, extra_players=inactive_players),
+            savant_hitters_file,
+            build_savant_hitter_rows(players, team_abbreviation=team_abbreviation, extra_players=inactive_players),
         )
         self._write_csv(
-            self.exports / "bluejays_savant_pitchers_2025.csv",
-            build_savant_pitcher_rows(self.players, team_abbreviation=TEAM_ABBREVIATION),
+            savant_pitchers_file,
+            build_savant_pitcher_rows(players, team_abbreviation=team_abbreviation),
         )
         self._write_csv(
-            self.exports / "bluejays_savant_fielding_2025.csv",
-            build_savant_fielding_rows(self.players, team_abbreviation=TEAM_ABBREVIATION),
+            savant_fielding_file,
+            build_savant_fielding_rows(players, team_abbreviation=team_abbreviation),
         )
         self._write_csv(
-            self.exports / "bluejays_bref_hitters_2025.csv",
-            build_baseball_reference_hitter_rows(self.players, team_abbreviation=TEAM_ABBREVIATION, extra_players=inactive_players),
+            baseball_reference_hitters_file,
+            build_baseball_reference_hitter_rows(players, team_abbreviation=team_abbreviation, extra_players=inactive_players),
         )
         self._write_csv(
-            self.exports / "bluejays_bref_pitchers_2025.csv",
-            build_baseball_reference_pitcher_rows(self.players, team_abbreviation=TEAM_ABBREVIATION),
+            baseball_reference_pitchers_file,
+            build_baseball_reference_pitcher_rows(players, team_abbreviation=team_abbreviation),
         )
         manifest = build_mixed_source_manifest(
-            team_abbreviation=TEAM_ABBREVIATION,
+            team_abbreviation=team_abbreviation,
             roster_season=ROSTER_SEASON,
-            roster_file="bluejays_roster_2026.csv",
-            savant_hitters_file="bluejays_savant_hitters_2025.csv",
-            savant_pitchers_file="bluejays_savant_pitchers_2025.csv",
-            savant_fielding_file="bluejays_savant_fielding_2025.csv",
-            baseball_reference_hitters_file="bluejays_bref_hitters_2025.csv",
-            baseball_reference_pitchers_file="bluejays_bref_pitchers_2025.csv",
+            roster_file=roster_file.name,
+            savant_hitters_file=savant_hitters_file.name,
+            savant_pitchers_file=savant_pitchers_file.name,
+            savant_fielding_file=savant_fielding_file.name,
+            baseball_reference_hitters_file=baseball_reference_hitters_file.name,
+            baseball_reference_pitchers_file=baseball_reference_pitchers_file.name,
         )
-        (self.exports / "bluejays_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        return manifest_path
 
     def _inactive_player(self) -> dict[str, object]:
         return {

@@ -171,6 +171,19 @@ class SurfaceBlendTests(unittest.TestCase):
 
         self.assertEqual(resolved_projected_ip(player), 250.0)
 
+    def test_projected_ip_is_none_for_non_pitcher_even_with_pitcher_samples(self) -> None:
+        player = PlayerInput.from_dict(
+            {
+                "name": "Position Player With Bad Source Row",
+                "role": "hitter",
+                "team": "NYM",
+                "primary_position": "CF",
+                "samples": {"weighted_bf": {"current": 120}},
+            }
+        )
+
+        self.assertIsNone(resolved_projected_ip(player))
+
     def test_rate_players_surfaces_recommended_pitches_for_pitchers(self) -> None:
         outputs = rate_players(
             [
@@ -712,6 +725,61 @@ class SurfaceBlendTests(unittest.TestCase):
         self.assertIn("Elite CF", assigned)
         self.assertIn("Elite FK", assigned)
         self.assertIn("Elite SB", assigned)
+
+    def test_final_assigned_traits_enforce_total_and_elite_pitch_caps(self) -> None:
+        outputs = rate_players(
+            [
+                {
+                    "name": "Trait Cap Pitcher",
+                    "role": "pitcher",
+                    "team": "NYM",
+                    "primary_position": "P",
+                    "metrics": {
+                        "avg_fastball_velocity": 95.6,
+                        "peak_fastball_velocity": 97.9,
+                        "fastball_usage": 0.56,
+                        "swinging_strike_rate": 0.129,
+                        "chase_rate": 0.302,
+                        "movement_quality": 24.3,
+                        "stuff_metric": 128.0,
+                        "arsenal_diversity": 0.83,
+                        "weak_contact_rate": 0.65,
+                        "walk_rate": 0.071,
+                        "strike_pct": 0.661,
+                        "zone_pct": 0.492,
+                        "first_pitch_strike_pct": 0.628,
+                        "command_error_rate": 0.339,
+                    },
+                    "samples": {"weighted_bf": 695, "tracked_pitches": 2780, "tracked_fastballs": 1556},
+                    "trait_metrics": {
+                        "pitch_quality_2f": {"current": 84},
+                        "pitch_quality_cf": {"current": 85},
+                        "pitch_quality_fk": {"current": 86},
+                        "pitch_quality_sb": {"current": 83},
+                        "pressure_pitching": {"current": 82},
+                    },
+                },
+                self._pitcher_peer("Pitcher Peer 1", 95.0, 0.13, 0.30, 0.075),
+                self._pitcher_peer("Pitcher Peer 2", 93.5, 0.11, 0.28, 0.085),
+            ]
+        )
+
+        pitcher = next(output for output in outputs if output.name == "Trait Cap Pitcher")
+        elite_pitch_traits = {
+            "Elite 4F",
+            "Elite 2F",
+            "Elite CF",
+            "Elite CB",
+            "Elite CH",
+            "Elite FK",
+            "Elite SL",
+            "Elite SB",
+        }
+        assigned_names = [trait.name for trait in pitcher.assigned_traits]
+        elite_count = sum(name in elite_pitch_traits for name in assigned_names)
+
+        self.assertLessEqual(len(assigned_names), 2)
+        self.assertLessEqual(elite_count, 1)
 
     def test_pop_time_boosts_catcher_arm_rating(self) -> None:
         outputs = rate_players(

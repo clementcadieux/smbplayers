@@ -100,7 +100,8 @@ CONFIDENCE_WEIGHTS = {
 
 PERSONALITY_PERSONAL_WEIGHT = 0.70
 PERSONALITY_TEAM_WEIGHT = 0.30
-DEFAULT_FINAL_TRAIT_LIMIT = 3
+DEFAULT_FINAL_TRAIT_LIMIT = 2
+DEFAULT_MAX_ELITE_PITCH_TRAITS = 1
 
 
 TRAIT_CONFLICT_GROUPS = (
@@ -191,6 +192,45 @@ def load_trait_criteria_config() -> dict[str, object]:
     }
 
 
+def load_trait_limit_config() -> dict[str, object]:
+    try:
+        payload = json.loads(REFERENCE_PATH.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {
+            "max_traits_per_player": DEFAULT_FINAL_TRAIT_LIMIT,
+            "max_elite_pitch_traits": DEFAULT_MAX_ELITE_PITCH_TRAITS,
+            "elite_pitch_traits": set(),
+        }
+
+    limits_payload = payload.get("trait_limits", {})
+    if not isinstance(limits_payload, dict):
+        limits_payload = {}
+
+    try:
+        max_traits_per_player = int(limits_payload.get("max_traits_per_player", DEFAULT_FINAL_TRAIT_LIMIT))
+    except (TypeError, ValueError):
+        max_traits_per_player = DEFAULT_FINAL_TRAIT_LIMIT
+    try:
+        max_elite_pitch_traits = int(limits_payload.get("max_elite_pitch_traits", DEFAULT_MAX_ELITE_PITCH_TRAITS))
+    except (TypeError, ValueError):
+        max_elite_pitch_traits = DEFAULT_MAX_ELITE_PITCH_TRAITS
+
+    raw_elite_pitch_traits = payload.get("elite_pitch_traits", [])
+    elite_pitch_traits: set[str] = set()
+    if isinstance(raw_elite_pitch_traits, list):
+        elite_pitch_traits = {
+            str(item)
+            for item in raw_elite_pitch_traits
+            if isinstance(item, str) and str(item).strip()
+        }
+
+    return {
+        "max_traits_per_player": max(max_traits_per_player, 0),
+        "max_elite_pitch_traits": max(max_elite_pitch_traits, 0),
+        "elite_pitch_traits": elite_pitch_traits,
+    }
+
+
 def load_secondary_position_config() -> dict[str, object]:
     try:
         payload = json.loads(REFERENCE_PATH.read_text(encoding="utf-8"))
@@ -244,6 +284,7 @@ def load_secondary_position_config() -> dict[str, object]:
 CHEMISTRY_TYPES, TRAIT_CATALOG = load_trait_catalog()
 VOLUME_PROJECTION_CONFIG = load_volume_projection_config()
 TRAIT_CRITERIA_CONFIG = load_trait_criteria_config()
+TRAIT_LIMIT_CONFIG = load_trait_limit_config()
 SECONDARY_POSITION_CONFIG = load_secondary_position_config()
 
 
@@ -757,6 +798,12 @@ def resolved_projected_pa(player: PlayerInput) -> float | None:
 
 
 def resolved_projected_ip(player: PlayerInput) -> float | None:
+    primary_position = player.primary_position.strip().upper() if isinstance(player.primary_position, str) else None
+    if player.role not in {"pitcher", "two_way"}:
+        return None
+    if player.role == "pitcher" and primary_position != "P":
+        return None
+
     if player.projected_ip is not None:
         projected_ip = float(player.projected_ip)
     else:
@@ -1266,8 +1313,21 @@ def final_trait_limit(player: PlayerInput, explicit_count: int) -> int:
     if not isinstance(raw_limit, int):
         raw_limit = metadata_lookup(player.metadata, "trait_limit")
     if not isinstance(raw_limit, int):
-        raw_limit = DEFAULT_FINAL_TRAIT_LIMIT
+        raw_limit = int(TRAIT_LIMIT_CONFIG.get("max_traits_per_player", DEFAULT_FINAL_TRAIT_LIMIT))
     return max(raw_limit, explicit_count)
+
+
+def elite_pitch_trait_names() -> set[str]:
+    configured = TRAIT_LIMIT_CONFIG.get("elite_pitch_traits")
+    if isinstance(configured, set) and configured:
+        return set(configured)
+    if isinstance(configured, list):
+        return {str(item) for item in configured if isinstance(item, str) and str(item).strip()}
+    return {
+        trait_name
+        for trait_name in TRAIT_CATALOG
+        if isinstance(trait_name, str) and trait_name.startswith("Elite ")
+    }
 
 
 def top_personality_scores(output: RatingOutput) -> dict[str, float]:
@@ -1302,6 +1362,8 @@ def trim_traits_for_output(output: RatingOutput, player: PlayerInput) -> list[Tr
     explicit_names = explicit_trait_names(player)
     limit = final_trait_limit(player, len(explicit_names))
     personality_scores = top_personality_scores(output)
+    elite_trait_names = elite_pitch_trait_names()
+    max_elite_pitch_traits = int(TRAIT_LIMIT_CONFIG.get("max_elite_pitch_traits", DEFAULT_MAX_ELITE_PITCH_TRAITS))
 
     ordered_traits = sorted(
         all_traits,
@@ -1314,11 +1376,16 @@ def trim_traits_for_output(output: RatingOutput, player: PlayerInput) -> list[Tr
 
     selected: list[TraitSuggestion] = []
     selected_names: set[str] = set()
+    elite_pitch_count = 0
     for trait in ordered_traits:
         if len(selected) >= limit:
             break
         if trait_conflicts(selected_names, trait.name):
             continue
+        if trait.name in elite_trait_names:
+            if elite_pitch_count >= max_elite_pitch_traits:
+                continue
+            elite_pitch_count += 1
         selected.append(trait)
         selected_names.add(trait.name)
     return selected
