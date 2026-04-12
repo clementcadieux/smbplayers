@@ -105,3 +105,47 @@ Replace raw seasonal volume totals with a **per-day rate metric** (PA per active
 5. **Update tests:**
    - Add a test for a call-up scenario (partial season with high rate) and confirm the projected volume is closer to a full-season estimate than the raw total.
    - Confirm fallback to raw totals when `days_on_roster` is `None`.
+
+---
+
+## Issue #31 – Find and Ingest Data for More In-Depth Trait Allocations
+
+**Problem:** Many SMB4 traits that are not based purely on raw physical tools are currently unallocated or under-allocated. New data sources (or under-used columns from existing sources) should be identified and wired up. Additionally, a user-editable mapping table of criteria per trait should be created so non-developers can tune how each trait is awarded.
+
+### Steps
+
+1. **Audit existing traits vs. current data coverage:**
+   - Review every trait listed in `smb4_player_reference.json` and note which ones are currently populated vs. which are left empty or use only raw tool scores.
+   - Categorise un-covered traits by the kind of statistic needed (plate-discipline, contact direction, baserunning, pitch-command, etc.).
+
+2. **Identify candidate data columns in existing sources:**
+   - **Baseball Savant CSV:** Check for unused columns such as `xwoba`, `barrel_pct`, `hard_hit_pct`, `whiff_pct`, `chase_rate`, `z_contact_pct`, `sprint_speed`, `outs_above_average`, `arm_strength`, `pop_time`, etc.
+   - **Baseball Reference CSV:** Check for `BB%`, `K%`, `GB%`, `FB%`, `LD%`, `pull_pct`, `cent_pct`, `oppo_pct`, `SB`, `CS`, `DP`.
+   - Document which trait each column can inform.
+
+3. **Identify new external data sources (if gaps remain):**
+   - Statcast Sprint Speed leaderboard (baserunning traits: *Speed*, *Baserunning*).
+   - Statcast Pop Time / Arm Strength leaderboard (catcher traits: *Arm*, *Blocking*).
+   - Fangraphs plate-discipline splits (traits: *Eye*, *Avoid K*, *Contact*).
+   - Fangraphs batted-ball splits (traits: *Gap*, *Power*, *Pull*).
+   - Note each source's URL pattern and expected CSV schema in comments inside the relevant `ingest/` module.
+
+4. **Add a `trait_criteria` mapping table to `smb4_player_reference.json`:**
+   - For each trait, define a JSON object with:
+     - `description`: human-readable explanation of what the trait does in SMB4.
+     - `criteria`: an ordered list of threshold rules, each containing `stat` (column name), `operator` (`>=`, `<=`, `between`, etc.), `value` (or `[low, high]` for ranges), and `weight` (relative contribution when multiple criteria apply).
+     - `sources`: list of ingest modules that supply the required stats.
+   - Keep every threshold in this table so no magic numbers appear in Python code.
+
+5. **Update ingestion modules to parse newly identified columns:**
+   - In `savant.py` and/or `baseball_reference.py`, add parsing for each column identified in steps 2–3.
+   - Add corresponding optional fields to `PlayerInput` in `models.py` (all new fields should be `Optional` with a default of `None` to preserve backward compatibility).
+
+6. **Wire new stats into trait allocation in `engine.py`:**
+   - Read thresholds from the `trait_criteria` table in `smb4_player_reference.json` rather than hard-coding them.
+   - For each trait, iterate its `criteria` list: if the player's stat satisfies the rule, accumulate the weighted score; award the trait when the total exceeds a configurable minimum threshold.
+
+7. **Update tests:**
+   - Add unit tests confirming that a player with known plate-discipline stats receives the expected traits (e.g. high `bb_pct` → *Eye*).
+   - Add tests verifying the `trait_criteria` JSON is well-formed (all referenced `stat` fields exist in `PlayerInput`).
+   - Confirm that missing optional stats do not crash the engine (graceful skip).
