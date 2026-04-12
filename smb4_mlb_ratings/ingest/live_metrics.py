@@ -134,6 +134,42 @@ def hitter_power_platoon_delta(splits: Mapping[str, Mapping[str, float]]) -> flo
     return round(((_as_float(vs_left.get("iso")) or 0.0) - (_as_float(vs_right.get("iso")) or 0.0)) * 1000.0, 3)
 
 
+def hitter_split_score(split: Mapping[str, float]) -> float | None:
+    if not isinstance(split, Mapping):
+        return None
+    obp = _as_float(split.get("obp"))
+    slg = _as_float(split.get("slg"))
+    iso = _as_float(split.get("iso"))
+    strikeout_rate = _as_float(split.get("strikeout_rate"))
+    if None in (obp, slg, iso, strikeout_rate):
+        return None
+    ops = (obp or 0.0) + (slg or 0.0)
+    score = 50.0
+    score += (ops - 0.72) * 150.0
+    score += ((iso or 0.0) - 0.15) * 80.0
+    score += (0.22 - (strikeout_rate or 0.0)) * 80.0
+    return round(max(0.0, min(99.0, score)), 3)
+
+
+def derive_hitter_situational_metrics(splits: Mapping[str, Mapping[str, float]]) -> dict[str, float | None]:
+    first_pitch_score = hitter_split_score(splits.get("c00", {}))
+    risp_score = hitter_split_score(splits.get("risp", {}))
+    pressure_score = hitter_split_score(splits.get("lc", {}))
+    late_game_score = hitter_split_score(splits.get("ig07", {}))
+    trailing_score = hitter_split_score(splits.get("sbh", {}))
+    bases_empty_score = hitter_split_score(splits.get("r0", {}))
+    trailing_bases_empty_score = None
+    if trailing_score is not None and bases_empty_score is not None:
+        trailing_bases_empty_score = round(min(trailing_score, bases_empty_score), 3)
+    return {
+        "first_pitch_hitting": first_pitch_score,
+        "risp_hitting": risp_score,
+        "pressure_hitting": pressure_score,
+        "late_game_hitting": late_game_score,
+        "trailing_bases_empty_hitting": trailing_bases_empty_score,
+    }
+
+
 def pitcher_handedness_score(throws: str | None, splits: Mapping[str, Mapping[str, float]], *, split_type: str) -> float | None:
     if throws == "L":
         key = "vl" if split_type == "same" else "vr"

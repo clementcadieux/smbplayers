@@ -4,9 +4,11 @@ import unittest
 
 from smb4_mlb_ratings.ingest.live_metrics import (
     aggregate_split_stats,
+    derive_hitter_situational_metrics,
     game_log_days_on_roster,
     hitter_contact_platoon_delta,
     hitter_power_platoon_delta,
+    hitter_split_score,
     pitcher_handedness_gap,
     pitcher_handedness_score,
 )
@@ -47,6 +49,37 @@ class LiveMetricsTests(unittest.TestCase):
 
         self.assertEqual(hitter_contact_platoon_delta(splits), 42.0)
         self.assertEqual(hitter_power_platoon_delta(splits), 45.0)
+
+    def test_hitter_split_score_rewards_strong_contextual_hitting(self) -> None:
+        score = hitter_split_score({"obp": 0.380, "slg": 0.520, "iso": 0.190, "strikeout_rate": 0.17})
+
+        self.assertIsNotNone(score)
+        self.assertGreater(score or 0.0, 65.0)
+
+    def test_derive_hitter_situational_metrics_uses_official_split_codes(self) -> None:
+        metrics = derive_hitter_situational_metrics(
+            {
+                "c00": {"obp": 0.360, "slg": 0.500, "iso": 0.180, "strikeout_rate": 0.18},
+                "risp": {"obp": 0.390, "slg": 0.540, "iso": 0.210, "strikeout_rate": 0.17},
+                "lc": {"obp": 0.350, "slg": 0.480, "iso": 0.170, "strikeout_rate": 0.19},
+                "ig07": {"obp": 0.340, "slg": 0.470, "iso": 0.165, "strikeout_rate": 0.20},
+                "sbh": {"obp": 0.365, "slg": 0.505, "iso": 0.185, "strikeout_rate": 0.18},
+                "r0": {"obp": 0.355, "slg": 0.495, "iso": 0.175, "strikeout_rate": 0.19},
+            }
+        )
+
+        self.assertIsNotNone(metrics["first_pitch_hitting"])
+        self.assertIsNotNone(metrics["risp_hitting"])
+        self.assertIsNotNone(metrics["pressure_hitting"])
+        self.assertIsNotNone(metrics["late_game_hitting"])
+        self.assertEqual(
+            metrics["trailing_bases_empty_hitting"],
+            min(
+                hitter_split_score({"obp": 0.365, "slg": 0.505, "iso": 0.185, "strikeout_rate": 0.18}) or 0.0,
+                hitter_split_score({"obp": 0.355, "slg": 0.495, "iso": 0.175, "strikeout_rate": 0.19}) or 0.0,
+            ),
+        )
+        self.assertLessEqual(metrics["trailing_bases_empty_hitting"] or 0.0, metrics["first_pitch_hitting"] or 99.0)
 
     def test_pitcher_handedness_metrics_are_relative_to_throwing_hand(self) -> None:
         splits = {

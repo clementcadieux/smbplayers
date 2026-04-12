@@ -58,6 +58,13 @@ class LiveTeamDataTests(unittest.TestCase):
             "slg": "0.502",
             "advanced_hitting": {"iso": "0.222", "totalSwings": 700, "swingAndMisses": 140},
             "savant_hitting_summary": {"zone_contact_pct": 88.4, "out_of_zone_contact_pct": 61.2},
+            "situational_hitting_metrics": {
+                "first_pitch_hitting": 72.5,
+                "risp_hitting": 76.0,
+                "pressure_hitting": 67.0,
+                "late_game_hitting": 64.5,
+                "trailing_bases_empty_hitting": 68.0,
+            },
             "hitting_handedness_splits": {
                 "vl": {"avg": 0.300, "iso": 0.240, "strikeout_rate": 0.18},
                 "vr": {"avg": 0.260, "iso": 0.180, "strikeout_rate": 0.24},
@@ -112,6 +119,11 @@ class LiveTeamDataTests(unittest.TestCase):
         self.assertEqual(savant_hitter_rows[0]["Contact %"], 80.0)
         self.assertEqual(savant_hitter_rows[0]["z_contact_pct"], 88.4)
         self.assertEqual(savant_hitter_rows[0]["o_contact_pct"], 61.2)
+        self.assertEqual(savant_hitter_rows[0]["first_pitch_hitting"], 72.5)
+        self.assertEqual(savant_hitter_rows[0]["risp_hitting"], 76.0)
+        self.assertEqual(savant_hitter_rows[0]["pressure_hitting"], 67.0)
+        self.assertEqual(savant_hitter_rows[0]["late_game_hitting"], 64.5)
+        self.assertEqual(savant_hitter_rows[0]["trailing_bases_empty_hitting"], 68.0)
         self.assertGreater(bref_pitcher_rows[0]["Same Handed Pitching"], bref_pitcher_rows[0]["Opposite Handed Pitching"])
         self.assertIn("Pitch Quality SL", savant_pitcher_rows[0])
         self.assertEqual(savant_pitcher_rows[0]["Strike %"], 65.4)

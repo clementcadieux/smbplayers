@@ -8,6 +8,7 @@ from urllib.request import Request, urlopen
 
 from .live_metrics import (
     aggregate_split_stats,
+    derive_hitter_situational_metrics,
     game_log_days_on_roster,
     hitter_contact_platoon_delta,
     hitter_power_platoon_delta,
@@ -160,6 +161,7 @@ def build_savant_hitter_rows(
         advanced = player.get("advanced_hitting") if isinstance(player.get("advanced_hitting"), Mapping) else {}
         hitting_splits = player.get("hitting_handedness_splits") if isinstance(player.get("hitting_handedness_splits"), Mapping) else {}
         savant_hitting_summary = player.get("savant_hitting_summary") if isinstance(player.get("savant_hitting_summary"), Mapping) else {}
+        situational_hitting_metrics = player.get("situational_hitting_metrics") if isinstance(player.get("situational_hitting_metrics"), Mapping) else {}
         total_swings = _as_int(advanced.get("totalSwings"))
         swing_and_misses = _as_int(advanced.get("swingAndMisses"))
         contact_pct = None
@@ -182,6 +184,11 @@ def build_savant_hitter_rows(
                 "Contact %": contact_pct,
                 "z_contact_pct": savant_hitting_summary.get("zone_contact_pct"),
                 "o_contact_pct": savant_hitting_summary.get("out_of_zone_contact_pct"),
+                "first_pitch_hitting": situational_hitting_metrics.get("first_pitch_hitting"),
+                "risp_hitting": situational_hitting_metrics.get("risp_hitting"),
+                "pressure_hitting": situational_hitting_metrics.get("pressure_hitting"),
+                "late_game_hitting": situational_hitting_metrics.get("late_game_hitting"),
+                "trailing_bases_empty_hitting": situational_hitting_metrics.get("trailing_bases_empty_hitting"),
                 "2B": player.get("doubles"),
                 "3B": player.get("triples"),
                 "SB": player.get("stolen_bases"),
@@ -409,6 +416,14 @@ def _fetch_roster_player(
             ssl_context=ssl_context,
             baseball_savant=baseball_savant,
         )
+        situational_hitting_splits = _fetch_situation_splits(
+            player_id,
+            stat_group,
+            codes=("c00", "risp", "lc", "ig07", "sbh", "r0"),
+            seasons=seasons,
+            ssl_context=ssl_context,
+            mlb_stats_api=mlb_stats_api,
+        )
         plate_appearances = _as_int(stats.get("plateAppearances")) or 0
         if plate_appearances == 0:
             return None
@@ -430,6 +445,7 @@ def _fetch_roster_player(
                 "slg": _as_str(stats.get("slg")) or "0.000",
                 "advanced_hitting": advanced_stats,
                 "savant_hitting_summary": savant_hitting_summary,
+                "situational_hitting_metrics": derive_hitter_situational_metrics(situational_hitting_splits),
                 "hitting_handedness_splits": handedness_splits,
             }
         )
@@ -596,6 +612,39 @@ def _fetch_handedness_splits(
     for season in seasons:
         splits_by_code: dict[str, dict[str, float]] = {}
         for split_code in ("vl", "vr"):
+            payload = _fetch_json(
+                f"{mlb_stats_api}/people/{player_id}/stats?stats=statSplits&group={group}&season={season}&sitCodes={split_code}",
+                ssl_context=ssl_context,
+            )
+            stats = payload.get("stats", [])
+            if not isinstance(stats, list) or not stats:
+                continue
+            first_stats = stats[0]
+            if not isinstance(first_stats, Mapping):
+                continue
+            splits = first_stats.get("splits", [])
+            if not isinstance(splits, list) or not splits:
+                continue
+            aggregated = aggregate_split_stats(group, splits)
+            if aggregated:
+                splits_by_code[split_code] = aggregated
+        if splits_by_code:
+            return splits_by_code
+    return {}
+
+
+def _fetch_situation_splits(
+    player_id: int,
+    group: str,
+    *,
+    codes: tuple[str, ...],
+    seasons: tuple[int, int],
+    ssl_context: SSLContext | None,
+    mlb_stats_api: str,
+) -> dict[str, dict[str, float]]:
+    for season in seasons:
+        splits_by_code: dict[str, dict[str, float]] = {}
+        for split_code in codes:
             payload = _fetch_json(
                 f"{mlb_stats_api}/people/{player_id}/stats?stats=statSplits&group={group}&season={season}&sitCodes={split_code}",
                 ssl_context=ssl_context,
