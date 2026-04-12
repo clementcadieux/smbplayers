@@ -12,6 +12,8 @@ from smb4_mlb_ratings.ingest.live_team_data import (
     build_savant_fielding_rows,
     build_savant_hitter_rows,
     build_savant_pitcher_rows,
+    parse_savant_fielding_run_value_csv,
+    parse_savant_oaa_csv,
     parse_savant_statcast_summary,
 )
 
@@ -208,6 +210,59 @@ class LiveTeamDataTests(unittest.TestCase):
         self.assertEqual(rows[0]["player_id"], 672386)
         self.assertEqual(rows[0]["DRS"], 8.0)
         self.assertEqual(rows[0]["UZR"], 6.4)
+
+    def test_parse_savant_fielding_run_value_csv_extracts_components(self) -> None:
+        payload = """Player,Team,Fielding Run Value,Range,Arm,Framing,Throwing\nAlejandro Kirk,TOR,6,1,0,4,1\n"""
+
+        rows = parse_savant_fielding_run_value_csv(payload)
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["name"], "Alejandro Kirk")
+        self.assertEqual(rows[0]["team"], "TOR")
+        self.assertEqual(rows[0]["fielding_run_value"], 6.0)
+        self.assertEqual(rows[0]["range_runs"], 1.0)
+        self.assertEqual(rows[0]["framing_runs"], 4.0)
+
+    def test_parse_savant_oaa_csv_extracts_oaa_and_runs_prevented(self) -> None:
+        payload = """Player,Team,Runs Prevented,OAA\nAlejandro Kirk,TOR,5,4\n"""
+
+        rows = parse_savant_oaa_csv(payload)
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["name"], "Alejandro Kirk")
+        self.assertEqual(rows[0]["team"], "TOR")
+        self.assertEqual(rows[0]["runs_prevented"], 5.0)
+        self.assertEqual(rows[0]["oaa"], 4.0)
+
+    def test_build_fangraphs_fielding_rows_uses_savant_fallback_when_fangraphs_missing(self) -> None:
+        players = [
+            {
+                "player_id": 672386,
+                "name": "Alejandro Kirk",
+                "team": "TOR",
+                "type": "hitter",
+                "position": "C",
+            }
+        ]
+        savant_frv_payload = """Player,Team,Fielding Run Value,Range,Arm,Framing,Throwing\nAlejandro Kirk,TOR,6,1,0,4,1\n"""
+        savant_oaa_payload = """Player,Team,Runs Prevented,OAA\nAlejandro Kirk,TOR,5,4\n"""
+
+        rows = build_fangraphs_fielding_rows(
+            players,
+            team_abbreviation="TOR",
+            season=2025,
+            csv_payload="",
+            savant_fielding_run_value_payload=savant_frv_payload,
+            savant_oaa_payload=savant_oaa_payload,
+        )
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["player_id"], 672386)
+        self.assertEqual(rows[0]["DRS"], 6.0)
+        self.assertEqual(rows[0]["UZR"], 1.0)
+        self.assertEqual(rows[0]["OAA"], 4.0)
+        self.assertEqual(rows[0]["Framing Runs"], 4.0)
+        self.assertEqual(rows[0]["Catcher Throw Value"], 1.0)
 
 
 if __name__ == "__main__":
