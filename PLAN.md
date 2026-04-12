@@ -71,6 +71,67 @@
 
 ---
 
+## Issue #66 – Missing Metrics for Pitchers That Should Be Available
+
+**Problem:** The engine references `first_pitch_strike_pct`, `zone_pct`, `chase_rate`, and `movement_quality` as pitcher composites, but these fields are currently absent or unreliable in the ingested data. At least partial equivalents are available on Baseball Savant and/or Baseball Reference.
+
+### Steps
+
+1. **Audit available columns in Savant pitcher exports:**
+   - Review the Statcast pitcher leaderboard CSV headers for columns that map to `first_pitch_strike_pct` (e.g. `f_strike_pct`), `zone_pct` (e.g. `zone_pct` directly), `chase_rate` (e.g. `oz_swing_pct`), and `movement_quality` (derived from `pfx_x`/`pfx_z` or `movement_plus`).
+   - Confirm which column names appear in practice versus what `_pick_number` currently tries.
+
+2. **Extend `savant.py` fallback aliases:**
+   - Add any missing column-name aliases to the `_pick_number` calls for each of the four metrics inside `_parse_pitcher_savant_row` (or the equivalent pitcher-row parser).
+   - For `movement_quality`, if no direct column is present, keep the existing derived formula (`|horizontal_break| + |induced_vertical_break|`) but expose the flag so callers can see it is estimated.
+
+3. **Add Baseball Reference fallbacks:**
+   - For `first_pitch_strike_pct` and `zone_pct`, check whether Baseball Reference standard pitching CSVs expose a usable proxy (e.g. `F-Strike%`, `Zone%`) and parse them in `baseball_reference.py` if so.
+   - Merge the Baseball Reference values into `PlayerInput.metrics` only when the Savant value is missing.
+
+4. **Update normalisation bounds in `smb4_player_reference.json`:**
+   - Ensure `normalization_bounds` has entries for all four metrics with realistic MLB ranges (e.g. `zone_pct`: 40–55 %, `chase_rate`: 25–40 %, `first_pitch_strike_pct`: 55–70 %, `movement_quality` composite: tuned to typical pfx magnitude).
+
+5. **Update `PlayerInput` / `PlayerOutput` models if needed:**
+   - If any of the four metrics are not already declared as optional fields in `models.py`, add them.
+
+6. **Add / update tests:**
+   - Add a unit test that provides a synthetic Savant CSV row containing the new column aliases and asserts that all four metrics are parsed and non-None.
+   - Add a test confirming that, with the metrics populated, the corresponding pitcher composite scores (`junk`, `accuracy`) are non-zero.
+
+---
+
+## Issue #67 – Elite Pitch Traits Almost Never Appear
+
+**Problem:** Elite pitch traits (`Elite 4F`, `Elite CB`, etc.) are absent from rated players even when pitch run-value scores are high. The trait selection pipeline scores and caps elite-pitch traits correctly in isolation, but something upstream prevents them from reaching `high`/`medium` confidence in practice.
+
+### Steps
+
+1. **Trace the elite-pitch scoring path:**
+   - In `engine.py`, locate `_savant_pitch_quality_score` (used in issue #56) and verify that `rv_score` is actually being merged into `savant_pitch_details` before trait evaluation runs.
+   - Confirm that `_assign_pitch_traits` reads `savant_pitch_details` and that the resulting `TraitSuggestion` for each pitch type reaches `all_player_traits`.
+
+2. **Check confidence thresholds:**
+   - Identify the minimum quality score or percentile that yields `high` confidence for an elite-pitch trait; compare against the score range produced by real or synthetic pitch data.
+   - If the threshold is too high (e.g. requires a perfect 100-percentile score), lower it to match what a genuinely elite pitch produces (top 10–15 % of the population).
+
+3. **Verify `elite_pitch_traits` set configuration:**
+   - Confirm that `smb4_player_reference.json`'s `elite_pitch_traits` list matches the trait names emitted by the pitch-trait assignment code exactly (case-sensitive).
+   - If there is a mismatch, align the names.
+
+4. **Fix the `trim_traits_for_output` priority:**
+   - In `final_trait_priority`, check whether elite-pitch traits receive a high enough base score to survive the global 2-trait cap.
+   - If they are consistently outscored by non-pitch traits (e.g. `Contact Hitter`, `Power Hitter`), add a dedicated priority bonus for elite-pitch traits for pitchers, similar to the `explicit_names` bonus.
+
+5. **Update `smb4_player_reference.json` normalisation bounds for pitch quality:**
+   - If the `rv_score` normalisation range is too narrow or miscalibrated, widen it so that strong run values (e.g. −2 runs/100 pitches) clearly map to high percentiles.
+
+6. **Add regression tests:**
+   - Add a test with a pitcher whose `savant_pitch_details` contains an elite-grade pitch (high velocity + strong run value + high whiff rate) and assert that at least one `Elite *` trait appears in the final output.
+   - Add a test confirming the 1-elite-pitch-trait cap is still respected when two pitches both qualify as elite.
+
+---
+
 ## Issue #64 – Outsized Focus on Current 2026 Minimal Sample Size
 
 **Problem:** The current ratings over-weight the 2026 season, which has a very small sample size. The 2025 full-season data should carry significantly more weight. The general rule: half a season's worth of current-year data should equal one full prior season in importance.
