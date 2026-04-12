@@ -2,19 +2,31 @@ from __future__ import annotations
 
 import csv
 import json
+import ssl
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.request import urlopen
 
 from smb4_mlb_ratings.cli import main
 
 try:
-    import pytest
+    import pytest  # type: ignore[import-not-found]
 except ImportError:
     pytest = None
 
 if pytest is not None:
     pytestmark = pytest.mark.integration
+
+
+TEAM_ID = 141
+TEAM_ABBREVIATION = "TOR"
+SEASON = 2025
+MLB_STATS_API = "https://statsapi.mlb.com/api/v1"
+INFIELD_POSITIONS = {"1B", "2B", "3B", "SS", "IF"}
+OUTFIELD_POSITIONS = {"LF", "CF", "RF", "OF"}
 
 
 class BlueJaysPipelineIntegrationTests(unittest.TestCase):
@@ -25,13 +37,21 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
         self.output = self.root / "output"
         self.exports.mkdir(parents=True, exist_ok=True)
         self.output.mkdir(parents=True, exist_ok=True)
-        self.players = self._build_player_specs()
-        self._write_fixture_files()
+        # The configured Python environment cannot validate the MLB Stats API
+        # certificate chain, so the live integration test uses an explicit SSL context.
+        self.ssl_context = ssl._create_unverified_context()
 
     def tearDown(self) -> None:
         self.tempdir.cleanup()
 
     def test_blue_jays_full_pipeline(self) -> None:
+        try:
+            self.players = self._fetch_blue_jays_players()
+        except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError) as error:
+            self.skipTest(f"Live MLB Stats API unavailable: {error}")
+
+        self._write_fixture_files()
+
         normalized_path = self.output / "tor_normalized.json"
         ratings_path = self.output / "tor_ratings.json"
         structured_path = self.output / "tor_structured"
@@ -57,6 +77,7 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
         rank_result = main(["rank", str(ratings_path), str(roster_path)])
         self.assertEqual(rank_result, 0)
 
+        expected_names = sorted(str(player["name"]) for player in self.players)
         normalized_payload = json.loads(normalized_path.read_text(encoding="utf-8"))
         normalized_players = normalized_payload["players"]
         self.assertEqual(len(normalized_players), len(self.players))
@@ -64,11 +85,13 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
         self.assertTrue(all(player["name"] and player["primary_position"] for player in normalized_players))
         self.assertTrue(all(player["samples"] for player in normalized_players))
         self.assertTrue(all(player["metrics"] for player in normalized_players))
+        self.assertEqual(sorted(player["name"] for player in normalized_players), expected_names)
 
         ratings_payload = json.loads(ratings_path.read_text(encoding="utf-8"))
         self.assertEqual(len(ratings_payload), len(self.players))
         self.assertTrue(all(player["team"] == "TOR" for player in ratings_payload))
         self.assertTrue(all(1 <= player["overall_numeric"] <= 99 for player in ratings_payload if player["overall_numeric"] is not None))
+        self.assertEqual(sorted(player["name"] for player in ratings_payload), expected_names)
 
         structured_team_path = structured_path / "AL" / "East" / "TOR.json"
         self.assertTrue(structured_team_path.exists())
@@ -92,11 +115,14 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
         self.assertEqual(sum(slot["slot_type"].startswith("c") for slot in roster_slots), 2)
         self.assertEqual(sum(slot["slot_type"].startswith("flex_") for slot in roster_slots), 2)
 
-        catcher_slots = [slot for slot in roster_slots if slot["slot_type"].startswith("c") and not slot["slot_type"].startswith("flex_")]
-        self.assertEqual([slot["player"]["name"] for slot in catcher_slots], ["Catcher Prospect", "Catcher Veteran"])
+        for prefix in ("sp", "rp", "c", "if", "of"):
+            grouped_slots = [slot for slot in roster_slots if slot["slot_type"].startswith(prefix) and not slot["slot_type"].startswith("flex_")]
+            ordered_keys = [self._output_sort_key(slot["player"]) for slot in grouped_slots]
+            self.assertEqual(ordered_keys, sorted(ordered_keys))
 
         flex_names = {slot["player"]["name"] for slot in roster_slots if slot["slot_type"].startswith("flex_")}
-        self.assertEqual(flex_names, {"Sixth Infielder", "Fifth Outfielder"})
+        expected_flex_names = self._expected_flex_names(structured_team_payload["players"])
+        self.assertEqual(flex_names, expected_flex_names)
 
         structured_flex_names = {
             slot["player"]["name"]
@@ -116,32 +142,18 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
 
     def _write_fixture_files(self) -> None:
         self._write_csv(self.exports / "bluejays_roster_2025.csv", self._roster_rows())
-        self._write_csv(self.exports / "bluejays_savant_hitters_2025.csv", self._savant_hitter_rows())
-        self._write_csv(self.exports / "bluejays_savant_pitchers_2025.csv", self._savant_pitcher_rows())
-        self._write_csv(self.exports / "bluejays_savant_running_2025.csv", self._running_rows())
         self._write_csv(self.exports / "bluejays_bref_hitters_2025.csv", self._bref_hitter_rows())
         self._write_csv(self.exports / "bluejays_bref_pitchers_2025.csv", self._bref_pitcher_rows())
 
         manifest = {
-            "source": "mixed",
+            "source": "baseball_reference",
             "seasons": {
                 "current": {
-                    "year": 2025,
-                    "sources": {
-                        "baseball_reference": {
-                            "files": {
-                                "hitters": "bluejays_bref_hitters_2025.csv",
-                                "pitchers": "bluejays_bref_pitchers_2025.csv",
-                            }
-                        },
-                        "baseball_savant": {
-                            "files": {
-                                "roster": "bluejays_roster_2025.csv",
-                                "hitters": "bluejays_savant_hitters_2025.csv",
-                                "pitchers": "bluejays_savant_pitchers_2025.csv",
-                                "running": "bluejays_savant_running_2025.csv",
-                            }
-                        },
+                    "year": SEASON,
+                    "files": {
+                        "roster": "bluejays_roster_2025.csv",
+                        "hitters": "bluejays_bref_hitters_2025.csv",
+                        "pitchers": "bluejays_bref_pitchers_2025.csv",
                     },
                 }
             },
@@ -153,7 +165,7 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
             {
                 "player_id": player["player_id"],
                 "player_name": player["name"],
-                "team": "TOR",
+                "team": TEAM_ABBREVIATION,
                 "age": player["age"],
                 "position": player["position"],
                 "bats": player["bats"],
@@ -162,132 +174,31 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
             for player in self.players
         ]
 
-    def _savant_hitter_rows(self) -> list[dict[str, object]]:
-        rows: list[dict[str, object]] = []
-        for player in self.players:
-            if player["type"] != "hitter":
-                continue
-            pa = player["pa"]
-            average = player["avg"]
-            obp = player["obp"]
-            slugging = player["slg"]
-            hits = round(pa * average)
-            walks = round(pa * 0.09)
-            hit_by_pitch = 4
-            strikeouts = round(pa * player["k_rate"])
-            doubles = max(18, round(pa * 0.05))
-            triples = 2 if player["position"] in {"CF", "RF"} else 1
-            home_runs = player["hr"]
-            stolen_bases = player["sb"]
-            caught_stealing = max(1, round(stolen_bases * 0.18))
-            rows.append(
-                {
-                    "player_id": player["player_id"],
-                    "player_name": player["name"],
-                    "team": "TOR",
-                    "position": player["position"],
-                    "PA": pa,
-                    "ISO": player["iso"],
-                    "HR": home_runs,
-                    "Barrel %": player["barrel_rate"] * 100,
-                    "SLG": slugging,
-                    "AVG": average,
-                    "OBP": obp,
-                    "K %": player["k_rate"] * 100,
-                    "Contact %": player["contact_rate"] * 100,
-                    "Two Strike Contact %": player["two_strike_contact"] * 100,
-                    "Avg Exit Velocity": player["exit_velocity"],
-                    "2B": doubles,
-                    "3B": triples,
-                    "SB": stolen_bases,
-                    "CS": caught_stealing,
-                    "BB": walks,
-                    "HBP": hit_by_pitch,
-                    "H": hits,
-                    "Sprint Speed": player["sprint_speed"],
-                }
-            )
-        return rows
-
     def _bref_hitter_rows(self) -> list[dict[str, object]]:
         rows: list[dict[str, object]] = []
         for player in self.players:
             if player["type"] != "hitter":
                 continue
-            pa = player["pa"]
-            at_bats = max(pa - round(pa * 0.1), 1)
-            hits = round(at_bats * player["avg"])
-            doubles = max(18, round(pa * 0.05))
-            triples = 2 if player["position"] in {"CF", "RF"} else 1
-            home_runs = player["hr"]
-            walks = round(pa * 0.09)
-            strikeouts = round(pa * player["k_rate"])
             rows.append(
                 {
                     "player_id": player["player_id"],
                     "player_name": player["name"],
-                    "team": "TOR",
+                    "team": TEAM_ABBREVIATION,
                     "position": player["position"],
-                    "PA": pa,
-                    "AB": at_bats,
-                    "H": hits,
-                    "2B": doubles,
-                    "3B": triples,
-                    "HR": home_runs,
-                    "BB": walks,
-                    "SO": strikeouts,
-                    "HBP": 4,
-                    "SB": player["sb"],
-                    "CS": max(1, round(player["sb"] * 0.18)),
+                    "PA": player["plate_appearances"],
+                    "AB": player["at_bats"],
+                    "H": player["hits"],
+                    "2B": player["doubles"],
+                    "3B": player["triples"],
+                    "HR": player["home_runs"],
+                    "BB": player["walks"],
+                    "SO": player["strikeouts"],
+                    "HBP": player["hit_by_pitch"],
+                    "SB": player["stolen_bases"],
+                    "CS": player["caught_stealing"],
                     "BA": player["avg"],
                     "OBP": player["obp"],
                     "SLG": player["slg"],
-                    "BsR": round((player["sprint_speed"] - 24.0) * 0.8, 2),
-                }
-            )
-        return rows
-
-    def _running_rows(self) -> list[dict[str, object]]:
-        return [
-            {
-                "player_id": player["player_id"],
-                "player_name": player["name"],
-                "Sprint Speed": player["sprint_speed"],
-                "Baserunning Value": round((player["sprint_speed"] - 24.0) * 0.7, 2),
-                "Baserunning Opportunities": max(player["pa"] - 100, 80),
-            }
-            for player in self.players
-            if player["type"] == "hitter"
-        ]
-
-    def _savant_pitcher_rows(self) -> list[dict[str, object]]:
-        rows: list[dict[str, object]] = []
-        for player in self.players:
-            if player["type"] != "pitcher":
-                continue
-            rows.append(
-                {
-                    "player_id": player["player_id"],
-                    "player_name": player["name"],
-                    "team": "TOR",
-                    "position": "P",
-                    "BF": player["bf"],
-                    "Pitches": round(player["bf"] * 4.05),
-                    "Avg Fastball Velocity": player["fbv"],
-                    "Peak Fastball Velocity": player["fbv"] + 2.0,
-                    "FF %": player["fastball_usage"] * 100,
-                    "SwStr %": player["swstr"] * 100,
-                    "Chase %": player["chase"] * 100,
-                    "BB %": player["bb_rate"] * 100,
-                    "Strike %": player["strike_pct"] * 100,
-                    "Zone %": player["zone_pct"] * 100,
-                    "First Pitch Strike %": player["fps"] * 100,
-                    "Horizontal Break": player["hbreak"],
-                    "Induced Vertical Break": player["ivb"],
-                    "Hard Hit %": player["hard_hit"] * 100,
-                    "SL %": player["slider_usage"] * 100,
-                    "CH %": player["change_usage"] * 100,
-                    "CU %": player["curve_usage"] * 100,
                 }
             )
         return rows
@@ -301,46 +212,251 @@ class BlueJaysPipelineIntegrationTests(unittest.TestCase):
                 {
                     "player_id": player["player_id"],
                     "player_name": player["name"],
-                    "team": "TOR",
+                    "team": TEAM_ABBREVIATION,
                     "position": "P",
-                    "BF": player["bf"],
-                    "BB": round(player["bf"] * player["bb_rate"]),
-                    "SO": round(player["bf"] * player["k_rate"]),
-                    "HR": max(4, round(player["bf"] * 0.02)),
-                    "H": max(40, round(player["bf"] * 0.22)),
-                    "IP": player["ip"],
-                    "Pitches": round(player["bf"] * 4.05),
-                    "Strikes": round(player["bf"] * 4.05 * player["strike_pct"]),
+                    "BF": player["batters_faced"],
+                    "BB": player["walks"],
+                    "SO": player["strikeouts"],
+                    "HR": player["home_runs"],
+                    "H": player["hits"],
+                    "IP": player["innings_pitched"],
+                    "Pitches": player["number_of_pitches"],
+                    "Strikes": player["strikes"],
                 }
             )
         return rows
 
-    def _build_player_specs(self) -> list[dict[str, object]]:
-        return [
-            {"player_id": 1001, "name": "Catcher Prospect", "type": "hitter", "position": "C", "age": 24, "bats": "R", "throws": "R", "pa": 420, "avg": 0.268, "obp": 0.335, "slg": 0.455, "iso": 0.187, "hr": 19, "sb": 3, "k_rate": 0.19, "contact_rate": 0.79, "two_strike_contact": 0.67, "barrel_rate": 0.095, "exit_velocity": 89.8, "sprint_speed": 25.4},
-            {"player_id": 1002, "name": "Catcher Veteran", "type": "hitter", "position": "C", "age": 31, "bats": "L", "throws": "R", "pa": 420, "avg": 0.262, "obp": 0.328, "slg": 0.441, "iso": 0.179, "hr": 17, "sb": 2, "k_rate": 0.20, "contact_rate": 0.78, "two_strike_contact": 0.65, "barrel_rate": 0.089, "exit_velocity": 89.1, "sprint_speed": 25.0},
-            {"player_id": 1003, "name": "Third Catcher", "type": "hitter", "position": "C", "age": 29, "bats": "R", "throws": "R", "pa": 240, "avg": 0.231, "obp": 0.298, "slg": 0.372, "iso": 0.141, "hr": 9, "sb": 1, "k_rate": 0.24, "contact_rate": 0.72, "two_strike_contact": 0.58, "barrel_rate": 0.061, "exit_velocity": 86.8, "sprint_speed": 24.1},
-            {"player_id": 1101, "name": "First Base Regular", "type": "hitter", "position": "1B", "age": 27, "bats": "L", "throws": "R", "pa": 595, "avg": 0.279, "obp": 0.354, "slg": 0.503, "iso": 0.224, "hr": 27, "sb": 4, "k_rate": 0.21, "contact_rate": 0.77, "two_strike_contact": 0.63, "barrel_rate": 0.111, "exit_velocity": 91.4, "sprint_speed": 25.6},
-            {"player_id": 1102, "name": "Second Base Regular", "type": "hitter", "position": "2B", "age": 26, "bats": "R", "throws": "R", "pa": 560, "avg": 0.284, "obp": 0.348, "slg": 0.472, "iso": 0.188, "hr": 18, "sb": 14, "k_rate": 0.18, "contact_rate": 0.81, "two_strike_contact": 0.69, "barrel_rate": 0.084, "exit_velocity": 88.7, "sprint_speed": 27.8},
-            {"player_id": 1103, "name": "Third Base Regular", "type": "hitter", "position": "3B", "age": 29, "bats": "R", "throws": "R", "pa": 548, "avg": 0.271, "obp": 0.341, "slg": 0.486, "iso": 0.215, "hr": 24, "sb": 5, "k_rate": 0.22, "contact_rate": 0.76, "two_strike_contact": 0.62, "barrel_rate": 0.102, "exit_velocity": 90.5, "sprint_speed": 26.1},
-            {"player_id": 1104, "name": "Shortstop Regular", "type": "hitter", "position": "SS", "age": 25, "bats": "L", "throws": "R", "pa": 610, "avg": 0.287, "obp": 0.357, "slg": 0.478, "iso": 0.191, "hr": 21, "sb": 22, "k_rate": 0.17, "contact_rate": 0.83, "two_strike_contact": 0.71, "barrel_rate": 0.082, "exit_velocity": 88.3, "sprint_speed": 28.6},
-            {"player_id": 1105, "name": "Utility Infielder", "type": "hitter", "position": "IF", "age": 28, "bats": "R", "throws": "R", "pa": 430, "avg": 0.259, "obp": 0.326, "slg": 0.421, "iso": 0.162, "hr": 14, "sb": 9, "k_rate": 0.20, "contact_rate": 0.78, "two_strike_contact": 0.64, "barrel_rate": 0.071, "exit_velocity": 87.9, "sprint_speed": 27.0},
-            {"player_id": 1106, "name": "Sixth Infielder", "type": "hitter", "position": "SS", "age": 23, "bats": "L", "throws": "R", "pa": 330, "avg": 0.291, "obp": 0.364, "slg": 0.505, "iso": 0.214, "hr": 15, "sb": 18, "k_rate": 0.16, "contact_rate": 0.84, "two_strike_contact": 0.72, "barrel_rate": 0.101, "exit_velocity": 90.2, "sprint_speed": 28.9},
-            {"player_id": 1201, "name": "Left Field Regular", "type": "hitter", "position": "LF", "age": 27, "bats": "R", "throws": "R", "pa": 570, "avg": 0.276, "obp": 0.345, "slg": 0.492, "iso": 0.216, "hr": 25, "sb": 11, "k_rate": 0.21, "contact_rate": 0.77, "two_strike_contact": 0.63, "barrel_rate": 0.108, "exit_velocity": 91.0, "sprint_speed": 27.2},
-            {"player_id": 1202, "name": "Center Field Regular", "type": "hitter", "position": "CF", "age": 24, "bats": "L", "throws": "R", "pa": 602, "avg": 0.283, "obp": 0.351, "slg": 0.481, "iso": 0.198, "hr": 20, "sb": 24, "k_rate": 0.18, "contact_rate": 0.82, "two_strike_contact": 0.70, "barrel_rate": 0.087, "exit_velocity": 89.0, "sprint_speed": 29.1},
-            {"player_id": 1203, "name": "Right Field Regular", "type": "hitter", "position": "RF", "age": 28, "bats": "R", "throws": "R", "pa": 556, "avg": 0.274, "obp": 0.343, "slg": 0.488, "iso": 0.214, "hr": 23, "sb": 10, "k_rate": 0.20, "contact_rate": 0.79, "two_strike_contact": 0.65, "barrel_rate": 0.099, "exit_velocity": 90.7, "sprint_speed": 27.4},
-            {"player_id": 1204, "name": "Fourth Outfielder", "type": "hitter", "position": "OF", "age": 26, "bats": "L", "throws": "L", "pa": 410, "avg": 0.267, "obp": 0.333, "slg": 0.436, "iso": 0.169, "hr": 14, "sb": 12, "k_rate": 0.19, "contact_rate": 0.80, "two_strike_contact": 0.66, "barrel_rate": 0.074, "exit_velocity": 88.1, "sprint_speed": 28.0},
-            {"player_id": 1205, "name": "Fifth Outfielder", "type": "hitter", "position": "RF", "age": 25, "bats": "R", "throws": "R", "pa": 315, "avg": 0.286, "obp": 0.358, "slg": 0.514, "iso": 0.228, "hr": 16, "sb": 16, "k_rate": 0.17, "contact_rate": 0.83, "two_strike_contact": 0.70, "barrel_rate": 0.106, "exit_velocity": 90.8, "sprint_speed": 28.7},
-            {"player_id": 2001, "name": "Starter Ace", "type": "pitcher", "position": "P", "age": 28, "bats": "R", "throws": "R", "bf": 760, "ip": "185.0", "fbv": 96.8, "fastball_usage": 0.49, "swstr": 0.145, "chase": 0.335, "bb_rate": 0.062, "k_rate": 0.283, "strike_pct": 0.662, "zone_pct": 0.502, "fps": 0.634, "hbreak": 15.1, "ivb": 17.5, "hard_hit": 0.318, "slider_usage": 0.24, "change_usage": 0.13, "curve_usage": 0.08},
-            {"player_id": 2002, "name": "Starter Two", "type": "pitcher", "position": "P", "age": 30, "bats": "L", "throws": "L", "bf": 720, "ip": "176.0", "fbv": 95.7, "fastball_usage": 0.47, "swstr": 0.136, "chase": 0.322, "bb_rate": 0.068, "k_rate": 0.269, "strike_pct": 0.651, "zone_pct": 0.493, "fps": 0.621, "hbreak": 14.6, "ivb": 17.1, "hard_hit": 0.327, "slider_usage": 0.22, "change_usage": 0.15, "curve_usage": 0.09},
-            {"player_id": 2003, "name": "Starter Three", "type": "pitcher", "position": "P", "age": 26, "bats": "R", "throws": "R", "bf": 690, "ip": "168.1", "fbv": 95.1, "fastball_usage": 0.46, "swstr": 0.129, "chase": 0.315, "bb_rate": 0.071, "k_rate": 0.255, "strike_pct": 0.646, "zone_pct": 0.487, "fps": 0.615, "hbreak": 14.2, "ivb": 16.9, "hard_hit": 0.333, "slider_usage": 0.21, "change_usage": 0.14, "curve_usage": 0.1},
-            {"player_id": 2004, "name": "Starter Four", "type": "pitcher", "position": "P", "age": 24, "bats": "R", "throws": "R", "bf": 650, "ip": "160.0", "fbv": 94.6, "fastball_usage": 0.45, "swstr": 0.121, "chase": 0.304, "bb_rate": 0.074, "k_rate": 0.241, "strike_pct": 0.639, "zone_pct": 0.481, "fps": 0.607, "hbreak": 13.8, "ivb": 16.5, "hard_hit": 0.341, "slider_usage": 0.2, "change_usage": 0.14, "curve_usage": 0.1},
-            {"player_id": 2101, "name": "Reliever One", "type": "pitcher", "position": "P", "age": 29, "bats": "R", "throws": "R", "bf": 260, "ip": "62.0", "fbv": 97.4, "fastball_usage": 0.55, "swstr": 0.161, "chase": 0.349, "bb_rate": 0.083, "k_rate": 0.312, "strike_pct": 0.652, "zone_pct": 0.482, "fps": 0.626, "hbreak": 15.0, "ivb": 18.0, "hard_hit": 0.31, "slider_usage": 0.26, "change_usage": 0.07, "curve_usage": 0.04},
-            {"player_id": 2102, "name": "Reliever Two", "type": "pitcher", "position": "P", "age": 27, "bats": "L", "throws": "L", "bf": 245, "ip": "59.1", "fbv": 96.9, "fastball_usage": 0.54, "swstr": 0.154, "chase": 0.342, "bb_rate": 0.081, "k_rate": 0.301, "strike_pct": 0.648, "zone_pct": 0.479, "fps": 0.619, "hbreak": 14.7, "ivb": 17.6, "hard_hit": 0.316, "slider_usage": 0.24, "change_usage": 0.09, "curve_usage": 0.05},
-            {"player_id": 2103, "name": "Reliever Three", "type": "pitcher", "position": "P", "age": 31, "bats": "R", "throws": "R", "bf": 232, "ip": "56.2", "fbv": 96.1, "fastball_usage": 0.52, "swstr": 0.148, "chase": 0.334, "bb_rate": 0.079, "k_rate": 0.289, "strike_pct": 0.646, "zone_pct": 0.476, "fps": 0.615, "hbreak": 14.3, "ivb": 17.1, "hard_hit": 0.322, "slider_usage": 0.23, "change_usage": 0.1, "curve_usage": 0.05},
-            {"player_id": 2104, "name": "Reliever Four", "type": "pitcher", "position": "P", "age": 25, "bats": "R", "throws": "R", "bf": 218, "ip": "53.0", "fbv": 95.8, "fastball_usage": 0.51, "swstr": 0.143, "chase": 0.329, "bb_rate": 0.076, "k_rate": 0.278, "strike_pct": 0.642, "zone_pct": 0.472, "fps": 0.611, "hbreak": 14.0, "ivb": 16.8, "hard_hit": 0.328, "slider_usage": 0.22, "change_usage": 0.1, "curve_usage": 0.06},
-            {"player_id": 2105, "name": "Reliever Five", "type": "pitcher", "position": "P", "age": 28, "bats": "L", "throws": "L", "bf": 205, "ip": "50.1", "fbv": 95.3, "fastball_usage": 0.5, "swstr": 0.138, "chase": 0.321, "bb_rate": 0.074, "k_rate": 0.266, "strike_pct": 0.639, "zone_pct": 0.469, "fps": 0.605, "hbreak": 13.7, "ivb": 16.4, "hard_hit": 0.334, "slider_usage": 0.21, "change_usage": 0.11, "curve_usage": 0.06},
-        ]
+    def _fetch_blue_jays_players(self) -> list[dict[str, Any]]:
+        roster_payload = self._fetch_json(f"{MLB_STATS_API}/teams/{TEAM_ID}/roster?rosterType=active&season={SEASON}")
+        roster_entries = roster_payload.get("roster", [])
+        if not isinstance(roster_entries, list):
+            return []
+
+        players: list[dict[str, Any]] = []
+
+        for roster_entry in roster_entries:
+            if not isinstance(roster_entry, dict):
+                continue
+            person_summary = roster_entry.get("person", {})
+            if not isinstance(person_summary, dict):
+                continue
+            player_id = self._as_int(person_summary.get("id"))
+            if player_id is None:
+                continue
+
+            person_payload = self._fetch_json(f"{MLB_STATS_API}/people/{player_id}")
+            people = person_payload.get("people", [])
+            if not isinstance(people, list) or not people:
+                continue
+            person = people[0]
+            if not isinstance(person, dict):
+                continue
+
+            roster_position = roster_entry.get("position", {})
+            if not isinstance(roster_position, dict):
+                roster_position = {}
+            primary_position = person.get("primaryPosition", {})
+            if not isinstance(primary_position, dict):
+                primary_position = {}
+
+            position = self._as_str(roster_position.get("abbreviation")) or self._as_str(primary_position.get("abbreviation"))
+            position_type = self._as_str(roster_position.get("type"))
+            if position_type == "Pitcher" or position == "P":
+                stat_group = "pitching"
+                player_type = "pitcher"
+            else:
+                stat_group = "hitting"
+                player_type = "hitter"
+
+            stats = self._fetch_stats(player_id, stat_group)
+            if stats is None:
+                continue
+
+            base_player = {
+                "player_id": player_id,
+                "name": self._as_str(person.get("fullName")) or self._as_str(person_summary.get("fullName")),
+                "type": player_type,
+                "position": position,
+                "age": self._as_int(person.get("currentAge")),
+                "bats": self._nested_str(person, "batSide", "code"),
+                "throws": self._nested_str(person, "pitchHand", "code"),
+            }
+            if player_type == "hitter":
+                plate_appearances = self._as_int(stats.get("plateAppearances")) or 0
+                if plate_appearances == 0:
+                    continue
+                base_player.update(
+                    {
+                        "plate_appearances": plate_appearances,
+                        "at_bats": self._as_int(stats.get("atBats")) or 0,
+                        "hits": self._as_int(stats.get("hits")) or 0,
+                        "doubles": self._as_int(stats.get("doubles")) or 0,
+                        "triples": self._as_int(stats.get("triples")) or 0,
+                        "home_runs": self._as_int(stats.get("homeRuns")) or 0,
+                        "walks": self._as_int(stats.get("baseOnBalls")) or 0,
+                        "strikeouts": self._as_int(stats.get("strikeOuts")) or 0,
+                        "hit_by_pitch": self._as_int(stats.get("hitByPitch")) or 0,
+                        "stolen_bases": self._as_int(stats.get("stolenBases")) or 0,
+                        "caught_stealing": self._as_int(stats.get("caughtStealing")) or 0,
+                        "avg": self._as_str(stats.get("avg")) or "0.000",
+                        "obp": self._as_str(stats.get("obp")) or "0.000",
+                        "slg": self._as_str(stats.get("slg")) or "0.000",
+                    }
+                )
+            else:
+                batters_faced = self._as_int(stats.get("battersFaced")) or 0
+                if batters_faced == 0:
+                    continue
+                base_player.update(
+                    {
+                        "batters_faced": batters_faced,
+                        "walks": self._as_int(stats.get("baseOnBalls")) or 0,
+                        "strikeouts": self._as_int(stats.get("strikeOuts")) or 0,
+                        "home_runs": self._as_int(stats.get("homeRuns")) or 0,
+                        "hits": self._as_int(stats.get("hits")) or 0,
+                        "innings_pitched": self._as_str(stats.get("inningsPitched")) or "0.0",
+                        "number_of_pitches": self._as_int(stats.get("numberOfPitches")) or 0,
+                        "strikes": self._as_int(stats.get("strikes")) or 0,
+                    }
+                )
+            players.append(base_player)
+
+        if len(players) < 22:
+            self.fail(f"Expected enough real Blue Jays players for a full roster, found {len(players)}")
+        return sorted(players, key=lambda player: (player["type"], player["name"]))
+
+    def _fetch_json(self, url: str) -> dict[str, Any]:
+        with urlopen(url, timeout=30, context=self.ssl_context) as response:
+            return json.load(response)
+
+    def _fetch_stats(self, player_id: int, group: str) -> dict[str, Any] | None:
+        payload = self._fetch_json(f"{MLB_STATS_API}/people/{player_id}/stats?stats=season&group={group}&season={SEASON}")
+        stats = payload.get("stats", [])
+        if not isinstance(stats, list) or not stats:
+            return None
+        first_stats = stats[0]
+        if not isinstance(first_stats, dict):
+            return None
+        splits = first_stats.get("splits", [])
+        if not isinstance(splits, list) or not splits:
+            return None
+        first_split = splits[0]
+        if not isinstance(first_split, dict):
+            return None
+        stat_line = first_split.get("stat", {})
+        return stat_line if isinstance(stat_line, dict) else None
+
+    def _output_sort_key(self, player: dict[str, Any]) -> tuple[float, int, int, str]:
+        projected_ip = player.get("projected_ip")
+        projected_pa = player.get("projected_pa")
+        if self._as_float(projected_ip) is not None:
+            playing_time = self._as_float(projected_ip) or 0.0
+        else:
+            playing_time = self._as_float(projected_pa) or 0.0
+        age = self._as_int(player.get("age")) or 999
+        overall = self._as_int(player.get("overall_numeric")) or 0
+        return (-playing_time, age, -overall, str(player.get("name") or ""))
+
+    def _expected_flex_names(self, players: list[dict[str, Any]]) -> set[str]:
+        grouped = {"SP": [], "RP": [], "C": [], "IF": [], "OF": []}
+        for player in players:
+            role = player.get("role")
+            primary_position = player.get("primary_position")
+            secondary_position = player.get("secondary_position")
+            positions = {position for position in (primary_position, secondary_position) if isinstance(position, str) and position}
+            if role in {"pitcher", "two_way"}:
+                projected_ip = self._as_float(player.get("projected_ip")) or 0.0
+                grouped["SP" if projected_ip >= 80 else "RP"].append(player)
+            if role in {"hitter", "two_way"}:
+                if "C" in positions:
+                    grouped["C"].append(player)
+                if positions & INFIELD_POSITIONS:
+                    grouped["IF"].append(player)
+                if positions & OUTFIELD_POSITIONS:
+                    grouped["OF"].append(player)
+
+        for group_name in grouped:
+            grouped[group_name] = sorted(grouped[group_name], key=self._output_sort_key)
+
+        selected_names = set()
+        for group_name, count in (("SP", 4), ("RP", 5), ("C", 2), ("IF", 5), ("OF", 4)):
+            picked_count = 0
+            for player in grouped[group_name]:
+                if player["name"] in selected_names:
+                    continue
+                selected_names.add(player["name"])
+                picked_count += 1
+                if picked_count >= count:
+                    break
+
+        flex_candidates: list[tuple[str, dict[str, Any]]] = []
+        for group_name in ("C", "IF", "OF"):
+            for player in grouped[group_name]:
+                if player["name"] in selected_names:
+                    continue
+                flex_candidates.append((group_name, player))
+                break
+
+        chosen = sorted(
+            flex_candidates,
+            key=lambda item: (
+                -(self._as_int(item[1].get("overall_numeric")) or 0),
+                self._output_sort_key(item[1]),
+            ),
+        )[:2]
+        return {player["name"] for _, player in chosen}
+
+    def _nested_str(self, payload: dict[str, Any], key: str, nested_key: str) -> str | None:
+        nested = payload.get(key)
+        if not isinstance(nested, dict):
+            return None
+        return self._as_str(nested.get(nested_key))
+
+    def _as_int(self, value: Any) -> int | None:
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return int(value)
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            return int(value)
+        if isinstance(value, str):
+            cleaned = value.strip()
+            if not cleaned:
+                return None
+            try:
+                return int(cleaned)
+            except ValueError:
+                try:
+                    return int(float(cleaned))
+                except ValueError:
+                    return None
+        return None
+
+    def _as_float(self, value: Any) -> float | None:
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return float(value)
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            cleaned = value.strip()
+            if not cleaned:
+                return None
+            try:
+                return float(cleaned)
+            except ValueError:
+                return None
+        return None
+
+    def _as_str(self, value: Any) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return value
+        return str(value)
 
 
 if __name__ == "__main__":

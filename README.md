@@ -172,6 +172,8 @@ The `ingest` manifest can now target `baseball_savant`, `baseball_reference`, or
 
 When `--structured-output` is provided to `ingest-rate`, the tool writes one file per team at `<output_dir>/<league>/<division>/<team>.json` and creates `<output_dir>/index.json` with the organized file list. Each team file includes both the full rated-player list and a recommended 22-man roster.
 
+The Blue Jays end-to-end integration test now fetches live 2025 Blue Jays player data from the public MLB Stats API, builds local Baseball Reference-style CSV fixtures in a temp directory, and then runs the full ingest-rate-rank pipeline against those real players.
+
 ## Full Pipeline Walkthrough
 
 Use the Toronto Blue Jays as a manual end-to-end validation target by keeping exported source files and generated outputs in ignored local paths.
