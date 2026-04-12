@@ -304,7 +304,9 @@ def _family_savant_pitch_quality_score(
         pitch_detail = savant_pitch_details.get(pitch_code)
         if not isinstance(pitch_detail, Mapping):
             continue
-        weight = _as_float(pitch_detail.get("pitches")) or 1.0
+        weight = _as_float(pitch_detail.get("pitches"))
+        if weight is None or weight <= 0:
+            continue
         weighted_score += _savant_pitch_quality_score(pitch_detail, pitch_code=pitch_code) * weight
         total_weight += weight
     if total_weight <= 0:
