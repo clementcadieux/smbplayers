@@ -15,6 +15,7 @@ from .savant import (
     _apply_roster_rows,
     _apply_running_row,
     _ensure_player,
+    _finalize_active_status,
     _mark_active_status,
     _read_csv,
     load_manifest,
@@ -109,6 +110,7 @@ def ingest_from_manifest(manifest: IngestManifest | Path) -> list[dict[str, Any]
             for player in players.values():
                 player.note_missing_file(season_key, "running")
 
+    _finalize_active_status(players, roster_filter=manifest_obj.roster_filter)
     normalized = [player.to_player_dict() for player in players.values()]
     normalized.sort(key=lambda item: (item["role"], item["name"]))
     return normalized

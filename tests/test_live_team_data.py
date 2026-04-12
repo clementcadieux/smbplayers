@@ -152,7 +152,12 @@ class LiveTeamDataTests(unittest.TestCase):
             "number_of_pitches": 2600,
             "strikes": 1700,
             "strike_percentage": "65.4",
-            "advanced_pitching": {"whiffPercentage": 0.294},
+            "advanced_pitching": {
+                "whiffPercentage": 0.294,
+                "chasePercentage": 0.321,
+                "zonePercentage": 0.486,
+                "firstPitchStrikePercentage": 0.617,
+            },
             "situational_pitching_metrics": {
                 "first_pitch_pitching": 78.0,
                 "runners_on_pitching": 73.5,
@@ -165,10 +170,10 @@ class LiveTeamDataTests(unittest.TestCase):
                 "vl": {"ops": 0.740, "strikeout_rate": 0.220},
             },
             "pitch_arsenal": {
-                "FF": {"percentage": 0.42, "averageSpeed": 96.4},
-                "SL": {"percentage": 0.31, "averageSpeed": 86.1},
-                "CH": {"percentage": 0.15, "averageSpeed": 87.4},
-                "CU": {"percentage": 0.12, "averageSpeed": 80.0},
+                "FF": {"percentage": 0.42, "averageSpeed": 96.4, "horizontalBreak": 9.0, "inducedVerticalBreak": 16.0},
+                "SL": {"percentage": 0.31, "averageSpeed": 86.1, "horizontalBreak": 14.0, "inducedVerticalBreak": 2.0},
+                "CH": {"percentage": 0.15, "averageSpeed": 87.4, "horizontalBreak": 13.0, "inducedVerticalBreak": 8.0},
+                "CU": {"percentage": 0.12, "averageSpeed": 80.0, "horizontalBreak": 8.0, "inducedVerticalBreak": -10.0},
             },
             "savant_pitch_details": {
                 "FF": {"xba": 0.220, "xwoba": 0.300, "xslg": 0.360, "hard_hit_percent": 33.0, "brl_percent": 6.0, "swings": 300.0, "misses": 80.0, "release_speed": 96.4, "pitches": 420.0, "total_pitches": 1000.0},
@@ -208,6 +213,11 @@ class LiveTeamDataTests(unittest.TestCase):
         self.assertGreater(bref_pitcher_rows[0]["Same Handed Pitching"], bref_pitcher_rows[0]["Opposite Handed Pitching"])
         self.assertIn("Pitch Quality SL", savant_pitcher_rows[0])
         self.assertEqual(savant_pitcher_rows[0]["Strike %"], 65.4)
+        self.assertEqual(savant_pitcher_rows[0]["Chase %"], 32.1)
+        self.assertEqual(savant_pitcher_rows[0]["Zone %"], 48.6)
+        self.assertEqual(savant_pitcher_rows[0]["First Pitch Strike %"], 61.7)
+        self.assertAlmostEqual(savant_pitcher_rows[0]["Horizontal Break"], 11.03, places=2)
+        self.assertAlmostEqual(savant_pitcher_rows[0]["Induced Vertical Break"], 7.34, places=2)
         self.assertEqual(savant_pitcher_rows[0]["first_pitch_pitching"], 78.0)
         self.assertEqual(savant_pitcher_rows[0]["runners_on_pitching"], 73.5)
         self.assertEqual(savant_pitcher_rows[0]["pressure_pitching"], 80.5)

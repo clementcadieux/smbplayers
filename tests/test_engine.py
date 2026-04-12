@@ -278,6 +278,12 @@ class SurfaceBlendTests(unittest.TestCase):
 
         pitch_mix_test = next(output for output in outputs if output.name == "Pitch Mix Test")
         self.assertEqual(pitch_mix_test.recommended_pitches, ["4-Seam Fastball", "Slider", "Forkball"])
+        self.assertGreater(pitch_mix_test.ratings["junk"], 0)
+        self.assertGreater(pitch_mix_test.ratings["accuracy"], 0)
+        self.assertGreater(pitch_mix_test.percentiles["junk"], 0.0)
+        self.assertGreater(pitch_mix_test.percentiles["accuracy"], 0.0)
+        self.assertFalse(any("junk: missing metrics" in flag for flag in pitch_mix_test.review_flags))
+        self.assertFalse(any("accuracy: missing metrics" in flag for flag in pitch_mix_test.review_flags))
 
     def test_secondary_positions_are_derived_from_positional_games(self) -> None:
         outputs = rate_players(

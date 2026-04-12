@@ -25,6 +25,9 @@ from .savant import (
     _canonical_position,
     _clamp,
     _ensure_player,
+    _estimate_first_pitch_strike_pct,
+    _estimate_zone_pct_from_strike_pct,
+    _finalize_active_status,
     _pick_first,
     _pick_number,
     _row_days_on_roster,
@@ -162,6 +165,50 @@ def _apply_pitcher_row(player: PlayerAccumulator, season_key: str, row: dict[str
         strike_pct = _safe_divide(strikes, tracked_pitches)
         strike_pct_estimated = strike_pct is not None
 
+    chase_rate = _pick_number(
+        row,
+        "chase_rate",
+        "chase_pct",
+        "chase_percent",
+        "oz_swing_pct",
+        "o_swing_pct",
+        "out_of_zone_swing_pct",
+        rate=True,
+    )
+    zone_pct = _pick_number(row, "zone_pct", "zone_percent", "zone_percentage", rate=True)
+    zone_pct_estimated = False
+    if zone_pct is None:
+        zone_pct = _estimate_zone_pct_from_strike_pct(strike_pct)
+        zone_pct_estimated = zone_pct is not None
+    first_pitch_strike_pct = _pick_number(
+        row,
+        "first_pitch_strike_pct",
+        "first_pitch_strike_percent",
+        "f_strike_pct",
+        "f_strike_percent",
+        "fps_pct",
+        rate=True,
+    )
+    first_pitch_strike_pct_estimated = False
+    if first_pitch_strike_pct is None:
+        first_pitch_strike_pct = _estimate_first_pitch_strike_pct(strike_pct, zone_pct)
+        first_pitch_strike_pct_estimated = first_pitch_strike_pct is not None
+
+    horizontal_break = _pick_number(row, "horizontal_break", "horizontal_movement", "hb", "avg_horz_break", "pfx_x")
+    induced_vertical_break = _pick_number(
+        row,
+        "induced_vertical_break",
+        "vertical_break",
+        "ivb",
+        "avg_induced_vert_break",
+        "pfx_z",
+    )
+    movement_quality = _pick_number(row, "movement_quality", "movement_plus", "movement_grade")
+    movement_estimated = False
+    if movement_quality is None and (horizontal_break is not None or induced_vertical_break is not None):
+        movement_quality = abs(horizontal_break or 0) + abs(induced_vertical_break or 0)
+        movement_estimated = True
+
     strikeout_rate = _pick_number(row, "k_pct", "k_percent", "strikeout_rate", rate=True)
     if strikeout_rate is None:
         strikeout_rate = _safe_divide(strikeouts, batters_faced)
@@ -193,9 +240,13 @@ def _apply_pitcher_row(player: PlayerAccumulator, season_key: str, row: dict[str
     defensive_innings = innings_outs / 3.0 if innings_outs is not None else None
 
     player.set_metric("stuff_metric", season_key, stuff_metric, estimated=stuff_estimated)
+    player.set_metric("chase_rate", season_key, chase_rate)
+    player.set_metric("movement_quality", season_key, movement_quality, estimated=movement_estimated)
     player.set_metric("weak_contact_rate", season_key, weak_contact_rate, estimated=weak_contact_estimated)
     player.set_metric("walk_rate", season_key, walk_rate, estimated=walk_rate_estimated)
     player.set_metric("strike_pct", season_key, strike_pct, estimated=strike_pct_estimated)
+    player.set_metric("zone_pct", season_key, zone_pct, estimated=zone_pct_estimated)
+    player.set_metric("first_pitch_strike_pct", season_key, first_pitch_strike_pct, estimated=first_pitch_strike_pct_estimated)
     player.set_metric("command_error_rate", season_key, command_error_rate, estimated=command_error_estimated)
     player.set_sample("weighted_bf", season_key, batters_faced)
     player.set_sample("tracked_pitches", season_key, tracked_pitches)
@@ -287,6 +338,7 @@ def ingest_from_manifest(manifest: IngestManifest | Path) -> list[dict[str, Any]
             for player in players.values():
                 player.note_missing_file(season_key, "running")
 
+    _finalize_active_status(players, roster_filter=manifest_obj.roster_filter)
     outputs = [player.to_player_dict() for player in players.values() if player.roles]
     outputs.sort(key=lambda item: (item["role"], item["name"]))
     return outputs

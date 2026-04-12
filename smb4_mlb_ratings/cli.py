@@ -65,7 +65,7 @@ def _normalized_team(team: str | None) -> str | None:
     return cleaned.upper()
 
 
-def _filter_players_by_team(players: list[dict], team: str | None) -> list[dict]:
+def _filter_players_by_team(players: list[dict], team: str | None, *, active_only: bool = False) -> list[dict]:
     normalized_team = _normalized_team(team)
     if normalized_team is None:
         return players
@@ -73,12 +73,13 @@ def _filter_players_by_team(players: list[dict], team: str | None) -> list[dict]
         player
         for player in players
         if isinstance(player.get("team"), str) and player["team"].strip().upper() == normalized_team
+        and (not active_only or bool(player.get("active", True)))
     ]
 
 
 def run_rate(input_path: Path, output_path: Path, team: str | None = None) -> int:
     players = load_players(input_path)
-    players = _filter_players_by_team(players, team)
+    players = _filter_players_by_team(players, team, active_only=True)
     outputs = rate_players(players)
     write_json(output_path, [output.to_dict() for output in outputs])
     return 0
@@ -106,7 +107,7 @@ def run_ingest_rate(
 ) -> int:
     manifest = load_manifest(manifest_path)
     players = ingest_from_manifest(manifest)
-    players = _filter_players_by_team(players, team)
+    players = _filter_players_by_team(players, team, active_only=True)
     if normalized_output_path is not None:
         write_json(normalized_output_path, {"players": players})
     outputs = rate_players(players)

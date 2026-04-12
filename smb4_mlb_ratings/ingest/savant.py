@@ -415,6 +415,29 @@ def _safe_divide(numerator: float | None, denominator: float | None) -> float | 
     return numerator / denominator
 
 
+def _estimate_chase_rate_from_whiff_rate(swinging_strike_rate: float | None) -> float | None:
+    if swinging_strike_rate is None:
+        return None
+    return _clamp(0.12 + (swinging_strike_rate * 1.4), 0.18, 0.45)
+
+
+def _estimate_zone_pct_from_strike_pct(strike_pct: float | None) -> float | None:
+    if strike_pct is None:
+        return None
+    return _clamp(strike_pct - 0.15, 0.35, 0.60)
+
+
+def _estimate_first_pitch_strike_pct(
+    strike_pct: float | None,
+    zone_pct: float | None,
+) -> float | None:
+    if zone_pct is not None:
+        return _clamp(zone_pct + 0.13, 0.45, 0.75)
+    if strike_pct is not None:
+        return _clamp(strike_pct - 0.02, 0.45, 0.75)
+    return None
+
+
 def _normalize_distribution(values: dict[str, float]) -> dict[str, float]:
     total = sum(values.values())
     if total <= 0:
@@ -889,8 +912,22 @@ def _apply_roster_rows(
 ) -> None:
     for row in rows:
         player = _ensure_player(players, row, source=source)
+        if season_key is not None and season_year is not None:
+            player.source_years[season_key] = season_year
         _mark_active_status(player, row, season_key=season_key, season_year=season_year, roster_filter=roster_filter)
         _apply_identity(player, row)
+
+
+def _finalize_active_status(
+    players: dict[tuple[str, str], PlayerAccumulator],
+    *,
+    roster_filter: RosterFilter | None,
+) -> None:
+    if roster_filter is None:
+        return
+    for player in players.values():
+        if "current" not in player.source_years:
+            player.active = False
 
 
 def _position_metric(position: str | None, mapping: dict[str, float], default: float | None = None) -> float | None:
@@ -1022,13 +1059,49 @@ def _apply_pitcher_row(player: PlayerAccumulator, season_key: str, row: dict[str
         tracked_fastballs = tracked_pitches * fastball_usage
 
     swinging_strike_rate = _pick_number(row, "swinging_strike_rate", "swstr_rate", "swstr_pct", rate=True)
-    chase_rate = _pick_number(row, "chase_rate", "chase_pct", "oz_swing_pct", rate=True)
+    chase_rate = _pick_number(
+        row,
+        "chase_rate",
+        "chase_pct",
+        "chase_percent",
+        "oz_swing_pct",
+        "o_swing_pct",
+        "out_of_zone_swing_pct",
+        rate=True,
+    )
+    chase_rate_estimated = False
+    if chase_rate is None:
+        chase_rate = _estimate_chase_rate_from_whiff_rate(swinging_strike_rate)
+        chase_rate_estimated = chase_rate is not None
     strike_pct = _pick_number(row, "strike_pct", "strk_pct", rate=True)
-    zone_pct = _pick_number(row, "zone_pct", rate=True)
-    first_pitch_strike_pct = _pick_number(row, "first_pitch_strike_pct", "f_strike_pct", "fps_pct", rate=True)
+    zone_pct = _pick_number(row, "zone_pct", "zone_percent", "zone_percentage", rate=True)
+    zone_pct_estimated = False
+    if zone_pct is None:
+        zone_pct = _estimate_zone_pct_from_strike_pct(strike_pct)
+        zone_pct_estimated = zone_pct is not None
+    first_pitch_strike_pct = _pick_number(
+        row,
+        "first_pitch_strike_pct",
+        "first_pitch_strike_percent",
+        "f_strike_pct",
+        "f_strike_percent",
+        "fps_pct",
+        rate=True,
+    )
+    first_pitch_strike_pct_estimated = False
+    if first_pitch_strike_pct is None:
+        first_pitch_strike_pct = _estimate_first_pitch_strike_pct(strike_pct, zone_pct)
+        first_pitch_strike_pct_estimated = first_pitch_strike_pct is not None
 
-    horizontal_break = _pick_number(row, "horizontal_break", "hb", "avg_horz_break")
-    induced_vertical_break = _pick_number(row, "induced_vertical_break", "ivb", "avg_induced_vert_break")
+    horizontal_break = _pick_number(row, "horizontal_break", "horizontal_movement", "hb", "avg_horz_break", "pfx_x")
+    induced_vertical_break = _pick_number(
+        row,
+        "induced_vertical_break",
+        "vertical_break",
+        "ivb",
+        "avg_induced_vert_break",
+        "pfx_z",
+    )
     movement_quality = _pick_number(row, "movement_quality", "movement_plus", "movement_grade")
     movement_estimated = False
     if movement_quality is None and (horizontal_break is not None or induced_vertical_break is not None):
@@ -1073,15 +1146,15 @@ def _apply_pitcher_row(player: PlayerAccumulator, season_key: str, row: dict[str
         "peak_fastball_velocity": (_pick_number(row, "peak_fastball_velocity", "max_fastball_velocity", "max_fb_velocity", "release_speed_max"), False),
         "fastball_usage": (fastball_usage, False),
         "swinging_strike_rate": (swinging_strike_rate, False),
-        "chase_rate": (chase_rate, False),
+        "chase_rate": (chase_rate, chase_rate_estimated),
         "movement_quality": (movement_quality, movement_estimated),
         "stuff_metric": (stuff_metric, stuff_estimated),
         "arsenal_diversity": (arsenal_diversity, arsenal_estimated),
         "weak_contact_rate": (weak_contact_rate, weak_contact_estimated),
         "walk_rate": (_pick_number(row, "walk_rate", "bb_pct", "bb_percent", rate=True), False),
         "strike_pct": (strike_pct, False),
-        "zone_pct": (zone_pct, False),
-        "first_pitch_strike_pct": (first_pitch_strike_pct, False),
+        "zone_pct": (zone_pct, zone_pct_estimated),
+        "first_pitch_strike_pct": (first_pitch_strike_pct, first_pitch_strike_pct_estimated),
         "command_error_rate": (command_error_rate, command_error_estimated),
     }
     for metric_name, (value, estimated) in metric_specs.items():
@@ -1272,6 +1345,7 @@ def ingest_from_manifest(manifest: IngestManifest | Path) -> list[dict[str, Any]
                 player.note_missing_file(season_key, "running")
 
     _flag_injury_shortened_seasons(players)
+    _finalize_active_status(players, roster_filter=manifest_obj.roster_filter)
     outputs = [player.to_player_dict() for player in players.values() if player.roles]
     outputs.sort(key=lambda item: (item["role"], item["name"]))
     return outputs
