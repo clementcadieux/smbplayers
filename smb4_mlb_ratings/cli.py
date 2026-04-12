@@ -8,6 +8,7 @@ from pathlib import Path
 from .engine import rate_players
 from .ingest import ingest_from_manifest, load_manifest
 from .output import write_structured_output
+from .roster_selector import build_rank_output, load_ratings
 
 
 def load_players(path: Path) -> list[dict]:
@@ -34,6 +35,12 @@ def run_ingest(manifest_path: Path, output_path: Path) -> int:
     manifest = load_manifest(manifest_path)
     players = ingest_from_manifest(manifest)
     write_json(output_path, {"players": players})
+    return 0
+
+
+def run_rank(input_path: Path, output_path: Path) -> int:
+    ratings = load_ratings(input_path)
+    write_json(output_path, build_rank_output(ratings))
     return 0
 
 
@@ -67,6 +74,10 @@ def build_parser() -> argparse.ArgumentParser:
     ingest_parser.add_argument("manifest", type=Path, help="Ingestion manifest JSON file")
     ingest_parser.add_argument("output", type=Path, help="Output normalized player JSON file")
 
+    rank_parser = subparsers.add_parser("rank", help="Rank rated players into recommended 22-man rosters")
+    rank_parser.add_argument("input", type=Path, help="Ratings JSON file")
+    rank_parser.add_argument("output", type=Path, help="Output roster JSON file")
+
     ingest_rate_parser = subparsers.add_parser("ingest-rate", help="Normalize supported source files and rate them")
     ingest_rate_parser.add_argument("manifest", type=Path, help="Ingestion manifest JSON file")
     ingest_rate_parser.add_argument("output", type=Path, nargs="?", default=None, help="Optional output ratings JSON file")
@@ -96,6 +107,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_rate(namespace.input, namespace.output)
     if namespace.command == "ingest":
         return run_ingest(namespace.manifest, namespace.output)
+    if namespace.command == "rank":
+        return run_rank(namespace.input, namespace.output)
     if namespace.command == "ingest-rate":
         if namespace.output is None and namespace.structured_output is None:
             parser.error("ingest-rate requires either an output file or --structured-output")

@@ -336,6 +336,21 @@ def weighted_value(value: SeasonValue) -> float | None:
     return total_value / total_weight
 
 
+def current_season_value(value: SeasonValue) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if not isinstance(value, Mapping):
+        return None
+
+    for season_key in ("current", "previous", "two_years_ago"):
+        season_value = value.get(season_key)
+        if season_value is not None:
+            return float(season_value)
+    return None
+
+
 def season_dict(value: SeasonValue) -> dict[str, float] | None:
     if value is None:
         return None
@@ -541,6 +556,26 @@ def state_from_player(player: PlayerInput) -> PlayerState:
         component_percentiles={},
         review_flags=[],
     )
+
+
+def resolved_projected_pa(player: PlayerInput) -> float | None:
+    if player.projected_pa is not None:
+        return float(player.projected_pa)
+    return current_season_value(player.samples.get("weighted_pa"))
+
+
+def resolved_projected_ip(player: PlayerInput) -> float | None:
+    if player.projected_ip is not None:
+        return float(player.projected_ip)
+
+    defensive_innings = current_season_value(player.samples.get("defensive_innings"))
+    if defensive_innings is not None:
+        return defensive_innings
+
+    weighted_bf = current_season_value(player.samples.get("weighted_bf"))
+    if weighted_bf is None:
+        return None
+    return round(weighted_bf / 4.25, 2)
 
 
 def trait_confidence(score: float) -> str:
@@ -1634,6 +1669,11 @@ def rate_players(players: list[PlayerInput | dict], trim_final_traits: bool = Tr
                 suggested_traits=suggest_traits(state),
                 assigned_traits=[],
                 recommended_personalities=[],
+                secondary_position=state.player.secondary_position,
+                age=state.player.age,
+                projected_pa=resolved_projected_pa(state.player),
+                projected_ip=resolved_projected_ip(state.player),
+                metadata=dict(state.player.metadata),
             )
         )
 

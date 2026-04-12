@@ -31,13 +31,14 @@ class StructuredOutputTests(unittest.TestCase):
         write_structured_output(ratings, output_dir)
 
         bos_payload = json.loads((output_dir / "AL" / "East" / "BOS.json").read_text(encoding="utf-8"))
-        self.assertEqual([item["name"] for item in bos_payload], ["Red Sox 1", "Red Sox 2"])
+        self.assertEqual([item["name"] for item in bos_payload["players"]], ["Red Sox 1", "Red Sox 2"])
+        self.assertIn("recommended_roster", bos_payload)
 
         cle_payload = json.loads((output_dir / "AL" / "Central" / "CLE.json").read_text(encoding="utf-8"))
-        self.assertEqual([item["name"] for item in cle_payload], ["Guardians 1"])
+        self.assertEqual([item["name"] for item in cle_payload["players"]], ["Guardians 1"])
 
         lad_payload = json.loads((output_dir / "NL" / "West" / "LAD.json").read_text(encoding="utf-8"))
-        self.assertEqual([item["name"] for item in lad_payload], ["Dodgers 1"])
+        self.assertEqual([item["name"] for item in lad_payload["players"]], ["Dodgers 1"])
 
         index_payload = json.loads((output_dir / "index.json").read_text(encoding="utf-8"))
         self.assertEqual(index_payload["AL"]["East"][0]["path"], "AL/East/BOS.json")
@@ -117,6 +118,11 @@ class StructuredOutputTests(unittest.TestCase):
             suggested_traits=[],
             assigned_traits=[],
             recommended_personalities=[],
+            secondary_position=None,
+            age=26,
+            projected_pa=500.0,
+            projected_ip=None,
+            metadata={},
         )
 
 

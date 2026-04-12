@@ -5,6 +5,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from .models import RatingOutput
+from .roster_selector import roster_payload_for_team
 
 
 TEAM_DIVISIONS: dict[str, tuple[str, str]] = {
@@ -79,7 +80,9 @@ def write_structured_output(ratings: list[RatingOutput], output_dir: Path) -> No
         league, division = TEAM_DIVISIONS[team]
         relative_path = Path(league) / division / f"{team}.json"
         team_ratings = sorted(grouped_ratings[team], key=lambda rating: rating.name)
-        _write_json(output_dir / relative_path, [rating.to_dict() for rating in team_ratings])
+        team_payload = roster_payload_for_team(team, team_ratings)
+        team_payload.update({"league": league, "division": division})
+        _write_json(output_dir / relative_path, team_payload)
 
         index_payload[league][division].append(
             {
