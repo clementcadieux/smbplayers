@@ -87,6 +87,68 @@ class PitchQualityTests(unittest.TestCase):
 
         self.assertGreater(metrics["pitch_quality_sl"], metrics["pitch_quality_ch"] or 0.0)
 
+    def test_pitch_quality_uses_run_value_per_100_as_elite_signal(self) -> None:
+        arsenal = {
+            "FF": {"percentage": 0.55, "count": 550, "totalPitches": 1000, "averageSpeed": 96.0, "type": {"code": "FF"}},
+            "CH": {"percentage": 0.30, "count": 300, "totalPitches": 1000, "averageSpeed": 86.5, "type": {"code": "CH"}},
+        }
+        baseline_details = {
+            "CH": {
+                "xwoba": 0.320,
+                "xba": 0.255,
+                "xslg": 0.500,
+                "hard_hit_percent": 42.0,
+                "brl_percent": 8.0,
+                "swings": 140.0,
+                "misses": 26.0,
+                "release_speed": 86.5,
+                "run_value_per_100": 0.0,
+            }
+        }
+        elite_rv_details = {
+            "CH": {
+                "xwoba": 0.320,
+                "xba": 0.255,
+                "xslg": 0.500,
+                "hard_hit_percent": 42.0,
+                "brl_percent": 8.0,
+                "swings": 140.0,
+                "misses": 26.0,
+                "release_speed": 86.5,
+                "run_value_per_100": -5.0,
+            }
+        }
+
+        baseline_metrics = derive_pitch_quality_metrics(arsenal, baseline_details)
+        elite_rv_metrics = derive_pitch_quality_metrics(arsenal, elite_rv_details)
+
+        self.assertIsNotNone(baseline_metrics["pitch_quality_ch"])
+        self.assertIsNotNone(elite_rv_metrics["pitch_quality_ch"])
+        self.assertGreater(elite_rv_metrics["pitch_quality_ch"] or 0.0, baseline_metrics["pitch_quality_ch"] or 0.0)
+
+    def test_average_run_value_does_not_overboost_pitch_quality(self) -> None:
+        arsenal = {
+            "FF": {"percentage": 0.60, "count": 600, "totalPitches": 1000, "averageSpeed": 95.5, "type": {"code": "FF"}},
+            "SL": {"percentage": 0.25, "count": 250, "totalPitches": 1000, "averageSpeed": 85.0, "type": {"code": "SL"}},
+        }
+        average_rv_details = {
+            "SL": {
+                "xwoba": 0.285,
+                "xba": 0.218,
+                "xslg": 0.390,
+                "hard_hit_percent": 33.0,
+                "brl_percent": 5.0,
+                "swings": 160.0,
+                "misses": 46.0,
+                "release_speed": 85.0,
+                "run_value_per_100": 0.1,
+            }
+        }
+
+        metrics = derive_pitch_quality_metrics(arsenal, average_rv_details)
+        self.assertIsNotNone(metrics["pitch_quality_sl"])
+        self.assertLess(metrics["pitch_quality_sl"] or 0.0, 85.0)
+
     def test_pitch_quality_derivation_handles_missing_arsenal_data(self) -> None:
         metrics = derive_pitch_quality_metrics({})
 

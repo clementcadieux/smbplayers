@@ -88,6 +88,12 @@
     }
   },
   "metric_bounds": {
+    "pitch_rv_per_100": {
+      "minimum": -6.0,
+      "maximum": 2.0,
+      "higher_is_better": false,
+      "notes": "Pitch run value per 100 pitches from Statcast pitch-type leaderboards. Negative values are better."
+    },
     "pop_time": {
       "minimum": 1.8,
       "maximum": 2.2,
@@ -117,6 +123,8 @@
       "notes": "Ultimate Zone Rating from FanGraphs fielding leaderboard. League median is 0. Elite defenders reach +12 to +18."
     }
   },
+  "pitch_rv_per_100_elite": -2.0,
+  "pitch_rv_per_100_exceptional": -6.0,
   "pitch_slot_limit": 4,
   "pitch_mappings": {
     "ff": {

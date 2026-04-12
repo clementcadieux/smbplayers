@@ -76,7 +76,7 @@ from typing import Any
 SEASON_KEYS = ("current", "previous", "two_years_ago")
 SUPPORTED_SOURCES = frozenset({"baseball_savant", "baseball_reference", "fangraphs", "mixed"})
 MIXABLE_SOURCES = frozenset({"baseball_savant", "baseball_reference", "fangraphs"})
-SUPPORTED_FILE_TYPES = frozenset({"hitters", "pitchers", "fielding", "running", "roster"})
+SUPPORTED_FILE_TYPES = frozenset({"hitters", "pitchers", "fielding", "running", "roster", "pitch_run_values"})
 
 POSITION_ALIASES = {
     "C": "C",
@@ -175,6 +175,43 @@ SECONDARY_FIELD_POSITION_COLUMNS = (
     "two_way_positions",
 )
 
+PITCH_RUN_VALUE_METRIC_KEYS = {
+    "FF": "pitch_quality_4f",
+    "SI": "pitch_quality_2f",
+    "FT": "pitch_quality_2f",
+    "FC": "pitch_quality_cf",
+    "CU": "pitch_quality_cb",
+    "KC": "pitch_quality_cb",
+    "CH": "pitch_quality_ch",
+    "FS": "pitch_quality_fk",
+    "FO": "pitch_quality_fk",
+    "SL": "pitch_quality_sl",
+    "SV": "pitch_quality_sl",
+    "SC": "pitch_quality_sb",
+}
+
+PITCH_NAME_TO_CODE = {
+    "4-SEAM FASTBALL": "FF",
+    "FOUR-SEAM FASTBALL": "FF",
+    "2-SEAM FASTBALL": "FT",
+    "TWO-SEAM FASTBALL": "FT",
+    "SINKER": "SI",
+    "CUTTER": "FC",
+    "CURVEBALL": "CU",
+    "KNUCKLE CURVE": "KC",
+    "CHANGEUP": "CH",
+    "SPLITTER": "FS",
+    "FORKBALL": "FO",
+    "SLIDER": "SL",
+    "SWEEPER": "SV",
+    "SCREWBALL": "SC",
+}
+
+DEFAULT_PITCH_RV_THRESHOLDS = {
+    "elite": -2.0,
+    "exceptional": -6.0,
+}
+
 
 def load_injury_threshold_config() -> dict[str, float]:
     try:
@@ -198,6 +235,34 @@ def load_injury_threshold_config() -> dict[str, float]:
 
 
 INJURY_THRESHOLD_CONFIG = load_injury_threshold_config()
+
+
+def load_pitch_rv_threshold_config() -> dict[str, float]:
+    try:
+        payload = json.loads(REFERENCE_PATH.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return dict(DEFAULT_PITCH_RV_THRESHOLDS)
+
+    elite_value = payload.get("pitch_rv_per_100_elite", DEFAULT_PITCH_RV_THRESHOLDS["elite"])
+    exceptional_value = payload.get("pitch_rv_per_100_exceptional", DEFAULT_PITCH_RV_THRESHOLDS["exceptional"])
+    try:
+        elite = float(elite_value)
+    except (TypeError, ValueError):
+        elite = DEFAULT_PITCH_RV_THRESHOLDS["elite"]
+    try:
+        exceptional = float(exceptional_value)
+    except (TypeError, ValueError):
+        exceptional = DEFAULT_PITCH_RV_THRESHOLDS["exceptional"]
+
+    if exceptional > elite:
+        elite, exceptional = exceptional, elite
+    return {
+        "elite": elite,
+        "exceptional": exceptional,
+    }
+
+
+PITCH_RV_THRESHOLDS = load_pitch_rv_threshold_config()
 
 
 def _normalized_key(value: str) -> str:
@@ -260,6 +325,65 @@ def _pick_first(row: dict[str, str], *aliases: str) -> str | None:
 def _pick_number(row: dict[str, str], *aliases: str, rate: bool = False) -> float | None:
     value = _as_float(_pick_first(row, *aliases))
     return _coerce_rate(value) if rate else value
+
+
+def _canonical_pitch_type(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = value.strip().upper()
+    if not cleaned:
+        return None
+    if cleaned in PITCH_RUN_VALUE_METRIC_KEYS:
+        return cleaned
+    return PITCH_NAME_TO_CODE.get(cleaned)
+
+
+def parse_savant_pitch_run_value_csv(rows: list[dict[str, str]]) -> dict[tuple[str, str], float]:
+    values: dict[tuple[str, str], float] = {}
+    for row in rows:
+        player_id = _pick_first(row, "player_id", "pitcher_id", "id", "mlb_id")
+        if player_id is None:
+            continue
+        pitch_type = _canonical_pitch_type(_pick_first(row, "api_pitch_type", "pitch_type", "pitch"))
+        if pitch_type is None:
+            continue
+        run_value_per_100 = _pick_number(
+            row,
+            "run_value_per_100",
+            "rv_per_100",
+            "run_value_per_100_pitches",
+            "run_value_per_100_pitch",
+        )
+        if run_value_per_100 is None:
+            continue
+        values[(player_id.strip(), pitch_type)] = float(run_value_per_100)
+    return values
+
+
+def _pitch_rv_per_100_score(run_value_per_100: float) -> float:
+    elite_rv = PITCH_RV_THRESHOLDS["elite"]
+    exceptional_rv = PITCH_RV_THRESHOLDS["exceptional"]
+    scale = max(elite_rv - exceptional_rv, 0.001)
+    normalized = _clamp((elite_rv - run_value_per_100) / scale, 0.0, 1.0)
+    return round(normalized * 99.0, 3)
+
+
+def _apply_pitch_run_values_to_trait_metrics(
+    player: PlayerAccumulator,
+    season_key: str,
+    pitch_run_values: dict[str, float],
+) -> None:
+    for pitch_type, run_value_per_100 in pitch_run_values.items():
+        metric_key = PITCH_RUN_VALUE_METRIC_KEYS.get(pitch_type)
+        if metric_key is None:
+            continue
+        rv_score = _pitch_rv_per_100_score(run_value_per_100)
+        existing = player.trait_metrics.get(metric_key, {}).get(season_key)
+        if existing is None:
+            merged_score = rv_score
+        else:
+            merged_score = round((float(existing) * 0.75) + (rv_score * 0.25), 3)
+        player.set_trait_metric(metric_key, season_key, merged_score)
 
 
 def _pick_percentage_points(row: dict[str, str], *aliases: str) -> float | None:
@@ -1053,6 +1177,13 @@ def ingest_from_manifest(manifest: IngestManifest | Path) -> list[dict[str, Any]
     players: dict[tuple[str, str], PlayerAccumulator] = {}
 
     for season_key, season_inputs in manifest_obj.seasons.items():
+        season_pitch_run_values: dict[str, dict[str, float]] = defaultdict(dict)
+        pitch_run_values_path = season_inputs.files.get("pitch_run_values")
+        if pitch_run_values_path is not None:
+            parsed_pitch_run_values = parse_savant_pitch_run_value_csv(_read_csv(pitch_run_values_path))
+            for (player_id, pitch_type), run_value_per_100 in parsed_pitch_run_values.items():
+                season_pitch_run_values[player_id][pitch_type] = run_value_per_100
+
         if season_inputs.year is not None:
             for player in players.values():
                 player.source_years.setdefault(season_key, season_inputs.year)
@@ -1099,6 +1230,10 @@ def ingest_from_manifest(manifest: IngestManifest | Path) -> list[dict[str, Any]
                 if not _should_apply_pitcher_row(player, row):
                     continue
                 _apply_pitcher_row(player, season_key, row)
+                if player.source_id:
+                    pitch_values = season_pitch_run_values.get(player.source_id)
+                    if pitch_values:
+                        _apply_pitch_run_values_to_trait_metrics(player, season_key, pitch_values)
 
         fielding_path = season_inputs.files.get("fielding")
         if fielding_path is not None:
