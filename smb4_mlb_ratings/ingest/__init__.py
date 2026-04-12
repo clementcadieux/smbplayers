@@ -305,6 +305,11 @@ def _merge_player_records(
 		baseball_reference.get("days_on_roster", {}) if isinstance(baseball_reference.get("days_on_roster"), dict) else {},
 		fangraphs.get("days_on_roster", {}) if isinstance(fangraphs.get("days_on_roster"), dict) else {},
 	)
+	positional_games = _union_season_values(
+		savant.get("positional_games", {}) if isinstance(savant.get("positional_games"), dict) else {},
+		fangraphs.get("positional_games", {}) if isinstance(fangraphs.get("positional_games"), dict) else {},
+		baseball_reference.get("positional_games", {}) if isinstance(baseball_reference.get("positional_games"), dict) else {},
+	)
 	pitch_mix = savant.get("pitch_mix", {}) if isinstance(savant.get("pitch_mix"), dict) else {}
 
 	merged_player = {
@@ -327,6 +332,8 @@ def _merge_player_records(
 		merged_player["trait_lists"] = trait_lists
 	if days_on_roster:
 		merged_player["days_on_roster"] = {str(key): float(value) for key, value in sorted(days_on_roster.items())}
+	if positional_games:
+		merged_player["positional_games"] = {str(key): float(value) for key, value in sorted(positional_games.items())}
 	if pitch_mix:
 		merged_player["pitch_mix"] = {str(key): float(value) for key, value in sorted(pitch_mix.items())}
 	return merged_player
@@ -335,9 +342,10 @@ def _merge_player_records(
 def _ingest_from_mixed_manifest(manifest: IngestManifest) -> list[dict[str, Any]]:
 	baseball_reference_manifest = _clone_manifest_for_source(manifest, "baseball_reference")
 	savant_manifest = _clone_manifest_for_source(manifest, "baseball_savant")
+	fangraphs_manifest = _clone_manifest_for_source(manifest, "fangraphs")
 	baseball_reference_players = ingest_from_baseball_reference_manifest(baseball_reference_manifest)
 	savant_players = ingest_from_savant_manifest(savant_manifest)
-	fangraphs_players: list[dict[str, Any]] = []
+	fangraphs_players = ingest_from_fangraphs_manifest(fangraphs_manifest)
 
 	baseball_reference_by_key = {_player_merge_key(player): player for player in baseball_reference_players}
 	savant_by_key = {_player_merge_key(player): player for player in savant_players}

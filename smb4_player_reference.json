@@ -33,6 +33,14 @@
     "full_season_days_hitter": 162,
     "full_season_days_pitcher": 180
   },
+  "secondary_positions": {
+    "minimum_positional_games": 1,
+    "coverage_groups": {
+      "OF": ["LF", "CF", "RF"],
+      "IF": ["1B", "2B", "3B", "SS"]
+    },
+    "utility_bonus_weight": 1.0
+  },
   "defensive_metric_sources": {
     "baseball_savant": {
       "outs_above_average": {
@@ -964,6 +972,12 @@
   "trait_criteria": {
     "minimum_score": 10,
     "traits": {
+      "Utility": {
+        "description": "Award when a non-pitcher can cover all positions in at least one configured position group.",
+        "sources": ["baseball_savant", "baseball_reference", "fangraphs"],
+        "coverage_bonus_weight": 1.0,
+        "criteria": []
+      },
       "First Pitch Slayer": {
         "description": "Award when first-pitch hitting is a clear situational strength.",
         "sources": ["baseball_savant", "baseball_reference"],

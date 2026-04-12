@@ -20,6 +20,7 @@ class PlayerInput:
     throws: str | None = None
     projected_pa: float | None = None
     projected_ip: float | None = None
+    positional_games: dict[str, float] | None = None
     days_on_roster: dict[str, float] = field(default_factory=dict)
     pitch_mix: dict[str, float] = field(default_factory=dict)
     trait_metrics: dict[str, SeasonValue] | None = None
@@ -39,6 +40,12 @@ class PlayerInput:
             } or None
         else:
             trait_lists = None
+        raw_positional_games = data.get("positional_games")
+        positional_games = (
+            {str(key): float(value) for key, value in raw_positional_games.items()}
+            if isinstance(raw_positional_games, dict)
+            else None
+        )
         return cls(
             name=data["name"],
             role=data["role"],
@@ -51,6 +58,7 @@ class PlayerInput:
             throws=data.get("throws"),
             projected_pa=data.get("projected_pa"),
             projected_ip=data.get("projected_ip"),
+            positional_games=positional_games,
             days_on_roster={str(key): float(value) for key, value in data.get("days_on_roster", {}).items()},
             pitch_mix={str(key): float(value) for key, value in data.get("pitch_mix", {}).items()},
             trait_metrics=data.get("trait_metrics"),
@@ -133,6 +141,7 @@ class RatingOutput:
     assigned_traits: list[TraitSuggestion]
     recommended_personalities: list[PersonalityRecommendation]
     secondary_position: str | None = None
+    secondary_positions: list[str] = field(default_factory=list)
     age: int | None = None
     projected_pa: float | None = None
     projected_ip: float | None = None
@@ -146,6 +155,7 @@ class RatingOutput:
             "team": self.team,
             "primary_position": self.primary_position,
             "secondary_position": self.secondary_position,
+            "secondary_positions": self.secondary_positions,
             "age": self.age,
             "projected_pa": self.projected_pa,
             "projected_ip": self.projected_ip,
@@ -179,6 +189,7 @@ class RatingOutput:
             assigned_traits=[TraitSuggestion.from_dict(item) for item in data.get("assigned_traits", [])],
             recommended_personalities=[PersonalityRecommendation.from_dict(item) for item in data.get("recommended_personalities", [])],
             secondary_position=data.get("secondary_position"),
+            secondary_positions=[str(item) for item in data.get("secondary_positions", []) if item is not None],
             age=data.get("age"),
             projected_pa=float(data["projected_pa"]) if data.get("projected_pa") is not None else None,
             projected_ip=float(data["projected_ip"]) if data.get("projected_ip") is not None else None,

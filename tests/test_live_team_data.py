@@ -213,6 +213,81 @@ class LiveTeamDataTests(unittest.TestCase):
         self.assertEqual(rows[0]["DRS"], 8.0)
         self.assertEqual(rows[0]["UZR"], 6.4)
 
+    def test_parse_savant_oaa_csv_extracts_position_when_present(self) -> None:
+        payload = (
+            '"name","display_team_name","position","outs_above_average"\n'
+            '"Barger, Addison","Blue Jays","3B",3\n'
+        )
+
+        rows = parse_savant_oaa_csv(payload)
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["position"], "3B")
+
+    def test_build_savant_fielding_rows_merges_position_specific_savant_fallback(self) -> None:
+        players = [
+            {
+                "player_id": 680718,
+                "name": "Addison Barger",
+                "team": "TOR",
+                "type": "hitter",
+                "position": "3B",
+                "fielding_stats": {
+                    "innings": "612.0",
+                    "fielding": "0.967",
+                },
+            }
+        ]
+        frv_payload = (
+            '"name","display_team_name","position","fielding_run_value","range_runs"\n'
+            '"Barger, Addison","TOR","3B",5,2\n'
+            '"Barger, Addison","TOR","RF",1,0\n'
+        )
+        oaa_payload = (
+            '"name","display_team_name","position","outs_above_average"\n'
+            '"Barger, Addison","TOR","3B",4\n'
+            '"Barger, Addison","TOR","RF",1\n'
+        )
+
+        rows = build_savant_fielding_rows(
+            players,
+            team_abbreviation="TOR",
+            season=2025,
+            fielding_run_value_payload=frv_payload,
+            oaa_payload=oaa_payload,
+        )
+
+        positions = {row["position"] for row in rows}
+        self.assertIn("3B", positions)
+        self.assertIn("RF", positions)
+
+    def test_build_savant_fielding_rows_matches_fallback_by_player_id_across_team_labels(self) -> None:
+        players = [
+            {
+                "player_id": 680718,
+                "name": "Addison Barger",
+                "team": "TOR",
+                "type": "hitter",
+                "position": "3B",
+                "fielding_stats": {},
+            }
+        ]
+        oaa_payload = (
+            '"name","player_id","display_team_name","position","outs_above_average"\n'
+            '"Barger, Addison",680718,"ARI","RF",1\n'
+        )
+
+        rows = build_savant_fielding_rows(
+            players,
+            team_abbreviation="TOR",
+            season=2025,
+            fielding_run_value_payload="",
+            oaa_payload=oaa_payload,
+        )
+
+        positions = {row["position"] for row in rows}
+        self.assertIn("RF", positions)
+
     def test_parse_savant_fielding_run_value_csv_extracts_components(self) -> None:
         payload = """Player,Team,Fielding Run Value,Range,Arm,Framing,Throwing\nAlejandro Kirk,TOR,6,1,0,4,1\n"""
 

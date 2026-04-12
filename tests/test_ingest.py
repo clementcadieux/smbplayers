@@ -552,6 +552,7 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertEqual(hitter["trait_metrics"]["dive_recovery"]["current"], 72.0)
         self.assertAlmostEqual(hitter["metrics"]["pop_time"]["current"], 1.92)
         self.assertAlmostEqual(hitter["metrics"]["framing_runs"]["current"], 8.1)
+        self.assertAlmostEqual(hitter["positional_games"]["CF"], 1115.0)
 
         self.assertEqual(pitcher["role"], "pitcher")
         self.assertEqual(pitcher["primary_position"], "P")

@@ -178,6 +178,140 @@ class SurfaceBlendTests(unittest.TestCase):
         pitch_mix_test = next(output for output in outputs if output.name == "Pitch Mix Test")
         self.assertEqual(pitch_mix_test.recommended_pitches, ["4-Seam Fastball", "Slider", "Forkball"])
 
+    def test_secondary_positions_are_derived_from_positional_games(self) -> None:
+        outputs = rate_players(
+            [
+                {
+                    "name": "Multi IF",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "2B",
+                    "positional_games": {"2B": 980, "SS": 310, "3B": 120, "1B": 40},
+                    "metrics": {
+                        "iso": 0.175,
+                        "hr_per_pa": 0.030,
+                        "barrel_rate": 0.082,
+                        "slugging": 0.435,
+                        "avg_exit_velocity": 88.7,
+                        "strikeout_rate": 0.198,
+                        "contact_rate": 0.784,
+                        "batting_average": 0.275,
+                        "adjusted_obp": 0.342,
+                        "two_strike_contact_rate": 0.637,
+                        "sprint_speed": 28.4,
+                        "baserunning_value": 4.1,
+                        "sb_attempt_rate": 0.10,
+                        "sb_success_rate": 0.80,
+                        "triple_double_rate": 0.07,
+                        "oaa": 6.0,
+                        "drs": 5.0,
+                        "uzr": 4.3,
+                        "fielding_pct_proxy": 0.989,
+                        "position_difficulty": 0.76,
+                        "arm_strength": 83.0,
+                        "arm_position_baseline": 0.48,
+                    },
+                    "samples": {"weighted_pa": 560, "baserunning_opportunities": 160, "defensive_innings": 1090},
+                },
+                self._player("Peer 1", 0.500, 425, iso=0.220, hr_per_pa=0.045, barrel_rate=0.110, avg_exit_velocity=91.0),
+                self._player("Peer 2", 0.360, 425, iso=0.120, hr_per_pa=0.025, barrel_rate=0.060, avg_exit_velocity=87.5),
+            ]
+        )
+
+        multi_if = next(output for output in outputs if output.name == "Multi IF")
+        self.assertEqual(multi_if.secondary_positions, ["SS", "3B", "1B"])
+        self.assertEqual(multi_if.secondary_position, "SS")
+
+    def test_full_outfield_coverage_boosts_utility_trait(self) -> None:
+        outputs = rate_players(
+            [
+                {
+                    "name": "Utility OF",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "LF",
+                    "positional_games": {"LF": 700, "CF": 220, "RF": 210},
+                    "metrics": {
+                        "iso": 0.180,
+                        "hr_per_pa": 0.032,
+                        "barrel_rate": 0.086,
+                        "slugging": 0.444,
+                        "avg_exit_velocity": 89.4,
+                        "strikeout_rate": 0.204,
+                        "contact_rate": 0.779,
+                        "batting_average": 0.273,
+                        "adjusted_obp": 0.339,
+                        "two_strike_contact_rate": 0.631,
+                        "sprint_speed": 28.7,
+                        "baserunning_value": 4.4,
+                        "sb_attempt_rate": 0.12,
+                        "sb_success_rate": 0.81,
+                        "triple_double_rate": 0.08,
+                        "oaa": 7.0,
+                        "drs": 8.0,
+                        "uzr": 5.1,
+                        "fielding_pct_proxy": 0.992,
+                        "position_difficulty": 0.62,
+                        "arm_strength": 86.0,
+                        "outfield_arm_runs": 3.4,
+                        "arm_position_baseline": 0.58,
+                    },
+                    "samples": {"weighted_pa": 575, "baserunning_opportunities": 165, "defensive_innings": 1120},
+                },
+                self._player("Peer 1", 0.500, 425, iso=0.220, hr_per_pa=0.045, barrel_rate=0.110, avg_exit_velocity=91.0),
+                self._player("Peer 2", 0.360, 425, iso=0.120, hr_per_pa=0.025, barrel_rate=0.060, avg_exit_velocity=87.5),
+            ],
+            trim_final_traits=False,
+        )
+
+        utility_of = next(output for output in outputs if output.name == "Utility OF")
+        suggested_trait_names = {trait.name for trait in utility_of.suggested_traits}
+        self.assertIn("Utility", suggested_trait_names)
+
+    def test_missing_positional_games_leaves_secondary_positions_empty(self) -> None:
+        outputs = rate_players(
+            [
+                {
+                    "name": "No Positional History",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "CF",
+                    "metrics": {
+                        "iso": 0.171,
+                        "hr_per_pa": 0.029,
+                        "barrel_rate": 0.079,
+                        "slugging": 0.426,
+                        "avg_exit_velocity": 88.2,
+                        "strikeout_rate": 0.208,
+                        "contact_rate": 0.776,
+                        "batting_average": 0.269,
+                        "adjusted_obp": 0.336,
+                        "two_strike_contact_rate": 0.625,
+                        "sprint_speed": 28.1,
+                        "baserunning_value": 3.9,
+                        "sb_attempt_rate": 0.09,
+                        "sb_success_rate": 0.78,
+                        "triple_double_rate": 0.06,
+                        "oaa": 4.0,
+                        "drs": 2.0,
+                        "uzr": 2.4,
+                        "fielding_pct_proxy": 0.986,
+                        "position_difficulty": 0.82,
+                        "arm_strength": 82.0,
+                        "outfield_arm_runs": 1.2,
+                        "arm_position_baseline": 0.68,
+                    },
+                    "samples": {"weighted_pa": 540, "baserunning_opportunities": 150, "defensive_innings": 990},
+                },
+                self._player("Peer 1", 0.500, 425, iso=0.220, hr_per_pa=0.045, barrel_rate=0.110, avg_exit_velocity=91.0),
+                self._player("Peer 2", 0.360, 425, iso=0.120, hr_per_pa=0.025, barrel_rate=0.060, avg_exit_velocity=87.5),
+            ]
+        )
+
+        no_history = next(output for output in outputs if output.name == "No Positional History")
+        self.assertEqual(no_history.secondary_positions, [])
+        self.assertIsNone(no_history.secondary_position)
+
     def test_rate_players_allocates_configured_trait_metrics(self) -> None:
         outputs = rate_players(
             [
