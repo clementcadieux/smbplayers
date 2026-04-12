@@ -74,8 +74,8 @@ from typing import Any
 
 
 SEASON_KEYS = ("current", "previous", "two_years_ago")
-SUPPORTED_SOURCES = frozenset({"baseball_savant", "baseball_reference", "mixed"})
-MIXABLE_SOURCES = frozenset({"baseball_savant", "baseball_reference"})
+SUPPORTED_SOURCES = frozenset({"baseball_savant", "baseball_reference", "fangraphs", "mixed"})
+MIXABLE_SOURCES = frozenset({"baseball_savant", "baseball_reference", "fangraphs"})
 SUPPORTED_FILE_TYPES = frozenset({"hitters", "pitchers", "fielding", "running", "roster"})
 
 POSITION_ALIASES = {
@@ -540,7 +540,7 @@ def load_manifest(path: Path) -> IngestManifest:
     data = json.loads(path.read_text(encoding="utf-8"))
     source = str(data.get("source", "")).strip().lower()
     if source not in SUPPORTED_SOURCES:
-        raise ValueError("Manifest source must be one of: baseball_savant, baseball_reference")
+        raise ValueError("Manifest source must be one of: baseball_savant, baseball_reference, fangraphs, mixed")
 
     raw_seasons = data.get("seasons")
     if not isinstance(raw_seasons, dict):
@@ -806,18 +806,18 @@ def _apply_hitter_row(player: PlayerAccumulator, season_key: str, row: dict[str,
     metric_specs = {
         "iso": (_pick_number(row, "iso", "isolated_power"), False),
         "hr_per_pa": (_safe_divide(home_runs, plate_appearances), home_runs is not None and plate_appearances is not None),
-        "barrel_rate": (_pick_number(row, "barrel_rate", "barrel_pct", "barrel_percent", "barrels_per_bbe", rate=True), False),
+        "barrel_rate": (_pick_number(row, "barrel_rate", "barrel_pct", "barrel_percent", "barrels_per_bbe", "brl_percent", "barrel", rate=True), False),
         "slugging": (_pick_number(row, "slg", "slugging", "slugging_pct"), False),
-        "avg_exit_velocity": (_pick_number(row, "avg_exit_velocity", "avg_hit_speed", "ev", "exit_velocity_avg"), False),
+        "avg_exit_velocity": (_pick_number(row, "avg_exit_velocity", "avg_hit_speed", "ev", "exit_velocity_avg", "avg_ev", "exit_velocity"), False),
         "strikeout_rate": (strikeout_rate, False),
         "contact_rate": (contact_rate, contact_rate is not None and _pick_first(row, "contact_rate", "contact_pct", "contact_percent") is None),
         "batting_average": (_pick_number(row, "batting_average", "avg", "ba"), False),
         "adjusted_obp": (adjusted_obp, adjusted_obp is not None and _pick_first(row, "adjusted_obp") is None),
         "two_strike_contact_rate": (
-            _pick_number(row, "two_strike_contact_rate", "two_strike_contact_pct", "2strike_contact_pct", rate=True),
+            _pick_number(row, "two_strike_contact_rate", "two_strike_contact_pct", "2strike_contact_pct", "contact_pct_2strikes", rate=True),
             False,
         ),
-        "sprint_speed": (_pick_number(row, "sprint_speed"), False),
+        "sprint_speed": (_pick_number(row, "sprint_speed", "sprint_speed_ft_sec", "spdscr"), False),
         "baserunning_value": (baserunning_value, _pick_first(row, "baserunning_value", "bsr", "running_value", "baserunning_run_value") is None and baserunning_value is not None),
         "sb_attempt_rate": (_safe_divide(steal_attempts, baserunning_opportunities or plate_appearances), steal_attempts is not None),
         "sb_success_rate": (_safe_divide(stolen_bases, steal_attempts), steal_attempts is not None),
@@ -929,8 +929,8 @@ def _apply_fielding_row(player: PlayerAccumulator, season_key: str, row: dict[st
     innings = _pick_number(row, "defensive_innings", "innings", "inn", "fielding_innings")
     position = player.primary_position or _canonical_position(_pick_first(row, "position", "pos", "primary_position"))
     oaa = _pick_number(row, "oaa", "outs_above_average")
-    drs = _pick_number(row, "drs", "defensive_runs_saved")
-    uzr = _pick_number(row, "uzr")
+    drs = _pick_number(row, "drs", "defensive_runs_saved", "drs_total")
+    uzr = _pick_number(row, "uzr", "uzr_150", "ultimate_zone_rating")
     fielding_pct = _pick_number(row, "fielding_pct_proxy", "fielding_pct", "fld_pct")
     if fielding_pct is None:
         putouts = _pick_number(row, "po", "putouts")
@@ -963,7 +963,7 @@ def _apply_fielding_row(player: PlayerAccumulator, season_key: str, row: dict[st
 def _apply_running_row(player: PlayerAccumulator, season_key: str, row: dict[str, str]) -> None:
     _apply_identity(player, row)
     player.set_trait_metrics(season_key, _row_trait_metrics(row, HITTER_TRAIT_METRIC_COLUMNS))
-    sprint_speed = _pick_number(row, "sprint_speed")
+    sprint_speed = _pick_number(row, "sprint_speed", "sprint_speed_ft_sec", "spdscr")
     baserunning_value = _pick_number(row, "baserunning_value", "bsr", "running_value", "baserunning_run_value")
     opportunities = _pick_number(row, "baserunning_opportunities", "br_opportunities")
 

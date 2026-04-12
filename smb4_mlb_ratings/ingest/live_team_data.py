@@ -341,6 +341,7 @@ def build_mixed_source_manifest(
     savant_hitters_file: str,
     savant_pitchers_file: str,
     savant_fielding_file: str | None = None,
+    fangraphs_fielding_file: str | None = None,
     baseball_reference_hitters_file: str,
     baseball_reference_pitchers_file: str,
 ) -> dict[str, Any]:
@@ -352,23 +353,27 @@ def build_mixed_source_manifest(
     if savant_fielding_file:
         savant_files["fielding"] = savant_fielding_file
 
+    sources: dict[str, dict[str, dict[str, str]]] = {
+        "baseball_reference": {
+            "files": {
+                "hitters": baseball_reference_hitters_file,
+                "pitchers": baseball_reference_pitchers_file,
+            }
+        },
+        "baseball_savant": {
+            "files": savant_files
+        },
+    }
+    if fangraphs_fielding_file:
+        sources["fangraphs"] = {"files": {"fielding": fangraphs_fielding_file}}
+
     return {
         "source": "mixed",
         "roster_filter": {"team": team_abbreviation, "year": roster_season},
         "seasons": {
             "current": {
                 "year": roster_season,
-                "sources": {
-                    "baseball_reference": {
-                        "files": {
-                            "hitters": baseball_reference_hitters_file,
-                            "pitchers": baseball_reference_pitchers_file,
-                        }
-                    },
-                    "baseball_savant": {
-                        "files": savant_files
-                    },
-                },
+                "sources": sources,
             }
         },
     }

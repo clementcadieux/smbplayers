@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from .baseball_reference import ingest_from_manifest as ingest_from_baseball_reference_manifest
+from .fangraphs import ingest_from_manifest as ingest_from_fangraphs_manifest
 from .savant import IngestManifest, RosterFilter, SeasonInputs, ingest_from_manifest as ingest_from_savant_manifest, load_manifest
 
 
@@ -33,15 +34,21 @@ SAVANT_TOOL_METRICS = frozenset(
 )
 
 SAVANT_SAMPLE_KEYS = frozenset({"tracked_fastballs", "tracked_pitches"})
+FANGRAPHS_PREFERRED_METRICS = frozenset({"drs", "uzr"})
 
 
 def _merge_trait_metric_map(
 	baseball_reference: dict[str, dict[str, Any]],
 	savant: dict[str, dict[str, Any]],
+	fangraphs: dict[str, dict[str, Any]],
 ) -> dict[str, dict[str, Any]]:
 	merged: dict[str, dict[str, Any]] = {}
-	for metric_name in sorted(set(baseball_reference) | set(savant)):
-		merged_values = _union_season_values(savant.get(metric_name, {}), baseball_reference.get(metric_name, {}))
+	for metric_name in sorted(set(baseball_reference) | set(savant) | set(fangraphs)):
+		merged_values = _union_season_values(
+			savant.get(metric_name, {}),
+			fangraphs.get(metric_name, {}),
+			baseball_reference.get(metric_name, {}),
+		)
 		if merged_values:
 			merged[metric_name] = merged_values
 	return merged
@@ -50,11 +57,12 @@ def _merge_trait_metric_map(
 def _merge_trait_lists(
 	baseball_reference: dict[str, list[Any]],
 	savant: dict[str, list[Any]],
+	fangraphs: dict[str, list[Any]],
 ) -> dict[str, list[str]]:
 	merged: dict[str, list[str]] = {}
-	for list_name in sorted(set(baseball_reference) | set(savant)):
+	for list_name in sorted(set(baseball_reference) | set(savant) | set(fangraphs)):
 		values: set[str] = set()
-		for source_values in (baseball_reference.get(list_name, []), savant.get(list_name, [])):
+		for source_values in (baseball_reference.get(list_name, []), savant.get(list_name, []), fangraphs.get(list_name, [])):
 			if isinstance(source_values, list):
 				values.update(str(item) for item in source_values if item is not None and str(item))
 		if values:
@@ -93,28 +101,42 @@ def _player_merge_key(player: dict[str, Any]) -> tuple[str, str]:
 	return ("name", _normalized_name(name))
 
 
-def _union_season_values(
-	preferred_values: dict[str, Any],
-	fallback_values: dict[str, Any],
-) -> dict[str, Any]:
+def _union_season_values(*season_maps: dict[str, Any]) -> dict[str, Any]:
 	merged: dict[str, Any] = {}
-	for season_key in set(preferred_values) | set(fallback_values):
-		if season_key in preferred_values:
-			merged[season_key] = preferred_values[season_key]
-		elif season_key in fallback_values:
-			merged[season_key] = fallback_values[season_key]
+	for season_map in season_maps:
+		if not isinstance(season_map, dict):
+			continue
+		for season_key, value in season_map.items():
+			if season_key not in merged:
+				merged[season_key] = value
 	return dict(sorted(merged.items()))
 
 
 def _merge_metric_map(
 	baseball_reference: dict[str, dict[str, Any]],
 	savant: dict[str, dict[str, Any]],
+	fangraphs: dict[str, dict[str, Any]],
 ) -> dict[str, dict[str, Any]]:
 	merged: dict[str, dict[str, Any]] = {}
-	for metric_name in sorted(set(baseball_reference) | set(savant)):
-		preferred = savant if metric_name in SAVANT_TOOL_METRICS else baseball_reference
-		fallback = baseball_reference if metric_name in SAVANT_TOOL_METRICS else savant
-		merged_values = _union_season_values(preferred.get(metric_name, {}), fallback.get(metric_name, {}))
+	for metric_name in sorted(set(baseball_reference) | set(savant) | set(fangraphs)):
+		if metric_name in SAVANT_TOOL_METRICS:
+			merged_values = _union_season_values(
+				savant.get(metric_name, {}),
+				fangraphs.get(metric_name, {}),
+				baseball_reference.get(metric_name, {}),
+			)
+		elif metric_name in FANGRAPHS_PREFERRED_METRICS:
+			merged_values = _union_season_values(
+				fangraphs.get(metric_name, {}),
+				baseball_reference.get(metric_name, {}),
+				savant.get(metric_name, {}),
+			)
+		else:
+			merged_values = _union_season_values(
+				baseball_reference.get(metric_name, {}),
+				fangraphs.get(metric_name, {}),
+				savant.get(metric_name, {}),
+			)
 		if merged_values:
 			merged[metric_name] = merged_values
 	return merged
@@ -123,12 +145,22 @@ def _merge_metric_map(
 def _merge_sample_map(
 	baseball_reference: dict[str, dict[str, Any]],
 	savant: dict[str, dict[str, Any]],
+	fangraphs: dict[str, dict[str, Any]],
 ) -> dict[str, dict[str, Any]]:
 	merged: dict[str, dict[str, Any]] = {}
-	for sample_name in sorted(set(baseball_reference) | set(savant)):
-		preferred = savant if sample_name in SAVANT_SAMPLE_KEYS else baseball_reference
-		fallback = baseball_reference if sample_name in SAVANT_SAMPLE_KEYS else savant
-		merged_values = _union_season_values(preferred.get(sample_name, {}), fallback.get(sample_name, {}))
+	for sample_name in sorted(set(baseball_reference) | set(savant) | set(fangraphs)):
+		if sample_name in SAVANT_SAMPLE_KEYS:
+			merged_values = _union_season_values(
+				savant.get(sample_name, {}),
+				baseball_reference.get(sample_name, {}),
+				fangraphs.get(sample_name, {}),
+			)
+		else:
+			merged_values = _union_season_values(
+				baseball_reference.get(sample_name, {}),
+				fangraphs.get(sample_name, {}),
+				savant.get(sample_name, {}),
+			)
 		if merged_values:
 			merged[sample_name] = merged_values
 	return merged
@@ -137,10 +169,11 @@ def _merge_sample_map(
 def _merge_ingest_metadata(
 	baseball_reference: dict[str, Any],
 	savant: dict[str, Any],
+	fangraphs: dict[str, Any],
 ) -> dict[str, Any]:
 	merged_estimated: dict[str, set[str]] = {}
 	merged_missing: dict[str, set[str]] = {}
-	for source_name, metadata in (("baseball_reference", baseball_reference), ("baseball_savant", savant)):
+	for source_name, metadata in (("baseball_reference", baseball_reference), ("baseball_savant", savant), ("fangraphs", fangraphs)):
 		ingest = metadata.get("ingest", {}) if isinstance(metadata, dict) else {}
 		estimated = ingest.get("estimated_metrics", {}) if isinstance(ingest, dict) else {}
 		if isinstance(estimated, dict):
@@ -157,26 +190,31 @@ def _merge_ingest_metadata(
 	return {
 		"estimated_metrics": {season: sorted(values) for season, values in sorted(merged_estimated.items()) if values},
 		"missing_files": {season: sorted(values) for season, values in sorted(merged_missing.items()) if values},
-		"merge_strategy": "baseball_reference outcomes, baseball_savant tools",
+		"merge_strategy": "baseball_reference outcomes, fangraphs fielding, baseball_savant tools",
 	}
 
 
 def _merge_player_records(
 	baseball_reference: dict[str, Any] | None,
 	savant: dict[str, Any] | None,
+	fangraphs: dict[str, Any] | None,
 ) -> dict[str, Any]:
-	if baseball_reference is None and savant is None:
-		raise ValueError("Cannot merge two missing player records")
+	if baseball_reference is None and savant is None and fangraphs is None:
+		raise ValueError("Cannot merge missing player records")
 	if baseball_reference is None:
 		baseball_reference = {}
 	if savant is None:
 		savant = {}
+	if fangraphs is None:
+		fangraphs = {}
 
 	br_metadata = baseball_reference.get("metadata", {}) if isinstance(baseball_reference.get("metadata"), dict) else {}
 	sv_metadata = savant.get("metadata", {}) if isinstance(savant.get("metadata"), dict) else {}
+	fg_metadata = fangraphs.get("metadata", {}) if isinstance(fangraphs.get("metadata"), dict) else {}
 	br_role = baseball_reference.get("role")
 	sv_role = savant.get("role")
-	roles = {role for role in (br_role, sv_role) if isinstance(role, str) and role}
+	fg_role = fangraphs.get("role")
+	roles = {role for role in (br_role, sv_role, fg_role) if isinstance(role, str) and role}
 	if "two_way" in roles or roles == {"hitter", "pitcher"}:
 		role = "two_way"
 	elif "pitcher" in roles:
@@ -187,28 +225,32 @@ def _merge_player_records(
 	metrics = _merge_metric_map(
 		baseball_reference.get("metrics", {}) if isinstance(baseball_reference.get("metrics"), dict) else {},
 		savant.get("metrics", {}) if isinstance(savant.get("metrics"), dict) else {},
+		fangraphs.get("metrics", {}) if isinstance(fangraphs.get("metrics"), dict) else {},
 	)
 	samples = _merge_sample_map(
 		baseball_reference.get("samples", {}) if isinstance(baseball_reference.get("samples"), dict) else {},
 		savant.get("samples", {}) if isinstance(savant.get("samples"), dict) else {},
+		fangraphs.get("samples", {}) if isinstance(fangraphs.get("samples"), dict) else {},
 	)
 	trait_metrics = _merge_trait_metric_map(
 		baseball_reference.get("trait_metrics", {}) if isinstance(baseball_reference.get("trait_metrics"), dict) else {},
 		savant.get("trait_metrics", {}) if isinstance(savant.get("trait_metrics"), dict) else {},
+		fangraphs.get("trait_metrics", {}) if isinstance(fangraphs.get("trait_metrics"), dict) else {},
 	)
 	trait_lists = _merge_trait_lists(
 		baseball_reference.get("trait_lists", {}) if isinstance(baseball_reference.get("trait_lists"), dict) else {},
 		savant.get("trait_lists", {}) if isinstance(savant.get("trait_lists"), dict) else {},
+		fangraphs.get("trait_lists", {}) if isinstance(fangraphs.get("trait_lists"), dict) else {},
 	)
 	merged_years = {}
-	for metadata in (br_metadata, sv_metadata):
+	for metadata in (br_metadata, sv_metadata, fg_metadata):
 		years = metadata.get("source_years", {}) if isinstance(metadata, dict) else {}
 		if isinstance(years, dict):
 			for season_key, value in years.items():
 				merged_years[season_key] = value
 
 	merged_source_player_id = None
-	for metadata in (sv_metadata, br_metadata):
+	for metadata in (sv_metadata, fg_metadata, br_metadata):
 		source_player_id = metadata.get("source_player_id") if isinstance(metadata, dict) else None
 		if isinstance(source_player_id, str) and source_player_id:
 			merged_source_player_id = source_player_id
@@ -217,7 +259,7 @@ def _merge_player_records(
 	merged_status = None
 	merged_status_code = None
 	merged_on_il = None
-	for metadata in (sv_metadata, br_metadata):
+	for metadata in (sv_metadata, fg_metadata, br_metadata):
 		status = metadata.get("status") if isinstance(metadata, dict) else None
 		status_code = metadata.get("status_code") if isinstance(metadata, dict) else None
 		on_il = metadata.get("on_il") if isinstance(metadata, dict) else None
@@ -230,17 +272,22 @@ def _merge_player_records(
 
 	metadata = {
 		"source": "mixed",
-		"source_components": [source for source, payload in (("baseball_reference", baseball_reference), ("baseball_savant", savant)) if payload],
+		"source_components": [
+			source
+			for source, payload in (("baseball_reference", baseball_reference), ("baseball_savant", savant), ("fangraphs", fangraphs))
+			if payload
+		],
 		"source_player_ids": {
 			source: payload_metadata.get("source_player_id")
-			for source, payload_metadata in (("baseball_reference", br_metadata), ("baseball_savant", sv_metadata))
+			for source, payload_metadata in (("baseball_reference", br_metadata), ("baseball_savant", sv_metadata), ("fangraphs", fg_metadata))
 			if isinstance(payload_metadata.get("source_player_id"), str)
 		},
 		"source_years": dict(sorted(merged_years.items())),
-		"ingest": _merge_ingest_metadata(br_metadata, sv_metadata),
+		"ingest": _merge_ingest_metadata(br_metadata, sv_metadata, fg_metadata),
 		"source_details": {
 			"baseball_reference": br_metadata,
 			"baseball_savant": sv_metadata,
+			"fangraphs": fg_metadata,
 		},
 	}
 	if isinstance(merged_source_player_id, str):
@@ -252,22 +299,24 @@ def _merge_player_records(
 	if isinstance(merged_on_il, bool):
 		metadata["on_il"] = merged_on_il
 	active = bool(baseball_reference.get("active", True)) and bool(savant.get("active", True))
+	active = active and bool(fangraphs.get("active", True))
 	days_on_roster = _union_season_values(
 		savant.get("days_on_roster", {}) if isinstance(savant.get("days_on_roster"), dict) else {},
 		baseball_reference.get("days_on_roster", {}) if isinstance(baseball_reference.get("days_on_roster"), dict) else {},
+		fangraphs.get("days_on_roster", {}) if isinstance(fangraphs.get("days_on_roster"), dict) else {},
 	)
 	pitch_mix = savant.get("pitch_mix", {}) if isinstance(savant.get("pitch_mix"), dict) else {}
 
 	merged_player = {
-		"name": baseball_reference.get("name") or savant.get("name"),
+		"name": baseball_reference.get("name") or fangraphs.get("name") or savant.get("name"),
 		"role": role,
 		"active": active,
-		"team": baseball_reference.get("team") or savant.get("team"),
-		"age": baseball_reference.get("age") if baseball_reference.get("age") is not None else savant.get("age"),
-		"primary_position": baseball_reference.get("primary_position") or savant.get("primary_position"),
-		"secondary_position": baseball_reference.get("secondary_position") or savant.get("secondary_position"),
-		"bats": baseball_reference.get("bats") or savant.get("bats"),
-		"throws": baseball_reference.get("throws") or savant.get("throws"),
+		"team": baseball_reference.get("team") or fangraphs.get("team") or savant.get("team"),
+		"age": baseball_reference.get("age") if baseball_reference.get("age") is not None else (fangraphs.get("age") if fangraphs.get("age") is not None else savant.get("age")),
+		"primary_position": baseball_reference.get("primary_position") or fangraphs.get("primary_position") or savant.get("primary_position"),
+		"secondary_position": baseball_reference.get("secondary_position") or fangraphs.get("secondary_position") or savant.get("secondary_position"),
+		"bats": baseball_reference.get("bats") or fangraphs.get("bats") or savant.get("bats"),
+		"throws": baseball_reference.get("throws") or fangraphs.get("throws") or savant.get("throws"),
 		"metrics": metrics,
 		"samples": samples,
 		"metadata": metadata,
@@ -286,14 +335,17 @@ def _merge_player_records(
 def _ingest_from_mixed_manifest(manifest: IngestManifest) -> list[dict[str, Any]]:
 	baseball_reference_manifest = _clone_manifest_for_source(manifest, "baseball_reference")
 	savant_manifest = _clone_manifest_for_source(manifest, "baseball_savant")
+	fangraphs_manifest = _clone_manifest_for_source(manifest, "fangraphs")
 	baseball_reference_players = ingest_from_baseball_reference_manifest(baseball_reference_manifest)
 	savant_players = ingest_from_savant_manifest(savant_manifest)
+	fangraphs_players = ingest_from_fangraphs_manifest(fangraphs_manifest)
 
 	baseball_reference_by_key = {_player_merge_key(player): player for player in baseball_reference_players}
 	savant_by_key = {_player_merge_key(player): player for player in savant_players}
+	fangraphs_by_key = {_player_merge_key(player): player for player in fangraphs_players}
 	merged_players = [
-		_merge_player_records(baseball_reference_by_key.get(key), savant_by_key.get(key))
-		for key in sorted(set(baseball_reference_by_key) | set(savant_by_key))
+		_merge_player_records(baseball_reference_by_key.get(key), savant_by_key.get(key), fangraphs_by_key.get(key))
+		for key in sorted(set(baseball_reference_by_key) | set(savant_by_key) | set(fangraphs_by_key))
 	]
 	merged_players.sort(key=lambda item: (item["role"], item["name"]))
 	return merged_players
@@ -305,6 +357,8 @@ def ingest_from_manifest(manifest: IngestManifest | Path) -> list[dict]:
 		return ingest_from_savant_manifest(manifest_obj)
 	if manifest_obj.source == "baseball_reference":
 		return ingest_from_baseball_reference_manifest(manifest_obj)
+	if manifest_obj.source == "fangraphs":
+		return ingest_from_fangraphs_manifest(manifest_obj)
 	if manifest_obj.source == "mixed":
 		return _ingest_from_mixed_manifest(manifest_obj)
 	raise ValueError(f"Unsupported ingest source '{manifest_obj.source}'")
