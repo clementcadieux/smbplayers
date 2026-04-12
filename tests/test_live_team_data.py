@@ -66,7 +66,13 @@ class LiveTeamDataTests(unittest.TestCase):
             "obp": "0.341",
             "slg": "0.502",
             "advanced_hitting": {"iso": "0.222", "totalSwings": 700, "swingAndMisses": 140},
-            "savant_hitting_summary": {"zone_contact_pct": 88.4, "out_of_zone_contact_pct": 61.2},
+            "savant_hitting_summary": {
+                "zone_contact_pct": 88.4,
+                "out_of_zone_contact_pct": 61.2,
+                "barrel_rate": 12.3,
+                "avg_exit_velocity": 91.7,
+                "sprint_speed": 28.8,
+            },
             "situational_hitting_metrics": {
                 "first_pitch_hitting": 72.5,
                 "risp_hitting": 76.0,
@@ -145,8 +151,11 @@ class LiveTeamDataTests(unittest.TestCase):
         self.assertEqual(len(roster_rows), 2)
         self.assertEqual(bref_hitter_rows[0]["Contact vs LHP Minus RHP"], 46.0)
         self.assertEqual(savant_hitter_rows[0]["Contact %"], 80.0)
+        self.assertEqual(savant_hitter_rows[0]["Barrel %"], 12.3)
+        self.assertEqual(savant_hitter_rows[0]["Avg Exit Velocity"], 91.7)
         self.assertEqual(savant_hitter_rows[0]["z_contact_pct"], 88.4)
         self.assertEqual(savant_hitter_rows[0]["o_contact_pct"], 61.2)
+        self.assertEqual(savant_hitter_rows[0]["Sprint Speed"], 28.8)
         self.assertEqual(savant_hitter_rows[0]["first_pitch_hitting"], 72.5)
         self.assertEqual(savant_hitter_rows[0]["risp_hitting"], 76.0)
         self.assertEqual(savant_hitter_rows[0]["pressure_hitting"], 67.0)
@@ -164,11 +173,14 @@ class LiveTeamDataTests(unittest.TestCase):
         self.assertEqual(savant_pitcher_rows[0]["three_ball_accuracy"], 58.0)
         self.assertEqual(savant_pitcher_rows[0]["steal_suppression"], 59.2)
 
-    def test_parse_savant_statcast_summary_extracts_contact_fields(self) -> None:
+    def test_parse_savant_statcast_summary_extracts_contact_and_tool_fields(self) -> None:
         payload = """
         <script>
         var pageData = {
-            statcast: [{"year": 2024, "iz_contact_percent": 80.1, "oz_contact_percent": 55.2}, {"year": 2025, "iz_contact_percent": 84.1, "oz_contact_percent": 59.1}],
+            statcast: [
+                {"year": 2024, "iz_contact_percent": 80.1, "oz_contact_percent": 55.2},
+                {"year": 2025, "iz_contact_percent": 84.1, "oz_contact_percent": 59.1, "exit_velocity_avg": "91.7", "barrel_batted_rate": 11.4, "sprint_speed": "27.7"}
+            ],
             statcastArrayString: "..."
         };
         </script>
@@ -176,7 +188,16 @@ class LiveTeamDataTests(unittest.TestCase):
 
         summary = parse_savant_statcast_summary(payload, season=2025)
 
-        self.assertEqual(summary, {"zone_contact_pct": 84.1, "out_of_zone_contact_pct": 59.1})
+        self.assertEqual(
+            summary,
+            {
+                "zone_contact_pct": 84.1,
+                "out_of_zone_contact_pct": 59.1,
+                "avg_exit_velocity": 91.7,
+                "barrel_rate": 11.4,
+                "sprint_speed": 27.7,
+            },
+        )
 
     def test_parse_fangraphs_fielding_csv_extracts_drs_and_uzr(self) -> None:
         payload = """Name,Team,DRS,UZR\nAlejandro Kirk,TOR,9,7.1\nPitcher Example,TOR,,\n"""

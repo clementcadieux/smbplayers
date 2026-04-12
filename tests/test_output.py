@@ -4,6 +4,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from smb4_mlb_ratings.cli import main
 from smb4_mlb_ratings.models import RatingOutput
@@ -103,6 +104,41 @@ class StructuredOutputTests(unittest.TestCase):
         self.assertEqual(index_payload["NL"]["East"][0]["team"], "NYM")
         self.assertEqual(index_payload["NL"]["West"][0]["team"], "LAD")
 
+    def test_cli_refresh_bluejays_example_builds_local_live_example_outputs(self) -> None:
+        with patch("smb4_mlb_ratings.cli.fetch_team_players", return_value=self._live_bluejays_players()):
+            result = main([
+                "refresh-bluejays-example",
+                "--example-root",
+                str(self.root),
+            ])
+
+        self.assertEqual(result, 0)
+
+        manifest_path = self.root / "bluejays_mixed_manifest_concrete.json"
+        normalized_path = self.root / "exports" / "bluejays_normalized_for_result_example.json"
+        ratings_path = self.root / "bluejays_result_example.json"
+        roster_path = self.root / "exports" / "bluejays_roster_report.json"
+        structured_path = self.root / "exports" / "bluejays_structured_report" / "AL" / "East" / "TOR.json"
+
+        self.assertTrue(manifest_path.exists())
+        self.assertTrue(normalized_path.exists())
+        self.assertTrue(ratings_path.exists())
+        self.assertTrue(roster_path.exists())
+        self.assertTrue(structured_path.exists())
+
+        normalized_payload = json.loads(normalized_path.read_text(encoding="utf-8"))
+        hitter = next(player for player in normalized_payload["players"] if player["role"] == "hitter")
+        self.assertAlmostEqual(hitter["metrics"]["barrel_rate"]["current"], 0.114)
+        self.assertAlmostEqual(hitter["metrics"]["avg_exit_velocity"]["current"], 91.7)
+        self.assertAlmostEqual(hitter["metrics"]["sprint_speed"]["current"], 27.7)
+
+        ratings_payload = json.loads(ratings_path.read_text(encoding="utf-8"))
+        rated_hitter = next(player for player in ratings_payload if player["role"] == "hitter")
+        review_flags = set(rated_hitter["review_flags"])
+        self.assertTrue(all("avg_exit_velocity" not in flag for flag in review_flags))
+        self.assertTrue(all("barrel_rate" not in flag for flag in review_flags))
+        self.assertTrue(all("sprint_speed" not in flag for flag in review_flags))
+
     def _rating(self, name: str, team: str) -> RatingOutput:
         return RatingOutput(
             name=name,
@@ -124,6 +160,115 @@ class StructuredOutputTests(unittest.TestCase):
             projected_ip=None,
             metadata={},
         )
+
+    def _live_bluejays_players(self) -> list[dict[str, object]]:
+        return [
+            {
+                "player_id": 680718,
+                "name": "Addison Barger",
+                "team": "TOR",
+                "type": "hitter",
+                "position": "3B",
+                "status": "Active",
+                "status_code": "A",
+                "age": 26,
+                "bats": "L",
+                "throws": "R",
+                "days_on_roster": 167,
+                "plate_appearances": 502,
+                "at_bats": 460,
+                "hits": 112,
+                "doubles": 32,
+                "triples": 1,
+                "home_runs": 21,
+                "walks": 36,
+                "strikeouts": 121,
+                "hit_by_pitch": 3,
+                "stolen_bases": 4,
+                "caught_stealing": 1,
+                "avg": "0.243",
+                "obp": "0.301",
+                "slg": "0.454",
+                "advanced_hitting": {"iso": "0.211", "totalSwings": 700, "swingAndMisses": 182},
+                "savant_hitting_summary": {
+                    "zone_contact_pct": 82.0,
+                    "out_of_zone_contact_pct": 55.6,
+                    "avg_exit_velocity": 91.7,
+                    "barrel_rate": 11.4,
+                    "sprint_speed": 27.7,
+                },
+                "situational_hitting_metrics": {
+                    "first_pitch_hitting": 72.0,
+                    "risp_hitting": 76.0,
+                    "pressure_hitting": 67.0,
+                    "late_game_hitting": 64.0,
+                    "trailing_bases_empty_hitting": 61.0,
+                },
+                "hitting_handedness_splits": {
+                    "vl": {"avg": 0.300, "iso": 0.250, "strikeout_rate": 0.18},
+                    "vr": {"avg": 0.230, "iso": 0.180, "strikeout_rate": 0.27},
+                },
+                "fielding_stats": {
+                    "innings": "613.1",
+                    "fielding": "0.966",
+                    "putOuts": 45,
+                    "assists": 88,
+                    "errors": 5,
+                    "outsAboveAverage": 2,
+                    "defensiveRunsSaved": 1,
+                    "uzr": 0.5,
+                    "armStrength": 96.5,
+                },
+            },
+            {
+                "player_id": 670102,
+                "name": "Bowden Francis",
+                "team": "TOR",
+                "type": "pitcher",
+                "position": "P",
+                "status": "Active",
+                "status_code": "A",
+                "age": 29,
+                "bats": "R",
+                "throws": "R",
+                "days_on_roster": 176,
+                "batters_faced": 684,
+                "walks": 54,
+                "strikeouts": 179,
+                "home_runs": 22,
+                "hits": 141,
+                "innings_pitched": "168.0",
+                "number_of_pitches": 2718,
+                "strikes": 1764,
+                "strike_percentage": "64.9",
+                "stolen_bases": 9,
+                "caught_stealing": 5,
+                "pickoffs": 1,
+                "stolenBasePercentage": "64.3",
+                "advanced_pitching": {"whiffPercentage": 0.144},
+                "situational_pitching_metrics": {
+                    "first_pitch_pitching": 78.0,
+                    "runners_on_pitching": 73.5,
+                    "pressure_pitching": 80.5,
+                    "three_ball_accuracy": 58.0,
+                    "steal_suppression": 59.2,
+                },
+                "pitching_handedness_splits": {
+                    "vr": {"ops": 0.610, "strikeout_rate": 0.290},
+                    "vl": {"ops": 0.740, "strikeout_rate": 0.220},
+                },
+                "pitch_arsenal": {
+                    "FF": {"percentage": 0.56, "averageSpeed": 92.4},
+                    "SI": {"percentage": 0.02, "averageSpeed": 91.2},
+                    "SL": {"percentage": 0.22, "averageSpeed": 84.5},
+                    "CU": {"percentage": 0.14, "averageSpeed": 79.4},
+                },
+                "savant_pitch_details": {
+                    "FF": {"xba": 0.220, "xwoba": 0.300, "xslg": 0.360, "hard_hit_percent": 33.0, "brl_percent": 6.0, "swings": 300.0, "misses": 80.0, "release_speed": 92.4, "pitches": 420.0, "total_pitches": 1000.0},
+                    "SL": {"xba": 0.180, "xwoba": 0.240, "xslg": 0.280, "hard_hit_percent": 24.0, "brl_percent": 3.0, "swings": 220.0, "misses": 90.0, "release_speed": 84.5, "pitches": 310.0, "total_pitches": 1000.0},
+                },
+            },
+        ]
 
 
 if __name__ == "__main__":
