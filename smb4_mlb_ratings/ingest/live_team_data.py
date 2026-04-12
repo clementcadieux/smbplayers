@@ -9,6 +9,7 @@ from urllib.request import Request, urlopen
 from .live_metrics import (
     aggregate_split_stats,
     derive_hitter_situational_metrics,
+    derive_pitcher_situational_metrics,
     game_log_days_on_roster,
     hitter_contact_platoon_delta,
     hitter_power_platoon_delta,
@@ -250,6 +251,7 @@ def build_savant_pitcher_rows(
         advanced = player.get("advanced_pitching") if isinstance(player.get("advanced_pitching"), Mapping) else {}
         arsenal_data = player.get("pitch_arsenal") if isinstance(player.get("pitch_arsenal"), Mapping) else {}
         pitching_splits = player.get("pitching_handedness_splits") if isinstance(player.get("pitching_handedness_splits"), Mapping) else {}
+        situational_pitching_metrics = player.get("situational_pitching_metrics") if isinstance(player.get("situational_pitching_metrics"), Mapping) else {}
         savant_pitch_details = player.get("savant_pitch_details") if isinstance(player.get("savant_pitch_details"), Mapping) else {}
         pitch_quality = derive_pitch_quality_metrics(arsenal_data, savant_pitch_details)
         throws = _as_str(player.get("throws"))
@@ -278,6 +280,11 @@ def build_savant_pitcher_rows(
                 "SwStr %": _as_percentage_string(advanced.get("whiffPercentage")),
                 "BB %": _percentage(player.get("walks"), player.get("batters_faced")),
                 "Strike %": _as_percentage_string(player.get("strike_percentage")),
+                "first_pitch_pitching": situational_pitching_metrics.get("first_pitch_pitching"),
+                "runners_on_pitching": situational_pitching_metrics.get("runners_on_pitching"),
+                "pressure_pitching": situational_pitching_metrics.get("pressure_pitching"),
+                "three_ball_accuracy": situational_pitching_metrics.get("three_ball_accuracy"),
+                "steal_suppression": situational_pitching_metrics.get("steal_suppression"),
                 **pitch_quality_columns(pitch_quality),
                 "Same Handed Pitching": pitcher_handedness_score(throws, pitching_splits, split_type="same"),
                 "Same Handed Pitching Gap": pitcher_handedness_gap(throws, pitching_splits, split_type="same"),
@@ -454,6 +461,14 @@ def _fetch_roster_player(
     batters_faced = _as_int(stats.get("battersFaced")) or 0
     if batters_faced == 0:
         return None
+    situational_pitching_splits = _fetch_situation_splits(
+        player_id,
+        stat_group,
+        codes=("c00", "ron", "lc", "c30", "c31", "c32"),
+        seasons=seasons,
+        ssl_context=ssl_context,
+        mlb_stats_api=mlb_stats_api,
+    )
     pitch_arsenal = _fetch_pitch_arsenal(
         player_id,
         seasons=seasons,
@@ -471,7 +486,20 @@ def _fetch_roster_player(
             "number_of_pitches": _as_int(stats.get("numberOfPitches")) or 0,
             "strikes": _as_int(stats.get("strikes")) or 0,
             "strike_percentage": _as_str(stats.get("strikePercentage")) or _as_str(advanced_stats.get("strikePercentage")),
+            "stolen_bases_allowed": _as_int(stats.get("stolenBases")) or 0,
+            "caught_stealing": _as_int(stats.get("caughtStealing")) or 0,
+            "pickoffs": _as_int(stats.get("pickoffs")) or 0,
+            "stolen_base_percentage": _as_str(stats.get("stolenBasePercentage")),
             "advanced_pitching": advanced_stats,
+            "situational_pitching_metrics": derive_pitcher_situational_metrics(
+                situational_pitching_splits,
+                {
+                    "stolen_bases_allowed": _as_int(stats.get("stolenBases")) or 0,
+                    "caught_stealing": _as_int(stats.get("caughtStealing")) or 0,
+                    "pickoffs": _as_int(stats.get("pickoffs")) or 0,
+                    "stolen_base_percentage": _as_str(stats.get("stolenBasePercentage")),
+                },
+            ),
             "pitching_handedness_splits": handedness_splits,
             "savant_pitch_details": _fetch_savant_pitch_details(
                 player_id,

@@ -87,11 +87,22 @@ class LiveTeamDataTests(unittest.TestCase):
             "strikeouts": 180,
             "home_runs": 18,
             "hits": 132,
+            "stolen_bases_allowed": 12,
+            "caught_stealing": 7,
+            "pickoffs": 3,
+            "stolen_base_percentage": "63.2",
             "innings_pitched": "170.2",
             "number_of_pitches": 2600,
             "strikes": 1700,
             "strike_percentage": "65.4",
             "advanced_pitching": {"whiffPercentage": 0.294},
+            "situational_pitching_metrics": {
+                "first_pitch_pitching": 78.0,
+                "runners_on_pitching": 73.5,
+                "pressure_pitching": 80.5,
+                "three_ball_accuracy": 58.0,
+                "steal_suppression": 59.2,
+            },
             "pitching_handedness_splits": {
                 "vr": {"ops": 0.610, "strikeout_rate": 0.290},
                 "vl": {"ops": 0.740, "strikeout_rate": 0.220},
@@ -127,6 +138,11 @@ class LiveTeamDataTests(unittest.TestCase):
         self.assertGreater(bref_pitcher_rows[0]["Same Handed Pitching"], bref_pitcher_rows[0]["Opposite Handed Pitching"])
         self.assertIn("Pitch Quality SL", savant_pitcher_rows[0])
         self.assertEqual(savant_pitcher_rows[0]["Strike %"], 65.4)
+        self.assertEqual(savant_pitcher_rows[0]["first_pitch_pitching"], 78.0)
+        self.assertEqual(savant_pitcher_rows[0]["runners_on_pitching"], 73.5)
+        self.assertEqual(savant_pitcher_rows[0]["pressure_pitching"], 80.5)
+        self.assertEqual(savant_pitcher_rows[0]["three_ball_accuracy"], 58.0)
+        self.assertEqual(savant_pitcher_rows[0]["steal_suppression"], 59.2)
 
     def test_parse_savant_statcast_summary_extracts_contact_fields(self) -> None:
         payload = """

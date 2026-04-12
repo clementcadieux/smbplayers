@@ -5,12 +5,15 @@ import unittest
 from smb4_mlb_ratings.ingest.live_metrics import (
     aggregate_split_stats,
     derive_hitter_situational_metrics,
+    derive_pitcher_situational_metrics,
     game_log_days_on_roster,
     hitter_contact_platoon_delta,
     hitter_power_platoon_delta,
     hitter_split_score,
     pitcher_handedness_gap,
     pitcher_handedness_score,
+    pitcher_split_score,
+    steal_suppression_score,
 )
 
 
@@ -95,6 +98,49 @@ class LiveMetricsTests(unittest.TestCase):
         self.assertGreater(same_score or 0.0, opposite_score or 0.0)
         self.assertEqual(pitcher_handedness_gap("R", splits, split_type="same"), round((same_score or 0.0) - (opposite_score or 0.0), 3))
         self.assertEqual(pitcher_handedness_gap("R", splits, split_type="opposite"), round((opposite_score or 0.0) - (same_score or 0.0), 3))
+
+    def test_pitcher_split_score_rewards_good_contextual_pitching(self) -> None:
+        score = pitcher_split_score({"ops": 0.61, "strikeout_rate": 0.29})
+
+        self.assertIsNotNone(score)
+        self.assertGreater(score or 0.0, 75.0)
+
+    def test_steal_suppression_score_rewards_low_success_rates(self) -> None:
+        score = steal_suppression_score(
+            {
+                "stolen_bases_allowed": 12,
+                "caught_stealing": 7,
+                "pickoffs": 3,
+                "stolen_base_percentage": "63.2",
+            }
+        )
+
+        self.assertIsNotNone(score)
+        self.assertGreater(score or 0.0, 50.0)
+
+    def test_derive_pitcher_situational_metrics_uses_split_codes_and_running_game_stats(self) -> None:
+        metrics = derive_pitcher_situational_metrics(
+            {
+                "c00": {"ops": 0.600, "strikeout_rate": 0.27},
+                "ron": {"ops": 0.640, "strikeout_rate": 0.28},
+                "lc": {"ops": 0.590, "strikeout_rate": 0.30},
+                "c30": {"ops": 0.720, "strikeout_rate": 0.15},
+                "c31": {"ops": 0.700, "strikeout_rate": 0.18},
+                "c32": {"ops": 0.650, "strikeout_rate": 0.32},
+            },
+            {
+                "stolen_bases_allowed": 12,
+                "caught_stealing": 7,
+                "pickoffs": 3,
+                "stolen_base_percentage": "63.2",
+            },
+        )
+
+        self.assertIsNotNone(metrics["first_pitch_pitching"])
+        self.assertIsNotNone(metrics["runners_on_pitching"])
+        self.assertIsNotNone(metrics["pressure_pitching"])
+        self.assertIsNotNone(metrics["three_ball_accuracy"])
+        self.assertIsNotNone(metrics["steal_suppression"])
 
     def test_game_log_days_on_roster_spans_first_to_last_date(self) -> None:
         splits = [

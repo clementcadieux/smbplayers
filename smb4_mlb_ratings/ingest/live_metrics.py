@@ -170,6 +170,56 @@ def derive_hitter_situational_metrics(splits: Mapping[str, Mapping[str, float]])
     }
 
 
+def pitcher_split_score(split: Mapping[str, float]) -> float | None:
+    if not isinstance(split, Mapping):
+        return None
+    ops = _as_float(split.get("ops"))
+    strikeout_rate = _as_float(split.get("strikeout_rate"))
+    if None in (ops, strikeout_rate):
+        return None
+    score = 100.0 - max(((ops or 0.0) - 0.5) * 200.0, 0.0) + ((strikeout_rate or 0.0) * 100.0 * 0.25)
+    return round(max(0.0, min(99.0, score)), 3)
+
+
+def steal_suppression_score(stats: Mapping[str, Any]) -> float | None:
+    stolen_bases = _as_float(stats.get("stolen_bases_allowed"))
+    caught_stealing = _as_float(stats.get("caught_stealing"))
+    pickoffs = _as_float(stats.get("pickoffs")) or 0.0
+    stolen_base_percentage = _as_float(stats.get("stolen_base_percentage"))
+
+    success_rate = None
+    if stolen_base_percentage is not None:
+        success_rate = stolen_base_percentage * 100.0 if 0.0 <= stolen_base_percentage <= 1.0 else stolen_base_percentage
+    elif None not in (stolen_bases, caught_stealing):
+        attempts = (stolen_bases or 0.0) + (caught_stealing or 0.0)
+        if attempts > 0:
+            success_rate = ((stolen_bases or 0.0) / attempts) * 100.0
+
+    if success_rate is None:
+        return None
+    score = 110.0 - success_rate + (pickoffs * 4.0)
+    return round(max(0.0, min(99.0, score)), 3)
+
+
+def derive_pitcher_situational_metrics(
+    splits: Mapping[str, Mapping[str, float]],
+    season_stats: Mapping[str, Any],
+) -> dict[str, float | None]:
+    three_ball_scores = [
+        pitcher_split_score(splits.get(code, {}))
+        for code in ("c30", "c31", "c32")
+        if pitcher_split_score(splits.get(code, {})) is not None
+    ]
+    three_ball_accuracy = round(sum(three_ball_scores) / len(three_ball_scores), 3) if three_ball_scores else None
+    return {
+        "first_pitch_pitching": pitcher_split_score(splits.get("c00", {})),
+        "runners_on_pitching": pitcher_split_score(splits.get("ron", {})),
+        "pressure_pitching": pitcher_split_score(splits.get("lc", {})),
+        "three_ball_accuracy": three_ball_accuracy,
+        "steal_suppression": steal_suppression_score(season_stats),
+    }
+
+
 def pitcher_handedness_score(throws: str | None, splits: Mapping[str, Mapping[str, float]], *, split_type: str) -> float | None:
     if throws == "L":
         key = "vl" if split_type == "same" else "vr"
