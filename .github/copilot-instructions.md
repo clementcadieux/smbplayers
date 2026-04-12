@@ -9,7 +9,7 @@ These instructions apply whenever a Copilot coding agent works on this repositor
 3. **Never push directly to `main` or `master`.** All changes must go through a pull request. The `auto-pr.yml` workflow creates the PR automatically on the first push to a non-default branch.
 4. **Close keyword in PR body.** When creating or editing a PR description, include `Closes #<issue-number>` so that `close-issue-on-merge.yml` automatically closes the issue when the PR is merged.
 5. **Regular small commits.** Always commit and push regularly, don't just build 1 huge commit with all the changes.
-6. **Always pull main at the beginning.** Self explanatory
+6. **Always pull main at the beginning.** Always pull from origin main to guarantee latest changes as the work's base.
 
 ## Repository Layout
 
