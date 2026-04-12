@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from .baseball_reference import ingest_from_manifest as ingest_from_baseball_reference_manifest
-from .savant import IngestManifest, SeasonInputs, ingest_from_manifest as ingest_from_savant_manifest, load_manifest
+from .savant import IngestManifest, RosterFilter, SeasonInputs, ingest_from_manifest as ingest_from_savant_manifest, load_manifest
 
 
 SAVANT_TOOL_METRICS = frozenset(
@@ -44,7 +44,12 @@ def _clone_manifest_for_source(manifest: IngestManifest, source_name: str) -> In
 		if not files:
 			continue
 		seasons[season_key] = SeasonInputs(year=season_inputs.year, files=files)
-	return IngestManifest(source=source_name, seasons=seasons, manifest_path=manifest.manifest_path)
+	return IngestManifest(
+		source=source_name,
+		seasons=seasons,
+		manifest_path=manifest.manifest_path,
+		roster_filter=manifest.roster_filter,
+	)
 
 
 def _player_merge_key(player: dict[str, Any]) -> tuple[str, str]:
@@ -180,10 +185,12 @@ def _merge_player_records(
 			"baseball_savant": sv_metadata,
 		},
 	}
+	active = bool(baseball_reference.get("active", True)) and bool(savant.get("active", True))
 
 	return {
 		"name": baseball_reference.get("name") or savant.get("name"),
 		"role": role,
+		"active": active,
 		"team": baseball_reference.get("team") or savant.get("team"),
 		"age": baseball_reference.get("age") if baseball_reference.get("age") is not None else savant.get("age"),
 		"primary_position": baseball_reference.get("primary_position") or savant.get("primary_position"),
@@ -223,4 +230,4 @@ def ingest_from_manifest(manifest: IngestManifest | Path) -> list[dict]:
 	raise ValueError(f"Unsupported ingest source '{manifest_obj.source}'")
 
 
-__all__ = ["IngestManifest", "load_manifest", "ingest_from_manifest"]
+__all__ = ["IngestManifest", "RosterFilter", "load_manifest", "ingest_from_manifest"]

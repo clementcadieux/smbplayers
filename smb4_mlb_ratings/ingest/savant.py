@@ -206,10 +206,17 @@ class SeasonInputs:
 
 
 @dataclass(slots=True)
+class RosterFilter:
+    team: str
+    year: int
+
+
+@dataclass(slots=True)
 class IngestManifest:
     source: str
     seasons: dict[str, SeasonInputs]
     manifest_path: Path
+    roster_filter: RosterFilter | None = None
 
 
 @dataclass(slots=True)
@@ -217,6 +224,9 @@ class PlayerAccumulator:
     name: str
     source: str = "baseball_savant"
     source_id: str | None = None
+    active: bool = True
+    roster_status: str | None = None
+    roster_status_code: str | None = None
     team: str | None = None
     age: int | None = None
     primary_position: str | None = None
@@ -257,10 +267,16 @@ class PlayerAccumulator:
         }
         if self.source_id:
             metadata["source_player_id"] = self.source_id
+        if self.roster_status:
+            metadata["status"] = self.roster_status
+            metadata["on_il"] = "injured" in self.roster_status.lower()
+        if self.roster_status_code:
+            metadata["status_code"] = self.roster_status_code
         role = "two_way" if {"hitter", "pitcher"}.issubset(self.roles) else ("pitcher" if "pitcher" in self.roles else "hitter")
         return {
             "name": self.name,
             "role": role,
+            "active": self.active,
             "team": self.team,
             "age": self.age,
             "primary_position": self.primary_position,
@@ -285,6 +301,18 @@ def load_manifest(path: Path) -> IngestManifest:
 
     seasons: dict[str, SeasonInputs] = {}
     base_dir = path.parent
+    roster_filter_payload = data.get("roster_filter")
+    roster_filter: RosterFilter | None = None
+    if roster_filter_payload is not None:
+        if not isinstance(roster_filter_payload, dict):
+            raise ValueError("Manifest roster_filter must be an object")
+        team_value = roster_filter_payload.get("team")
+        year_value = roster_filter_payload.get("year")
+        if not isinstance(team_value, str) or not team_value.strip():
+            raise ValueError("Manifest roster_filter.team must be a non-empty string")
+        if year_value is None:
+            raise ValueError("Manifest roster_filter.year is required")
+        roster_filter = RosterFilter(team=team_value.strip().upper(), year=int(year_value))
 
     def resolve_files(files_payload: dict[str, object], season_key: str) -> dict[str, Path]:
         files: dict[str, Path] = {}
@@ -331,7 +359,16 @@ def load_manifest(path: Path) -> IngestManifest:
     if not seasons:
         raise ValueError("Manifest must declare at least one season")
 
-    return IngestManifest(source=source, seasons=seasons, manifest_path=path)
+    return IngestManifest(source=source, seasons=seasons, manifest_path=path, roster_filter=roster_filter)
+
+
+def _normalized_team(value: str | None) -> str | None:
+    if not isinstance(value, str):
+        return None
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    return cleaned.upper()
 
 
 def _read_csv(path: Path) -> list[dict[str, str]]:
@@ -367,10 +404,31 @@ def _ensure_player(
     return player
 
 
+def _mark_active_status(
+    player: PlayerAccumulator,
+    row: dict[str, str],
+    *,
+    season_key: str | None,
+    season_year: int | None,
+    roster_filter: RosterFilter | None,
+) -> None:
+    if roster_filter is None or season_year != roster_filter.year or season_key != "current":
+        return
+    row_team = _normalized_team(_pick_first(row, "team", "team_abbr", "team_name", "last_team"))
+    if row_team is not None and row_team != roster_filter.team:
+        player.active = False
+
+
 def _apply_identity(player: PlayerAccumulator, row: dict[str, str], *, default_position: str | None = None) -> None:
     team = _pick_first(row, "team", "team_abbr", "team_name", "last_team")
     if team:
         player.team = team
+    roster_status = _pick_first(row, "status", "status_description", "roster_status")
+    if roster_status:
+        player.roster_status = roster_status
+    roster_status_code = _pick_first(row, "status_code", "statuscode", "roster_status_code")
+    if roster_status_code:
+        player.roster_status_code = roster_status_code
     age_value = _pick_number(row, "age")
     if age_value is not None:
         player.age = int(age_value)
@@ -397,9 +455,13 @@ def _apply_roster_rows(
     rows: list[dict[str, str]],
     *,
     source: str = "baseball_savant",
+    season_key: str | None = None,
+    season_year: int | None = None,
+    roster_filter: RosterFilter | None = None,
 ) -> None:
     for row in rows:
         player = _ensure_player(players, row, source=source)
+        _mark_active_status(player, row, season_key=season_key, season_year=season_year, roster_filter=roster_filter)
         _apply_identity(player, row)
 
 
@@ -620,7 +682,14 @@ def ingest_from_manifest(manifest: IngestManifest | Path) -> list[dict[str, Any]
 
         roster_path = season_inputs.files.get("roster")
         if roster_path is not None:
-            _apply_roster_rows(players, _read_csv(roster_path), source=manifest_obj.source)
+            _apply_roster_rows(
+                players,
+                _read_csv(roster_path),
+                source=manifest_obj.source,
+                season_key=season_key,
+                season_year=season_inputs.year,
+                roster_filter=manifest_obj.roster_filter,
+            )
 
         hitters_path = season_inputs.files.get("hitters")
         if hitters_path is not None:
@@ -628,6 +697,13 @@ def ingest_from_manifest(manifest: IngestManifest | Path) -> list[dict[str, Any]
                 player = _ensure_player(players, row, source=manifest_obj.source)
                 if season_inputs.year is not None:
                     player.source_years[season_key] = season_inputs.year
+                _mark_active_status(
+                    player,
+                    row,
+                    season_key=season_key,
+                    season_year=season_inputs.year,
+                    roster_filter=manifest_obj.roster_filter,
+                )
                 _apply_hitter_row(player, season_key, row)
 
         pitchers_path = season_inputs.files.get("pitchers")
@@ -636,6 +712,13 @@ def ingest_from_manifest(manifest: IngestManifest | Path) -> list[dict[str, Any]
                 player = _ensure_player(players, row, source=manifest_obj.source)
                 if season_inputs.year is not None:
                     player.source_years[season_key] = season_inputs.year
+                _mark_active_status(
+                    player,
+                    row,
+                    season_key=season_key,
+                    season_year=season_inputs.year,
+                    roster_filter=manifest_obj.roster_filter,
+                )
                 _apply_pitcher_row(player, season_key, row)
 
         fielding_path = season_inputs.files.get("fielding")
@@ -644,6 +727,13 @@ def ingest_from_manifest(manifest: IngestManifest | Path) -> list[dict[str, Any]
                 player = _ensure_player(players, row, source=manifest_obj.source)
                 if season_inputs.year is not None:
                     player.source_years[season_key] = season_inputs.year
+                _mark_active_status(
+                    player,
+                    row,
+                    season_key=season_key,
+                    season_year=season_inputs.year,
+                    roster_filter=manifest_obj.roster_filter,
+                )
                 _apply_fielding_row(player, season_key, row)
         else:
             for player in players.values():
@@ -655,6 +745,13 @@ def ingest_from_manifest(manifest: IngestManifest | Path) -> list[dict[str, Any]
                 player = _ensure_player(players, row, source=manifest_obj.source)
                 if season_inputs.year is not None:
                     player.source_years[season_key] = season_inputs.year
+                _mark_active_status(
+                    player,
+                    row,
+                    season_key=season_key,
+                    season_year=season_inputs.year,
+                    roster_filter=manifest_obj.roster_filter,
+                )
                 _apply_running_row(player, season_key, row)
         else:
             for player in players.values():

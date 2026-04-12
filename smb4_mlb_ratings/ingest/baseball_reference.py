@@ -8,6 +8,7 @@ from .savant import (
     PlayerAccumulator,
     _apply_fielding_row,
     _apply_identity,
+    _mark_active_status,
     _apply_roster_rows,
     _as_float,
     _canonical_position,
@@ -197,7 +198,14 @@ def ingest_from_manifest(manifest: IngestManifest | Path) -> list[dict[str, Any]
     for season_key, season_inputs in manifest_obj.seasons.items():
         roster_path = season_inputs.files.get("roster")
         if roster_path is not None:
-            _apply_roster_rows(players, _read_csv(roster_path), source=manifest_obj.source)
+            _apply_roster_rows(
+                players,
+                _read_csv(roster_path),
+                source=manifest_obj.source,
+                season_key=season_key,
+                season_year=season_inputs.year,
+                roster_filter=manifest_obj.roster_filter,
+            )
 
         hitters_path = season_inputs.files.get("hitters")
         if hitters_path is not None:
@@ -205,6 +213,13 @@ def ingest_from_manifest(manifest: IngestManifest | Path) -> list[dict[str, Any]
                 player = _ensure_player(players, row, source=manifest_obj.source)
                 if season_inputs.year is not None:
                     player.source_years[season_key] = season_inputs.year
+                _mark_active_status(
+                    player,
+                    row,
+                    season_key=season_key,
+                    season_year=season_inputs.year,
+                    roster_filter=manifest_obj.roster_filter,
+                )
                 _apply_hitter_row(player, season_key, row)
 
         pitchers_path = season_inputs.files.get("pitchers")
@@ -213,6 +228,13 @@ def ingest_from_manifest(manifest: IngestManifest | Path) -> list[dict[str, Any]
                 player = _ensure_player(players, row, source=manifest_obj.source)
                 if season_inputs.year is not None:
                     player.source_years[season_key] = season_inputs.year
+                _mark_active_status(
+                    player,
+                    row,
+                    season_key=season_key,
+                    season_year=season_inputs.year,
+                    roster_filter=manifest_obj.roster_filter,
+                )
                 _apply_pitcher_row(player, season_key, row)
 
         fielding_path = season_inputs.files.get("fielding")
@@ -221,6 +243,13 @@ def ingest_from_manifest(manifest: IngestManifest | Path) -> list[dict[str, Any]
                 player = _ensure_player(players, row, source=manifest_obj.source)
                 if season_inputs.year is not None:
                     player.source_years[season_key] = season_inputs.year
+                _mark_active_status(
+                    player,
+                    row,
+                    season_key=season_key,
+                    season_year=season_inputs.year,
+                    roster_filter=manifest_obj.roster_filter,
+                )
                 _apply_fielding_row(player, season_key, row)
         else:
             for player in players.values():

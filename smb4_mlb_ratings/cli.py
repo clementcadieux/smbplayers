@@ -24,8 +24,29 @@ def write_json(path: Path, payload: object) -> None:
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
-def run_rate(input_path: Path, output_path: Path) -> int:
+def _normalized_team(team: str | None) -> str | None:
+    if not isinstance(team, str):
+        return None
+    cleaned = team.strip()
+    if not cleaned:
+        return None
+    return cleaned.upper()
+
+
+def _filter_players_by_team(players: list[dict], team: str | None) -> list[dict]:
+    normalized_team = _normalized_team(team)
+    if normalized_team is None:
+        return players
+    return [
+        player
+        for player in players
+        if isinstance(player.get("team"), str) and player["team"].strip().upper() == normalized_team
+    ]
+
+
+def run_rate(input_path: Path, output_path: Path, team: str | None = None) -> int:
     players = load_players(input_path)
+    players = _filter_players_by_team(players, team)
     outputs = rate_players(players)
     write_json(output_path, [output.to_dict() for output in outputs])
     return 0
@@ -49,9 +70,11 @@ def run_ingest_rate(
     output_path: Path | None,
     normalized_output_path: Path | None,
     structured_output_path: Path | None,
+    team: str | None = None,
 ) -> int:
     manifest = load_manifest(manifest_path)
     players = ingest_from_manifest(manifest)
+    players = _filter_players_by_team(players, team)
     if normalized_output_path is not None:
         write_json(normalized_output_path, {"players": players})
     outputs = rate_players(players)
@@ -69,6 +92,7 @@ def build_parser() -> argparse.ArgumentParser:
     rate_parser = subparsers.add_parser("rate", help="Rate an existing normalized player JSON file")
     rate_parser.add_argument("input", type=Path, help="Normalized player JSON file")
     rate_parser.add_argument("output", type=Path, help="Output ratings JSON file")
+    rate_parser.add_argument("--team", type=str, default=None, help="Optional team abbreviation to filter before rating")
 
     ingest_parser = subparsers.add_parser("ingest", help="Normalize supported source files into engine input JSON")
     ingest_parser.add_argument("manifest", type=Path, help="Ingestion manifest JSON file")
@@ -93,6 +117,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional directory path for league/division/team JSON output",
     )
+    ingest_rate_parser.add_argument("--team", type=str, default=None, help="Optional team abbreviation to filter before rating")
     return parser
 
 
@@ -104,7 +129,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     namespace = parser.parse_args(args)
     if namespace.command == "rate":
-        return run_rate(namespace.input, namespace.output)
+        return run_rate(namespace.input, namespace.output, team=namespace.team)
     if namespace.command == "ingest":
         return run_ingest(namespace.manifest, namespace.output)
     if namespace.command == "rank":
@@ -117,6 +142,7 @@ def main(argv: list[str] | None = None) -> int:
             namespace.output,
             namespace.normalized_output,
             namespace.structured_output,
+            namespace.team,
         )
 
     parser.print_help(sys.stderr)

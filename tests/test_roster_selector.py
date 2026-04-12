@@ -57,6 +57,13 @@ class RosterSelectorTests(unittest.TestCase):
             self.assertEqual(payload["teams"][0]["team"], "NYM")
             self.assertEqual(len(payload["teams"][0]["recommended_roster"]), 22)
 
+    def test_select_roster_rejects_players_from_other_teams_when_target_team_is_given(self) -> None:
+        players = self._team_players()
+        players.append(self._player("Wrong Team", "hitter", "LF", projected_pa=250, age=26, overall=68, team="ATL"))
+
+        with self.assertRaisesRegex(ValueError, "matching team"):
+            select_roster(players, target_team="NYM")
+
     def _team_players(self) -> list[RatingOutput]:
         players: list[RatingOutput] = []
         for index in range(4):
@@ -85,11 +92,12 @@ class RosterSelectorTests(unittest.TestCase):
         age: int = 27,
         overall: int = 75,
         metadata: dict[str, object] | None = None,
+        team: str = "NYM",
     ) -> RatingOutput:
         return RatingOutput(
             name=name,
             role=role,
-            team="NYM",
+            team=team,
             primary_position=primary_position,
             ratings={"overall": overall},
             percentiles={"overall": float(overall)},

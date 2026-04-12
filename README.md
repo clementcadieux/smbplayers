@@ -162,17 +162,21 @@ New subcommands are also available:
 
 ```powershell
 python -m smb4_mlb_ratings.cli rate players.json ratings_output.json
+python -m smb4_mlb_ratings.cli rate players.json ratings_output.json --team TOR
 python -m smb4_mlb_ratings.cli ingest savant_manifest.json normalized_players.json
 python -m smb4_mlb_ratings.cli rank ratings_output.json roster_output.json
 python -m smb4_mlb_ratings.cli ingest-rate savant_manifest.json ratings_output.json --normalized-output normalized_players.json
 python -m smb4_mlb_ratings.cli ingest-rate savant_manifest.json --structured-output team_ratings
+python -m smb4_mlb_ratings.cli ingest-rate savant_manifest.json ratings_output.json --team TOR --structured-output team_ratings
 ```
 
 The `ingest` manifest can now target `baseball_savant`, `baseball_reference`, or `mixed`.
 
 When `--structured-output` is provided to `ingest-rate`, the tool writes one file per team at `<output_dir>/<league>/<division>/<team>.json` and creates `<output_dir>/index.json` with the organized file list. Each team file includes both the full rated-player list and a recommended 22-man roster.
 
-The Blue Jays end-to-end integration test now fetches live 2025 Blue Jays player data from the public MLB Stats API, builds local Baseball Reference-style CSV fixtures in a temp directory, and then runs the full ingest-rate-rank pipeline against those real players.
+When `--team` is provided to `rate` or `ingest-rate`, only players whose `team` matches that abbreviation are included in the rating pass. Players marked inactive during ingestion are also skipped automatically by the engine.
+
+The Blue Jays end-to-end integration test now fetches the live 2026 Blue Jays active-plus-IL subset of the 40-man roster from the public MLB Stats API, then pairs that roster with the most recent completed MLB season stats to build local Baseball Reference-style CSV fixtures in a temp directory before running the full ingest-rate-rank pipeline.
 
 ## Full Pipeline Walkthrough
 
@@ -180,12 +184,12 @@ Use the Toronto Blue Jays as a manual end-to-end validation target by keeping ex
 
 Example local files:
 
-- `exports/bluejays_roster_2025.csv`
-- `exports/bluejays_savant_hitters_2025.csv`
-- `exports/bluejays_savant_pitchers_2025.csv`
-- `exports/bluejays_savant_running_2025.csv`
-- `exports/bluejays_bref_hitters_2025.csv`
-- `exports/bluejays_bref_pitchers_2025.csv`
+- `exports/bluejays_roster_2026.csv`
+- `exports/bluejays_savant_hitters_2026.csv`
+- `exports/bluejays_savant_pitchers_2026.csv`
+- `exports/bluejays_savant_running_2026.csv`
+- `exports/bluejays_bref_hitters_2026.csv`
+- `exports/bluejays_bref_pitchers_2026.csv`
 - `exports/bluejays_manifest.json`
 
 Example mixed-source manifest:
@@ -193,22 +197,26 @@ Example mixed-source manifest:
 ```json
 {
   "source": "mixed",
+  "roster_filter": {
+    "team": "TOR",
+    "year": 2026
+  },
   "seasons": {
     "current": {
-      "year": 2025,
+      "year": 2026,
       "sources": {
         "baseball_reference": {
           "files": {
-            "hitters": "exports/bluejays_bref_hitters_2025.csv",
-            "pitchers": "exports/bluejays_bref_pitchers_2025.csv"
+            "hitters": "exports/bluejays_bref_hitters_2026.csv",
+            "pitchers": "exports/bluejays_bref_pitchers_2026.csv"
           }
         },
         "baseball_savant": {
           "files": {
-            "roster": "exports/bluejays_roster_2025.csv",
-            "hitters": "exports/bluejays_savant_hitters_2025.csv",
-            "pitchers": "exports/bluejays_savant_pitchers_2025.csv",
-            "running": "exports/bluejays_savant_running_2025.csv"
+            "roster": "exports/bluejays_roster_2026.csv",
+            "hitters": "exports/bluejays_savant_hitters_2026.csv",
+            "pitchers": "exports/bluejays_savant_pitchers_2026.csv",
+            "running": "exports/bluejays_savant_running_2026.csv"
           }
         }
       }
@@ -221,13 +229,14 @@ Run the pipeline stages in order:
 
 ```powershell
 python -m smb4_mlb_ratings.cli ingest exports/bluejays_manifest.json output/tor_normalized.json
-python -m smb4_mlb_ratings.cli ingest-rate exports/bluejays_manifest.json output/tor_ratings.json --normalized-output output/tor_normalized.json --structured-output output/tor_structured
+python -m smb4_mlb_ratings.cli ingest-rate exports/bluejays_manifest.json output/tor_ratings.json --team TOR --normalized-output output/tor_filtered_normalized.json --structured-output output/tor_structured
 python -m smb4_mlb_ratings.cli rank output/tor_ratings.json output/tor_roster.json
 ```
 
 Manual validation checklist:
 
 - `output/tor_normalized.json`: every player should have `name`, `primary_position`, `samples`, and `metrics`, and all players should be `TOR`.
+- `output/tor_filtered_normalized.json`: should contain only the active or injured-list Blue Jays players that match `TOR`.
 - `output/tor_ratings.json`: each player should have SMB4 ratings, an overall value, and the expected team assignment.
 - `output/tor_structured/AL/East/TOR.json`: should exist and match the flat ratings file for the Blue Jays player set.
 - `output/tor_structured/index.json`: should list `TOR` under `AL -> East`.
