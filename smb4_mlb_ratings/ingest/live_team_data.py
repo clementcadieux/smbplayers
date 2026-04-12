@@ -45,9 +45,13 @@ def parse_savant_statcast_summary(payload: str, *, season: int) -> dict[str, flo
             continue
         if _as_int(row.get("year")) != season:
             continue
+        zone_contact_pct = _as_float(row.get("iz_contact_percent"))
+        out_of_zone_contact_pct = _as_float(row.get("oz_contact_percent"))
+        if zone_contact_pct is None or out_of_zone_contact_pct is None:
+            return {}
         return {
-            "zone_contact_pct": _as_float(row.get("iz_contact_percent")) or 0.0,
-            "out_of_zone_contact_pct": _as_float(row.get("oz_contact_percent")) or 0.0,
+            "zone_contact_pct": zone_contact_pct,
+            "out_of_zone_contact_pct": out_of_zone_contact_pct,
         }
     return {}
 
