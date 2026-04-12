@@ -74,6 +74,8 @@ CHEMISTRY_TYPES = (
 DEFAULT_VOLUME_PROJECTION = {
     "full_season_days_hitter": 162.0,
     "full_season_days_pitcher": 180.0,
+    "max_projected_pa": 700.0,
+    "max_projected_ip": 250.0,
 }
 
 DEFAULT_SECONDARY_POSITION_CONFIG = {
@@ -160,6 +162,8 @@ def load_volume_projection_config() -> dict[str, float]:
         return {
             "full_season_days_hitter": float(projection_payload.get("full_season_days_hitter", DEFAULT_VOLUME_PROJECTION["full_season_days_hitter"])),
             "full_season_days_pitcher": float(projection_payload.get("full_season_days_pitcher", DEFAULT_VOLUME_PROJECTION["full_season_days_pitcher"])),
+            "max_projected_pa": float(projection_payload.get("max_projected_pa", DEFAULT_VOLUME_PROJECTION["max_projected_pa"])),
+            "max_projected_ip": float(projection_payload.get("max_projected_ip", DEFAULT_VOLUME_PROJECTION["max_projected_ip"])),
         }
     except (TypeError, ValueError):
         return dict(DEFAULT_VOLUME_PROJECTION)
@@ -739,24 +743,32 @@ def pitcher_season_ip_dict(player: PlayerInput) -> dict[str, float] | None:
 
 def resolved_projected_pa(player: PlayerInput) -> float | None:
     if player.projected_pa is not None:
-        return float(player.projected_pa)
-    return projected_season_average(
+        projected_pa = float(player.projected_pa)
+    else:
+        projected_pa = projected_season_average(
         player.samples.get("weighted_pa"),
         injury_shortened_seasons(player),
         days_on_roster=player.days_on_roster,
         full_season_days=VOLUME_PROJECTION_CONFIG["full_season_days_hitter"],
-    )
+        )
+    if projected_pa is None:
+        return None
+    return min(projected_pa, VOLUME_PROJECTION_CONFIG["max_projected_pa"])
 
 
 def resolved_projected_ip(player: PlayerInput) -> float | None:
     if player.projected_ip is not None:
-        return float(player.projected_ip)
-    return projected_season_average(
+        projected_ip = float(player.projected_ip)
+    else:
+        projected_ip = projected_season_average(
         pitcher_season_ip_dict(player),
         injury_shortened_seasons(player),
         days_on_roster=player.days_on_roster,
         full_season_days=VOLUME_PROJECTION_CONFIG["full_season_days_pitcher"],
-    )
+        )
+    if projected_ip is None:
+        return None
+    return min(projected_ip, VOLUME_PROJECTION_CONFIG["max_projected_ip"])
 
 
 def normalized_position(position: str | None) -> str | None:
