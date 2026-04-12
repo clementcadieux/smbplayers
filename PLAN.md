@@ -109,3 +109,43 @@
 6. **Update tests:**
    - Add a unit test with a synthetic pitcher whose changeup has `run_value_per_100 ≈ −2.5` and assert the pitch quality score reaches the elite tier.
    - Confirm that average pitches (RV/100 near 0) do not receive an outsized boost from the new component.
+
+---
+
+## Issue #58 – Perform Data Ingestion
+
+**Problem:** The ingestion infrastructure is complete but no real MLB data has been ingested yet. Running a full ingestion with actual Statcast and Baseball Reference exports will accelerate further testing, validate the end-to-end pipeline against real player populations, and produce a baseline set of ratings that can be iteratively improved.
+
+### Steps
+
+1. **Gather source data files:**
+   - Download the Baseball Savant hitter, pitcher, and fielding Statcast CSV exports for the primary stat season (2025) and the current roster season (2026) for all teams of interest.
+   - Download the corresponding Baseball Reference batting and pitching standard-stat CSVs for the same seasons.
+   - Download the Fangraphs advanced leaderboard CSV if additional metrics (DRS, UZR) are required.
+   - Store all files in a local `data/exports/` directory (already excluded from version control via `.gitignore`).
+
+2. **Build a multi-team ingest manifest:**
+   - Create a `data/manifest.json` using the `IngestManifest` schema already defined in `ingest/savant.py`.
+   - For each season entry, list the correct file paths under each source key (`savant_hitters`, `savant_pitchers`, `savant_fielding`, `baseball_reference_hitters`, `baseball_reference_pitchers`, `fangraphs`).
+   - Include `roster_filter` entries (team abbreviation + roster season) to restrict output to active roster players.
+
+3. **Run the ingest command:**
+   - Execute `python -m smb4_mlb_ratings.cli ingest data/manifest.json data/players.json` and verify the output JSON is well-formed and contains the expected player count per team.
+   - Check that key fields are populated: `metrics`, `pitch_mix`, `positional_games`, `days_on_roster`, `trait_metrics`.
+
+4. **Run the rating pipeline:**
+   - Execute `python -m smb4_mlb_ratings.cli rate data/players.json data/ratings.json` (optionally filtered per team with `--team`).
+   - Inspect the output for overall rating distribution — verify elite players (expected 95+) and average regulars (expected 75–82) land in reasonable ranges.
+   - Cross-reference a handful of well-known players (e.g. Tarik Skubal, Shohei Ohtani) against expected SMB4 tiers.
+
+5. **Produce structured output and roster selections:**
+   - Execute `python -m smb4_mlb_ratings.cli ingest-rate data/manifest.json data/structured_output/` to generate per-team JSON files and `index.json`.
+   - Run the roster selector to confirm 22-slot rosters are produced correctly for each team.
+
+6. **Document any data gaps found:**
+   - Note any columns missing from the downloaded CSVs that the ingestion layer expects (e.g. new Statcast fields introduced in issues #40/#41).
+   - Open follow-up issues or update `smb4_player_reference.json` normalisation bounds if real-world data reveals out-of-range values.
+
+7. **Commit sanitised outputs (no raw player data):**
+   - Do **not** commit the raw CSV or JSON data files.
+   - Commit any changes to `smb4_player_reference.json` (updated bounds), `models.py`, or ingestion code that were required to handle real data cleanly.
