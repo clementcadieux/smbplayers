@@ -317,8 +317,8 @@ def _merge_player_records(
 		metadata["mlb_trait_metric_percentiles"] = dict(sorted(merged_mlb_trait_metric_percentiles.items()))
 	if isinstance(merged_mlb_trait_metric_percentile_peer_counts, dict) and merged_mlb_trait_metric_percentile_peer_counts:
 		metadata["mlb_trait_metric_percentile_peer_counts"] = dict(sorted(merged_mlb_trait_metric_percentile_peer_counts.items()))
-	active = bool(baseball_reference.get("active", True)) and bool(savant.get("active", True))
-	active = active and bool(fangraphs.get("active", True))
+	source_payloads = [payload for payload in (baseball_reference, savant, fangraphs) if payload]
+	active = any(bool(payload.get("active", True)) for payload in source_payloads) if source_payloads else True
 	days_on_roster = _union_season_values(
 		savant.get("days_on_roster", {}) if isinstance(savant.get("days_on_roster"), dict) else {},
 		baseball_reference.get("days_on_roster", {}) if isinstance(baseball_reference.get("days_on_roster"), dict) else {},

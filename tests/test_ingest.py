@@ -1033,6 +1033,114 @@ class IngestFrameworkTests(unittest.TestCase):
         ratings = json.loads(ratings_path.read_text(encoding="utf-8"))
         self.assertEqual([item["name"] for item in ratings], ["Rehab Hitter"])
 
+    def test_mixed_ingest_keeps_current_il_player_active_with_previous_only_stats(self) -> None:
+        roster_path = self.root / "mixed_rehab_roster_2026.csv"
+        previous_savant_pitchers_path = self.root / "mixed_rehab_savant_pitchers_2025.csv"
+        previous_br_pitchers_path = self.root / "mixed_rehab_br_pitchers_2025.csv"
+        manifest_path = self.root / "mixed_rehab_manifest.json"
+
+        self._write_csv(
+            roster_path,
+            [
+                {
+                    "player_id": 721,
+                    "player_name": "Rehab Pitcher",
+                    "team": "NYM",
+                    "status": "Injured 15-Day",
+                    "status_code": "D15",
+                    "age": 27,
+                    "position": "P",
+                    "bats": "R",
+                    "throws": "R",
+                }
+            ],
+        )
+        self._write_csv(
+            previous_savant_pitchers_path,
+            [
+                {
+                    "player_id": 721,
+                    "player_name": "Rehab Pitcher",
+                    "team": "NYM",
+                    "position": "P",
+                    "BF": 210,
+                    "Pitches": 810,
+                    "Avg Fastball Velocity": 95.1,
+                    "FF %": 52.0,
+                    "SL %": 30.0,
+                    "CH %": 12.0,
+                    "SwStr %": 14.3,
+                    "BB %": 7.1,
+                    "Strike %": 65.2,
+                }
+            ],
+        )
+        self._write_csv(
+            previous_br_pitchers_path,
+            [
+                {
+                    "player_id": 721,
+                    "player_name": "Rehab Pitcher",
+                    "team": "NYM",
+                    "position": "P",
+                    "Days On Roster": 118,
+                    "BF": 210,
+                    "BB": 15,
+                    "SO": 54,
+                    "HR": 4,
+                    "H": 40,
+                    "IP": "51.0",
+                    "Pitches": 810,
+                    "Strikes": 528,
+                }
+            ],
+        )
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "source": "mixed",
+                    "roster_filter": {"team": "NYM", "year": 2026},
+                    "seasons": {
+                        "current": {
+                            "year": 2026,
+                            "sources": {
+                                "baseball_savant": {
+                                    "files": {
+                                        "roster": "mixed_rehab_roster_2026.csv",
+                                    }
+                                }
+                            },
+                        },
+                        "previous": {
+                            "year": 2025,
+                            "sources": {
+                                "baseball_reference": {
+                                    "files": {
+                                        "pitchers": "mixed_rehab_br_pitchers_2025.csv",
+                                    }
+                                },
+                                "baseball_savant": {
+                                    "files": {
+                                        "pitchers": "mixed_rehab_savant_pitchers_2025.csv",
+                                    }
+                                }
+                            },
+                        },
+                    },
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        players = ingest_from_manifest(load_manifest(manifest_path))
+
+        self.assertEqual(len(players), 1)
+        player = players[0]
+        self.assertTrue(player["active"])
+        self.assertTrue(player["metadata"]["on_il"])
+        self.assertEqual(player["samples"]["weighted_bf"]["previous"], 210.0)
+
     def test_cli_rate_team_filter_excludes_other_teams(self) -> None:
         normalized_path = self.root / "filtered_players.json"
         ratings_path = self.root / "filtered_ratings.json"

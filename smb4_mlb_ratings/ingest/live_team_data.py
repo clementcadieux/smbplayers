@@ -178,6 +178,8 @@ def build_baseball_reference_hitter_rows(
     for player in list(players) + list(extra_players):
         if player.get("type") != "hitter":
             continue
+        if (_as_int(player.get("plate_appearances")) or 0) <= 0:
+            continue
         hitting_splits = player.get("hitting_handedness_splits") if isinstance(player.get("hitting_handedness_splits"), Mapping) else {}
         rows.append(
             {
@@ -216,6 +218,8 @@ def build_savant_hitter_rows(
     rows: list[dict[str, object]] = []
     for player in list(players) + list(extra_players):
         if player.get("type") != "hitter":
+            continue
+        if (_as_int(player.get("plate_appearances")) or 0) <= 0:
             continue
         advanced = player.get("advanced_hitting") if isinstance(player.get("advanced_hitting"), Mapping) else {}
         hitting_splits = player.get("hitting_handedness_splits") if isinstance(player.get("hitting_handedness_splits"), Mapping) else {}
@@ -803,6 +807,8 @@ def build_baseball_reference_pitcher_rows(
     for player in players:
         if player.get("type") != "pitcher":
             continue
+        if (_as_int(player.get("batters_faced")) or 0) <= 0:
+            continue
         pitching_splits = player.get("pitching_handedness_splits") if isinstance(player.get("pitching_handedness_splits"), Mapping) else {}
         throws = _as_str(player.get("throws"))
         rows.append(
@@ -837,6 +843,8 @@ def build_savant_pitcher_rows(
     rows: list[dict[str, object]] = []
     for player in players:
         if player.get("type") != "pitcher":
+            continue
+        if (_as_int(player.get("batters_faced")) or 0) <= 0:
             continue
         advanced = player.get("advanced_pitching") if isinstance(player.get("advanced_pitching"), Mapping) else {}
         arsenal_data = player.get("pitch_arsenal") if isinstance(player.get("pitch_arsenal"), Mapping) else {}
@@ -1072,25 +1080,6 @@ def _fetch_roster_player(
         stat_group = "hitting"
         player_type = "hitter"
 
-    stats = _fetch_stats(player_id, stat_group, seasons=seasons, ssl_context=ssl_context, mlb_stats_api=mlb_stats_api)
-    if stats is None:
-        return None
-    advanced_stats = _fetch_stats(
-        player_id,
-        stat_group,
-        seasons=seasons,
-        ssl_context=ssl_context,
-        mlb_stats_api=mlb_stats_api,
-        stats_type="seasonAdvanced",
-    ) or {}
-    handedness_splits = _fetch_handedness_splits(
-        player_id,
-        stat_group,
-        seasons=seasons,
-        ssl_context=ssl_context,
-        mlb_stats_api=mlb_stats_api,
-    )
-
     base_player: dict[str, Any] = {
         "player_id": player_id,
         "name": _as_str(person.get("fullName")) or _as_str(person_summary.get("fullName")),
@@ -1111,7 +1100,29 @@ def _fetch_roster_player(
         ),
     }
 
+    stats = _fetch_stats(player_id, stat_group, seasons=seasons, ssl_context=ssl_context, mlb_stats_api=mlb_stats_api)
+    if stats is None:
+        return base_player
+
     if player_type == "hitter":
+        plate_appearances = _as_int(stats.get("plateAppearances")) or 0
+        if plate_appearances == 0:
+            return base_player
+        advanced_stats = _fetch_stats(
+            player_id,
+            stat_group,
+            seasons=seasons,
+            ssl_context=ssl_context,
+            mlb_stats_api=mlb_stats_api,
+            stats_type="seasonAdvanced",
+        ) or {}
+        handedness_splits = _fetch_handedness_splits(
+            player_id,
+            stat_group,
+            seasons=seasons,
+            ssl_context=ssl_context,
+            mlb_stats_api=mlb_stats_api,
+        )
         savant_hitting_summary = _fetch_savant_hitter_summary(
             player_id,
             season=seasons[0],
@@ -1131,9 +1142,6 @@ def _fetch_roster_player(
             ssl_context=ssl_context,
             mlb_stats_api=mlb_stats_api,
         )
-        plate_appearances = _as_int(stats.get("plateAppearances")) or 0
-        if plate_appearances == 0:
-            return None
         pitch_type_hitting_splits = _derive_hitter_pitch_type_splits(savant_hitter_pitch_details)
         zone_hitting_splits = _derive_hitter_zone_splits(
             savant_hitter_pitch_details,
@@ -1175,7 +1183,22 @@ def _fetch_roster_player(
 
     batters_faced = _as_int(stats.get("battersFaced")) or 0
     if batters_faced == 0:
-        return None
+        return base_player
+    advanced_stats = _fetch_stats(
+        player_id,
+        stat_group,
+        seasons=seasons,
+        ssl_context=ssl_context,
+        mlb_stats_api=mlb_stats_api,
+        stats_type="seasonAdvanced",
+    ) or {}
+    handedness_splits = _fetch_handedness_splits(
+        player_id,
+        stat_group,
+        seasons=seasons,
+        ssl_context=ssl_context,
+        mlb_stats_api=mlb_stats_api,
+    )
     situational_pitching_splits = _fetch_situation_splits(
         player_id,
         stat_group,
