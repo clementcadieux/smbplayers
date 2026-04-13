@@ -45,62 +45,46 @@
 - **#94 – Boost Starting Pitcher Ratings** – Implemented role-specific percentile ranking (SPs ranked against SPs, RPs against RPs) in `engine.py` to eliminate cross-role comparison bias; added configurable starter-quality multiplier in config; added assertions confirming average SP score ≥ average RP score.
 - **#95 – Elite Hitters Should Reach Extreme Rating Values** – Switched to percentile-based rating mapping with a non-linear curve for all hitting components; stored curve parameters in config; validated that the top power and contact players reach 95–99; verified no general rating inflation; updated all affected tests.
 - **#100 – Platoon Traits Are Too Common** – Defined a statistically meaningful minimum split threshold (wRC+/OPS difference) below which the platoon trait is not assigned; decoupled the platoon penalty from trait assignment so balanced hitters receive neither; applied threshold gate in `engine.py` before computing the penalty; stored threshold in config; added tests for balanced, heavy-platoon, and borderline cases; updated `RATINGS_GUIDE.md`.
+- **#104 – Improved Handling of HTTP Failure During Ingestion** – Tracked failed HTTP requests in an in-memory failure list during ingestion; added a single retry pass at the end of ingestion that removes players from the list on success; logged/returned persistent failures after the retry pass; added tests for failure tracking, successful retry, and persistent failure reporting.
+- **#105 – Additional Traits Not Being Produced** – Implemented *Mind Gamer* (high BB%), *Easy Target* (low BB%), *Workhorse* (high-volume starter), *Stimulated* (high-leverage performance), *Dive Wizard* (high range metrics), *Butter Finger* (low range metrics), *Durable* (high % of full-volume seasons), and *Injury Prone* (low % of full-volume seasons); defined thresholds in `smb4_player_reference.json`/`config.json`; added unit tests and updated `TRAITS_GUIDE.md`.
 
 ---
 
 ## Open Issues
 
-## Issue #104 – Improved Handling of HTTP Failure During Ingestion
+## Issue #108 – Some Traits Are Too Common
 
-**Problem:** When an HTTP failure occurs while fetching a player's stats, the ingestion layer currently silently ignores the missing data. This makes it difficult to diagnose partial runs and leaves permanently missing players undetected.
+**Problem:** Certain traits (e.g. *Easy Target*) appear far too frequently. Trait confidence should be determined by a player's percentile rank in the relevant metric rather than a fixed raw-value threshold.
 
 ### Steps
 
-1. **Compile a failure list during ingestion:**
-   - Track every player whose HTTP request fails (any non-2xx status or connection error) in an in-memory list during the ingestion run.
-   - Surface the list in the ingestion layer's output metadata so callers can inspect it.
+1. **Switch to percentile-based confidence classification:**
+   - *Low confidence* – top 50 % of players in the trait metric.
+   - *Medium confidence* – top 33 %.
+   - *High confidence* – top 10 %.
 
-2. **Retry failed players at the end of ingestion:**
-   - After all players have been processed, attempt a single retry for each player on the failure list.
-   - Remove a player from the failure list if the retry succeeds and merge the retrieved data normally.
+2. **Audit all trait-specific metrics** currently evaluated by raw threshold and replace each with a percentile gate.
 
-3. **Report remaining failures:**
-   - After the retry pass, log/output the names (and any available IDs) of players who still could not be fetched.
-   - Return or persist this list so users can act on it (e.g. manual fallback, re-run).
+3. **Update thresholds/parameters** in `smb4_player_reference.json` / `config.json` to reflect the new percentile approach; remove hard-coded raw cutoffs.
 
-4. **Add tests:**
-   - Test that a simulated HTTP failure adds the player to the failure list.
-   - Test that a successful retry removes the player from the failure list and merges data.
-   - Test that persistent failures appear in the final reported list.
+4. **Add tests** confirming that a player at exactly the 10 % boundary receives *High* confidence, at the 33 % boundary receives *Medium*, and below the 50 % boundary receives no trait.
+
+5. **Update `TRAITS_GUIDE.md`** to document the percentile-based classification rules.
 
 ---
 
-## Issue #105 – Additional Traits Not Being Produced
+## Issue #109 – Catcher Framing Runs Are Missing
 
-**Problem:** A number of traits that should be assignable given available data are not currently produced, either due to missing logic or an incorrect understanding of the trait criteria.
-
-### Traits to implement
-
-**Hitting:**
-- *Mind Gamer* – High walk rate (BB%)
-- *Easy Target* – Low walk rate (BB%)
-
-**Pitching:**
-- *Workhorse* – High-volume starter (high innings-pitched totals)
-- *Stimulated* – High performance in high-leverage situations (especially closers/top relievers)
-
-**Fielding:**
-- *Dive Wizard* – Particularly high range (OAA / UZR / DRS)
-- *Butter Finger* – Particularly low range (OAA / UZR / DRS)
-
-**Miscellaneous:**
-- *Durable* – High percentage of high-volume seasons relative to the player's role
-- *Injury Prone* – Low percentage of high-volume seasons relative to the player's role
+**Problem:** Many catchers are missing framing-run data, leaving them with incomplete ratings in the arm/fielding composites that depend on this metric.
 
 ### Steps
 
-1. **Audit available data fields** for each trait and confirm which metrics can support the logic (BB%, leverage index, range metrics, season volume history).
-2. **Define thresholds** for each trait in `smb4_player_reference.json` / `config.json`; do not hard-code values.
-3. **Implement trait logic** in `engine.py` for all feasible traits; add criteria entries in `smb4_player_reference.json`.
-4. **Add tests** asserting each new trait fires for a qualifying synthetic player and does not fire below threshold.
-5. **Update `TRAITS_GUIDE.md`** with descriptions and threshold documentation for each new trait.
+1. **Diagnose the data gap:** Identify which catchers are missing `framing_runs` after ingestion and determine whether the gap is in the Statcast export, the parsing step in `savant.py`, or the merge step.
+
+2. **Expand CSV column aliases:** Add any alternate column names used by different Statcast export versions to the `framing_runs` parser in `savant.py`.
+
+3. **Add a Baseball Reference fallback:** If `framing_runs` is absent from Savant data for a catcher, attempt to derive or approximate the value from Baseball Reference fielding data.
+
+4. **Validate normalisation bounds:** Confirm that the normalisation range for `framing_runs` in `smb4_player_reference.json` covers the real-world value distribution for catchers.
+
+5. **Add tests:** Add a regression test asserting that a synthetic catcher record with a known `framing_runs` value produces a non-zero arm/fielding composite score, and a test confirming the fallback path is exercised when the Savant column is absent.
