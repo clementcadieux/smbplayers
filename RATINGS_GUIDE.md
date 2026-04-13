@@ -66,3 +66,33 @@ Config keys:
 3. Run ratings with alternate config:
    - `python -m smb4_mlb_ratings.cli rate players.json ratings.json --config-path my-config.yaml`
 4. Compare outputs and keep changes that match your tuning goal.
+
+## 8. Platoon Adjustment Gate
+
+Hitter platoon splits now use a shared eligibility gate for both trait assignment and percentile penalties.
+
+Behavior:
+- If absolute split gap is below the configured `eligibility_gap`, no hitter platoon trait is assigned and no platoon percentile penalty is applied.
+- If absolute split gap meets or exceeds `eligibility_gap`, trait logic and penalty logic are both eligible to run.
+- For eligible hitters, penalty severity scales up when split volume is more imbalanced (`pa_vs_lhp` vs `pa_vs_rhp`) using `split_imbalance_weight`.
+- Penalties still require `minimum_weighted_pa` to be met.
+- Separately, extreme one-sided usage can trigger an override: if split imbalance and sample thresholds are met, the hitter receives same-side `CON` and `POW` platoon traits based on the side he mostly faces, and contact/power both take at least the configured override penalty.
+
+Config keys:
+- `platoon_adjustment.minimum_weighted_pa`
+- `platoon_adjustment.extreme_usage_threshold`
+- `platoon_adjustment.extreme_usage_min_weighted_pa`
+- `platoon_adjustment.extreme_usage_min_split_pa`
+- `platoon_adjustment.extreme_usage_force_traits`
+- `platoon_adjustment.contact.eligibility_gap`
+- `platoon_adjustment.power.eligibility_gap`
+- `platoon_adjustment.contact.split_imbalance_weight`
+- `platoon_adjustment.power.split_imbalance_weight`
+- `platoon_adjustment.contact.light_gap`
+- `platoon_adjustment.contact.moderate_gap`
+- `platoon_adjustment.contact.heavy_gap`
+- `platoon_adjustment.contact.extreme_usage_penalty_percentile`
+- `platoon_adjustment.power.light_gap`
+- `platoon_adjustment.power.moderate_gap`
+- `platoon_adjustment.power.heavy_gap`
+- `platoon_adjustment.power.extreme_usage_penalty_percentile`

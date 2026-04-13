@@ -58,3 +58,24 @@ Config keys:
 2. Run `rate` or `ingest-rate` with `--config-path`.
 3. Inspect `suggested_traits` and `assigned_traits` changes.
 4. Iterate until trait distribution matches your roster goals.
+
+## 8. Hitter Platoon Traits
+
+Hitter platoon traits (`CON vs LHP`, `CON vs RHP`, `POW vs LHP`, `POW vs RHP`) are gated by configurable split-difference thresholds.
+
+Config keys:
+- `platoon_adjustment.contact.eligibility_gap`
+- `platoon_adjustment.power.eligibility_gap`
+
+Behavior:
+- Below the configured eligibility gap, hitter platoon traits do not get assigned.
+- At or above the eligibility gap, hitter platoon traits can be assigned if their configured criteria score threshold is met.
+- The same eligibility gate is used by platoon percentile penalties in rating computation, so small split differences trigger neither trait assignment nor rating suppression.
+- For players above the eligibility gate, rating penalties can be amplified by split-volume imbalance (`pa_vs_lhp` vs `pa_vs_rhp`) via `split_imbalance_weight`.
+- Extreme one-sided usage adds a second path: if a hitter overwhelmingly faces one handedness and clears the override sample floors, `CON` and `POW` platoon traits are forced toward the side he mostly faces, even if the ordinary split-gap path would not assign them.
+
+Additional config keys:
+- `platoon_adjustment.extreme_usage_threshold`
+- `platoon_adjustment.extreme_usage_min_weighted_pa`
+- `platoon_adjustment.extreme_usage_min_split_pa`
+- `platoon_adjustment.extreme_usage_force_traits`

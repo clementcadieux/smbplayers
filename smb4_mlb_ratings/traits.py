@@ -295,6 +295,8 @@ def final_trait_priority(
         score += 10.0
     if "metadata" in trait.reason.lower() or "preprocessing" in trait.reason.lower():
         score += 4.0
+    if "Extreme usage override:" in trait.reason:
+        score += 80.0
     if player_role in {"pitcher", "two_way"} and trait.name in elite_trait_names_set:
         score += 22.0
         if trait.name not in ELITE_FASTBALL_TRAIT_NAMES:

@@ -10,7 +10,11 @@ from smb4_mlb_ratings.ingest.live_metrics import (
     derive_pitcher_situational_metrics,
     game_log_days_on_roster,
     hitter_contact_platoon_delta,
+    hitter_contact_split_score,
+    hitter_platoon_side_metrics,
     hitter_power_platoon_delta,
+    hitter_power_split_score,
+    hitter_split_volume_metrics,
     hitter_split_score,
     pitcher_handedness_gap,
     pitcher_handedness_score,
@@ -32,6 +36,7 @@ class LiveMetricsTests(unittest.TestCase):
         self.assertAlmostEqual(aggregated["slg"], 0.5)
         self.assertAlmostEqual(aggregated["iso"], 0.2)
         self.assertAlmostEqual(aggregated["strikeout_rate"], 20 / 115)
+        self.assertEqual(aggregated["plate_appearances"], 115.0)
 
     def test_aggregate_pitching_splits_combines_rows(self) -> None:
         splits = [
@@ -55,11 +60,43 @@ class LiveMetricsTests(unittest.TestCase):
         self.assertEqual(hitter_contact_platoon_delta(splits), 42.0)
         self.assertEqual(hitter_power_platoon_delta(splits), 45.0)
 
+    def test_hitter_split_volume_metrics_derive_pa_imbalance(self) -> None:
+        split_metrics = hitter_split_volume_metrics(
+            {
+                "vl": {"plate_appearances": 220.0},
+                "vr": {"plate_appearances": 580.0},
+            }
+        )
+
+        self.assertEqual(split_metrics["pa_vs_lhp"], 220.0)
+        self.assertEqual(split_metrics["pa_vs_rhp"], 580.0)
+        self.assertEqual(split_metrics["pa_split_imbalance"], 0.45)
+
     def test_hitter_split_score_rewards_strong_contextual_hitting(self) -> None:
         score = hitter_split_score({"obp": 0.380, "slg": 0.520, "iso": 0.190, "strikeout_rate": 0.17})
 
         self.assertIsNotNone(score)
         self.assertGreater(score or 0.0, 65.0)
+
+    def test_hitter_contact_and_power_split_scores_capture_different_profiles(self) -> None:
+        contact_score = hitter_contact_split_score({"avg": 0.310, "obp": 0.385, "strikeout_rate": 0.15})
+        power_score = hitter_power_split_score({"slg": 0.540, "iso": 0.240, "obp": 0.360})
+
+        self.assertIsNotNone(contact_score)
+        self.assertIsNotNone(power_score)
+        self.assertGreater(contact_score or 0.0, 60.0)
+        self.assertGreater(power_score or 0.0, 60.0)
+
+    def test_hitter_platoon_side_metrics_emit_both_handedness_scores(self) -> None:
+        metrics = hitter_platoon_side_metrics(
+            {
+                "vl": {"avg": 0.290, "obp": 0.360, "slg": 0.500, "iso": 0.210, "strikeout_rate": 0.18},
+                "vr": {"avg": 0.230, "obp": 0.305, "slg": 0.380, "iso": 0.150, "strikeout_rate": 0.24},
+            }
+        )
+
+        self.assertGreater(metrics["contact_vs_lhp"] or 0.0, metrics["contact_vs_rhp"] or 0.0)
+        self.assertGreater(metrics["power_vs_lhp"] or 0.0, metrics["power_vs_rhp"] or 0.0)
 
     def test_derive_hitter_situational_metrics_uses_official_split_codes(self) -> None:
         metrics = derive_hitter_situational_metrics(

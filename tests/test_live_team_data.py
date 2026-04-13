@@ -335,6 +335,80 @@ class LiveTeamDataTests(unittest.TestCase):
         self.assertEqual(player["status"], "Rehab Assignment")
         self.assertEqual(player["status_code"], "RL")
 
+    def test_fetch_roster_player_tolerates_savant_hitter_summary_http_500(self) -> None:
+        roster_entry = {
+            "person": {"id": 702058, "fullName": "Summary Failure Hitter"},
+            "position": {"abbreviation": "LF", "type": "Outfielder"},
+            "status": {"description": "Active", "code": "A"},
+        }
+        person_payload = {
+            "people": [
+                {
+                    "fullName": "Summary Failure Hitter",
+                    "currentAge": 25,
+                    "primaryPosition": {"abbreviation": "LF"},
+                    "batSide": {"code": "L"},
+                    "pitchHand": {"code": "R"},
+                }
+            ]
+        }
+
+        def fake_fetch_stats(
+            player_id: int,
+            group: str,
+            *,
+            seasons: tuple[int, int],
+            ssl_context,
+            mlb_stats_api: str,
+            stats_type: str = "season",
+        ):
+            if stats_type == "seasonAdvanced":
+                return {}
+            return {
+                "plateAppearances": 42,
+                "atBats": 39,
+                "hits": 10,
+                "doubles": 2,
+                "triples": 0,
+                "homeRuns": 1,
+                "baseOnBalls": 3,
+                "strikeOuts": 9,
+                "hitByPitch": 0,
+                "stolenBases": 1,
+                "caughtStealing": 0,
+                "avg": "0.256",
+                "obp": "0.310",
+                "slg": "0.385",
+            }
+
+        with patch.object(live_team_data_module, "_fetch_json", return_value=person_payload), patch.object(
+            live_team_data_module, "_fetch_stats", side_effect=fake_fetch_stats
+        ), patch.object(live_team_data_module, "_fetch_days_on_roster", return_value=15), patch.object(
+            live_team_data_module, "_fetch_handedness_splits", return_value={}
+        ), patch.object(
+            live_team_data_module,
+            "_fetch_optional_text",
+            return_value=None,
+        ), patch.object(
+            live_team_data_module, "_fetch_savant_hitter_pitch_details", return_value={}
+        ), patch.object(
+            live_team_data_module, "_fetch_situation_splits", return_value={}
+        ):
+            player = live_team_data_module._fetch_roster_player(
+                roster_entry,
+                team_abbreviation="TOR",
+                seasons=(2026, 2026),
+                ssl_context=None,
+                mlb_stats_api="https://statsapi.mlb.com/api/v1",
+                baseball_savant="https://baseballsavant.mlb.com",
+            )
+
+        self.assertIsNotNone(player)
+        assert player is not None
+        self.assertEqual(player["name"], "Summary Failure Hitter")
+        self.assertEqual(player["plate_appearances"], 42)
+        self.assertEqual(player["savant_hitting_summary"], {})
+
     def test_parse_savant_statcast_summary_extracts_contact_and_tool_fields(self) -> None:
         payload = """
         <script>

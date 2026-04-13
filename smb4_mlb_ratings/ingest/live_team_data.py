@@ -17,7 +17,9 @@ from .live_metrics import (
     derive_pitcher_situational_metrics,
     game_log_days_on_roster,
     hitter_contact_platoon_delta,
+    hitter_platoon_side_metrics,
     hitter_power_platoon_delta,
+    hitter_split_volume_metrics,
     pitcher_handedness_gap,
     pitcher_handedness_score,
 )
@@ -182,6 +184,8 @@ def build_baseball_reference_hitter_rows(
         if (_as_int(player.get("plate_appearances")) or 0) <= 0:
             continue
         hitting_splits = player.get("hitting_handedness_splits") if isinstance(player.get("hitting_handedness_splits"), Mapping) else {}
+        split_side_metrics = hitter_platoon_side_metrics(hitting_splits)
+        split_volume_metrics = hitter_split_volume_metrics(hitting_splits)
         rows.append(
             {
                 "player_id": player.get("player_id"),
@@ -203,8 +207,15 @@ def build_baseball_reference_hitter_rows(
                 "BA": player.get("avg"),
                 "OBP": player.get("obp"),
                 "SLG": player.get("slg"),
+                "Contact vs LHP": split_side_metrics.get("contact_vs_lhp"),
+                "Contact vs RHP": split_side_metrics.get("contact_vs_rhp"),
+                "Power vs LHP": split_side_metrics.get("power_vs_lhp"),
+                "Power vs RHP": split_side_metrics.get("power_vs_rhp"),
                 "Contact vs LHP Minus RHP": hitter_contact_platoon_delta(hitting_splits),
                 "Power vs LHP Minus RHP": hitter_power_platoon_delta(hitting_splits),
+                "PA vs LHP": split_volume_metrics.get("pa_vs_lhp"),
+                "PA vs RHP": split_volume_metrics.get("pa_vs_rhp"),
+                "PA Split Imbalance": split_volume_metrics.get("pa_split_imbalance"),
             }
         )
     return rows
@@ -224,6 +235,8 @@ def build_savant_hitter_rows(
             continue
         advanced = player.get("advanced_hitting") if isinstance(player.get("advanced_hitting"), Mapping) else {}
         hitting_splits = player.get("hitting_handedness_splits") if isinstance(player.get("hitting_handedness_splits"), Mapping) else {}
+        split_side_metrics = hitter_platoon_side_metrics(hitting_splits)
+        split_volume_metrics = hitter_split_volume_metrics(hitting_splits)
         savant_hitting_summary = player.get("savant_hitting_summary") if isinstance(player.get("savant_hitting_summary"), Mapping) else {}
         situational_hitting_metrics = player.get("situational_hitting_metrics") if isinstance(player.get("situational_hitting_metrics"), Mapping) else {}
         pitch_type_hitting_metrics = player.get("pitch_type_hitting_metrics") if isinstance(player.get("pitch_type_hitting_metrics"), Mapping) else {}
@@ -271,8 +284,15 @@ def build_savant_hitter_rows(
                 "BB": player.get("walks"),
                 "HBP": player.get("hit_by_pitch"),
                 "H": player.get("hits"),
+                "Contact vs LHP": split_side_metrics.get("contact_vs_lhp"),
+                "Contact vs RHP": split_side_metrics.get("contact_vs_rhp"),
+                "Power vs LHP": split_side_metrics.get("power_vs_lhp"),
+                "Power vs RHP": split_side_metrics.get("power_vs_rhp"),
                 "Contact vs LHP Minus RHP": hitter_contact_platoon_delta(hitting_splits),
                 "Power vs LHP Minus RHP": hitter_power_platoon_delta(hitting_splits),
+                "PA vs LHP": split_volume_metrics.get("pa_vs_lhp"),
+                "PA vs RHP": split_volume_metrics.get("pa_vs_rhp"),
+                "PA Split Imbalance": split_volume_metrics.get("pa_split_imbalance"),
             }
         )
     return rows
@@ -1269,6 +1289,18 @@ def _fetch_text(url: str, *, ssl_context: SSLContext | None, headers: dict[str, 
         return response.read().decode("utf-8", errors="replace")
 
 
+def _fetch_optional_text(
+    url: str,
+    *,
+    ssl_context: SSLContext | None,
+    headers: dict[str, str] | None = None,
+) -> str | None:
+    try:
+        return _fetch_text(url, ssl_context=ssl_context, headers=headers)
+    except (HTTPError, URLError, TimeoutError, OSError):
+        return None
+
+
 def _fetch_stats(
     player_id: int,
     group: str,
@@ -1347,7 +1379,7 @@ def _fetch_savant_pitch_details(
     ssl_context: SSLContext | None,
     baseball_savant: str,
 ) -> dict[str, dict[str, float]]:
-    payload = _fetch_text(
+    payload = _fetch_optional_text(
         f"{baseball_savant}/player-services/statcast-pitches-breakdown?playerId={player_id}&position=1&pitchBreakdown=pitches",
         ssl_context=ssl_context,
         headers={
@@ -1357,6 +1389,8 @@ def _fetch_savant_pitch_details(
             "X-Requested-With": "XMLHttpRequest",
         },
     )
+    if not payload:
+        return {}
     return parse_savant_pitch_details(payload)
 
 
@@ -1366,7 +1400,7 @@ def _fetch_savant_hitter_pitch_details(
     ssl_context: SSLContext | None,
     baseball_savant: str,
 ) -> dict[str, dict[str, float]]:
-    payload = _fetch_text(
+    payload = _fetch_optional_text(
         f"{baseball_savant}/player-services/statcast-pitches-breakdown?playerId={player_id}&position=0&pitchBreakdown=pitches",
         ssl_context=ssl_context,
         headers={
@@ -1376,6 +1410,8 @@ def _fetch_savant_hitter_pitch_details(
             "X-Requested-With": "XMLHttpRequest",
         },
     )
+    if not payload:
+        return {}
     return parse_savant_pitch_details(payload)
 
 
@@ -1479,11 +1515,13 @@ def _fetch_savant_hitter_summary(
     ssl_context: SSLContext | None,
     baseball_savant: str,
 ) -> dict[str, float]:
-    payload = _fetch_text(
+    payload = _fetch_optional_text(
         f"{baseball_savant}/savant-player/player-{player_id}?stats=statcast-r-hitting-mlb",
         ssl_context=ssl_context,
         headers={"User-Agent": "Mozilla/5.0"},
     )
+    if not payload:
+        return {}
     return parse_savant_statcast_summary(payload, season=season)
 
 

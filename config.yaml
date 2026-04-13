@@ -112,23 +112,37 @@
   },
   "platoon_adjustment": {
     "minimum_weighted_pa": 225.0,
+    "extreme_usage_threshold": 0.85,
+    "extreme_usage_min_weighted_pa": 225.0,
+    "extreme_usage_min_split_pa": 40.0,
+    "extreme_usage_force_traits": true,
     "contact": {
+      "eligibility_gap": 20.0,
+      "weak_side_percentile": 40.0,
+      "strong_side_percentile": 60.0,
+      "split_imbalance_weight": 0.35,
       "light_gap": 8.0,
       "moderate_gap": 14.0,
       "heavy_gap": 22.0,
       "light_penalty_percentile": 3.0,
       "moderate_penalty_percentile": 7.0,
       "heavy_penalty_percentile": 12.0,
-      "max_penalty_percentile": 16.0
+      "max_penalty_percentile": 16.0,
+      "extreme_usage_penalty_percentile": 10.0
     },
     "power": {
+      "eligibility_gap": 20.0,
+      "weak_side_percentile": 40.0,
+      "strong_side_percentile": 60.0,
+      "split_imbalance_weight": 0.35,
       "light_gap": 10.0,
       "moderate_gap": 18.0,
       "heavy_gap": 28.0,
       "light_penalty_percentile": 3.0,
       "moderate_penalty_percentile": 7.0,
       "heavy_penalty_percentile": 12.0,
-      "max_penalty_percentile": 16.0
+      "max_penalty_percentile": 16.0,
+      "extreme_usage_penalty_percentile": 10.0
     }
   },
   "secondary_positions": {
