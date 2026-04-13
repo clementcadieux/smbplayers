@@ -57,6 +57,7 @@ DEFAULT_FINAL_TRAIT_LIMIT = 2
 DEFAULT_MAX_ELITE_PITCH_TRAITS = 1
 TRAIT_CONFLICT_GROUPS: tuple[frozenset[str], ...] = ()
 ROLE_OVERALL_WEIGHTS: dict[str, dict[str, float]] = {}
+PLATOON_ADJUSTMENT_CONFIG: dict[str, object] = {}
 
 
 def refresh_runtime_tuning() -> None:
@@ -67,6 +68,7 @@ def refresh_runtime_tuning() -> None:
     global PERSONALITY_TEAM_WEIGHT
     global TRAIT_CONFLICT_GROUPS
     global ROLE_OVERALL_WEIGHTS
+    global PLATOON_ADJUSTMENT_CONFIG
 
     tuning = load_processing_tuning_config()
     rating_curve = tuning.get("rating_curve", {})
@@ -155,6 +157,51 @@ def refresh_runtime_tuning() -> None:
             if parsed:
                 parsed_role_weights[role_name] = parsed
     ROLE_OVERALL_WEIGHTS = parsed_role_weights
+
+    raw_platoon_adjustment = tuning.get("platoon_adjustment", {})
+    parsed_platoon_adjustment: dict[str, object] = {
+        "minimum_weighted_pa": 225.0,
+        "contact": {
+            "light_gap": 8.0,
+            "moderate_gap": 14.0,
+            "heavy_gap": 22.0,
+            "light_penalty_percentile": 3.0,
+            "moderate_penalty_percentile": 7.0,
+            "heavy_penalty_percentile": 12.0,
+            "max_penalty_percentile": 16.0,
+        },
+        "power": {
+            "light_gap": 10.0,
+            "moderate_gap": 18.0,
+            "heavy_gap": 28.0,
+            "light_penalty_percentile": 3.0,
+            "moderate_penalty_percentile": 7.0,
+            "heavy_penalty_percentile": 12.0,
+            "max_penalty_percentile": 16.0,
+        },
+    }
+    if isinstance(raw_platoon_adjustment, Mapping):
+        minimum_weighted_pa = raw_platoon_adjustment.get("minimum_weighted_pa")
+        try:
+            if minimum_weighted_pa is not None:
+                parsed_platoon_adjustment["minimum_weighted_pa"] = float(minimum_weighted_pa)
+        except (TypeError, ValueError):
+            pass
+        for rating_name in ("contact", "power"):
+            raw_rating_config = raw_platoon_adjustment.get(rating_name)
+            default_rating_config = parsed_platoon_adjustment[rating_name]
+            if not isinstance(raw_rating_config, Mapping) or not isinstance(default_rating_config, dict):
+                continue
+            merged_rating_config = dict(default_rating_config)
+            for key in merged_rating_config:
+                raw_value = raw_rating_config.get(key)
+                try:
+                    if raw_value is not None:
+                        merged_rating_config[key] = float(raw_value)
+                except (TypeError, ValueError):
+                    continue
+            parsed_platoon_adjustment[rating_name] = merged_rating_config
+    PLATOON_ADJUSTMENT_CONFIG = parsed_platoon_adjustment
 
 
 refresh_runtime_tuning()
@@ -719,6 +766,55 @@ def percentile_rank(value: float, peers: list[float], higher_is_better: bool) ->
     less_than = sum(peer < transformed_value for peer in transformed_peers)
     equal_to = sum(peer == transformed_value for peer in transformed_peers)
     return 100.0 * (less_than + 0.5 * equal_to) / len(transformed_peers)
+
+
+def linear_scale(value: float, start: float, end: float, start_result: float, end_result: float) -> float:
+    if end <= start:
+        return end_result
+    progress = clamp((value - start) / (end - start), 0.0, 1.0)
+    return start_result + progress * (end_result - start_result)
+
+
+def platoon_penalty_percentile(spec_name: str, player: PlayerInput, sample: float | None = None) -> float:
+    if spec_name not in {"contact", "power"}:
+        return 0.0
+    raw_minimum_sample = PLATOON_ADJUSTMENT_CONFIG.get("minimum_weighted_pa", 0.0)
+    try:
+        minimum_sample = float(raw_minimum_sample)
+    except (TypeError, ValueError):
+        minimum_sample = 0.0
+    effective_sample = float(sample) if sample is not None else float(weighted_value(player.samples.get("weighted_pa")) or 0.0)
+    if effective_sample < minimum_sample:
+        return 0.0
+
+    metric_name = "contact_vs_lhp_minus_rhp" if spec_name == "contact" else "power_vs_lhp_minus_rhp"
+    gap_value = player_trait_metric(player, metric_name)
+    if gap_value is None:
+        return 0.0
+    severity = abs(float(gap_value))
+
+    raw_rating_config = PLATOON_ADJUSTMENT_CONFIG.get(spec_name, {})
+    if not isinstance(raw_rating_config, Mapping):
+        return 0.0
+    try:
+        light_gap = float(raw_rating_config.get("light_gap", 0.0))
+        moderate_gap = float(raw_rating_config.get("moderate_gap", light_gap))
+        heavy_gap = float(raw_rating_config.get("heavy_gap", moderate_gap))
+        light_penalty = float(raw_rating_config.get("light_penalty_percentile", 0.0))
+        moderate_penalty = float(raw_rating_config.get("moderate_penalty_percentile", light_penalty))
+        heavy_penalty = float(raw_rating_config.get("heavy_penalty_percentile", moderate_penalty))
+        max_penalty = float(raw_rating_config.get("max_penalty_percentile", heavy_penalty))
+    except (TypeError, ValueError):
+        return 0.0
+
+    if severity < light_gap:
+        return 0.0
+    if severity < moderate_gap:
+        return linear_scale(severity, light_gap, moderate_gap, light_penalty, moderate_penalty)
+    if severity < heavy_gap:
+        return linear_scale(severity, moderate_gap, heavy_gap, moderate_penalty, heavy_penalty)
+    overflow_gap = max(heavy_gap * 1.5, heavy_gap + 1.0)
+    return linear_scale(severity, heavy_gap, overflow_gap, heavy_penalty, max_penalty)
 
 
 def interpolate_rating(percentile: float) -> int:
@@ -1925,6 +2021,11 @@ def _rate_players_core(
                 component_percentiles,
                 sample=state.samples.get(spec.sample_key, 0.0),
                 threshold=spec.stabilization_threshold,
+            )
+            combined_percentile = clamp(
+                combined_percentile - platoon_penalty_percentile(spec.name, state.player, state.samples.get(spec.sample_key, 0.0)),
+                0.0,
+                100.0,
             )
             state.percentiles[spec.name] = round(combined_percentile, 2)
             state.ratings[spec.name] = interpolate_rating(combined_percentile)
