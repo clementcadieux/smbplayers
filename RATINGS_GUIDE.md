@@ -6,6 +6,12 @@ This guide explains how ratings are produced and which keys in `config.yaml` cha
 
 The engine reads per-player metrics and sample volumes, then blends season windows (`current`, `previous`, `two_years_ago`).
 
+Behavior:
+- When the current-season metric exists, the engine blends available seasons using recency weights and sample-volume progress toward a full season, then regresses tiny current samples back toward prior seasons.
+- When the current-season metric is missing, the engine falls back to available prior seasons for that metric.
+- Prior-season fallback blends all available prior seasons, with season volume as the primary driver and recency as a secondary modifier.
+- If a prior-season metric exists but the matching prior-season sample volume is unavailable, the fallback still uses that metric instead of dropping it.
+
 Config keys:
 - `season_weighting.full_season_pa_threshold`
 - `season_weighting.full_season_ip_threshold`

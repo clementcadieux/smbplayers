@@ -621,6 +621,45 @@ def parse_savant_catcher_throwing_csv(payload: str) -> list[dict[str, Any]]:
     return parsed_rows
 
 
+def parse_savant_catcher_framing_csv(payload: str) -> list[dict[str, Any]]:
+    reader = csv.DictReader(io.StringIO(payload.lstrip("\ufeff")))
+    parsed_rows: list[dict[str, Any]] = []
+    for row in reader:
+        if not isinstance(row, dict):
+            continue
+        name = _player_name_from_row(row)
+        if not name:
+            continue
+        player_id = _as_int(row.get("player_id") or row.get("id") or row.get("mlbam_id"))
+        team = _as_str(row.get("team_name") or row.get("Team") or row.get("Tm") or row.get("team") or row.get("display_team_name"))
+        framing_runs = _as_float(
+            row.get("Catcher Framing Runs")
+            or row.get("catcher_framing_runs")
+            or row.get("framing_runs")
+            or row.get("framing_run_value")
+            or row.get("rv_tot")
+        )
+        pitches = _as_float(
+            row.get("Pitches")
+            or row.get("pitches")
+            or row.get("called_pitches")
+            or row.get("shadow_pitches")
+            or row.get("n")
+        )
+        if framing_runs is None:
+            continue
+        parsed_rows.append(
+            {
+                "name": name,
+                "player_id": player_id,
+                "team": team.upper() if team else None,
+                "framing_runs": framing_runs,
+                "pitches": pitches,
+            }
+        )
+    return parsed_rows
+
+
 def build_fangraphs_fielding_rows(
     players: Iterable[Mapping[str, Any]],
     *,
@@ -1713,6 +1752,65 @@ def _fetch_savant_catcher_throwing_csv(
     )
 
 
+def _fetch_savant_catcher_framing_csv(
+    *,
+    season: int,
+    ssl_context: SSLContext | None,
+    baseball_savant: str,
+) -> str | None:
+    candidate_urls = (
+        (
+            f"{baseball_savant}/leaderboard/catcher-framing"
+            f"?type=catcher&seasonStart={season}&seasonEnd={season}&team=&min=0"
+            "&sortColumn=rv_tot&sortDirection=desc&csv=true"
+        ),
+        (
+            f"{baseball_savant}/leaderboard/catcher-framing"
+            f"?type=catcher&seasonStart={season}&seasonEnd={season}&team=&min=q"
+            "&sortColumn=rv_tot&sortDirection=desc&csv=true"
+        ),
+        (
+            f"{baseball_savant}/leaderboard/catcher_framing"
+            f"?year={season}&csv=true"
+        ),
+    )
+    for url in candidate_urls:
+        try:
+            payload = _fetch_text(url, ssl_context=ssl_context, headers={"User-Agent": "Mozilla/5.0"})
+        except (HTTPError, URLError, TimeoutError, OSError):
+            continue
+        if parse_savant_catcher_framing_csv(payload):
+            return payload
+    return None
+
+
+def _merge_metric_values(
+    existing: dict[str, float] | None,
+    new_metrics: Mapping[str, float],
+) -> dict[str, float]:
+    merged = dict(existing or {})
+    for key, value in new_metrics.items():
+        if value is None or key in merged:
+            continue
+        merged[key] = value
+    return merged
+
+
+def _lookup_metric_values(
+    *,
+    player_id: int | None,
+    normalized_name: str | None,
+    metrics_by_id: Mapping[int, dict[str, float]],
+    metrics_by_name: Mapping[str, dict[str, float]],
+) -> dict[str, float] | None:
+    merged: dict[str, float] = {}
+    if player_id is not None:
+        merged = _merge_metric_values(merged, metrics_by_id.get(player_id, {}))
+    if normalized_name:
+        merged = _merge_metric_values(merged, metrics_by_name.get(normalized_name, {}))
+    return merged or None
+
+
 def _apply_savant_arm_strength(
     players: list[dict[str, Any]],
     *,
@@ -1775,7 +1873,10 @@ def _apply_savant_catcher_defense(
 ) -> None:
     catcher_by_id: dict[int, dict[str, float]] = {}
     catcher_by_name: dict[str, dict[str, float]] = {}
+    frv_by_id: dict[int, dict[str, float]] = {}
     frv_by_name: dict[str, dict[str, float]] = {}
+    framing_by_id: dict[int, dict[str, float]] = {}
+    framing_by_name: dict[str, dict[str, float]] = {}
 
     for season in seasons:
         catcher_payload = _fetch_savant_catcher_throwing_csv(
@@ -1798,12 +1899,12 @@ def _apply_savant_catcher_defense(
                 }
                 if not metrics:
                     continue
-                if player_id is not None and player_id not in catcher_by_id:
-                    catcher_by_id[player_id] = metrics
+                if player_id is not None:
+                    catcher_by_id[player_id] = _merge_metric_values(catcher_by_id.get(player_id), metrics)
                 if row_name:
                     normalized = _normalized_name(row_name)
-                    if normalized and normalized not in catcher_by_name:
-                        catcher_by_name[normalized] = metrics
+                    if normalized:
+                        catcher_by_name[normalized] = _merge_metric_values(catcher_by_name.get(normalized), metrics)
 
         frv_payload = _fetch_savant_fielding_run_value_csv(
             season=season,
@@ -1825,13 +1926,34 @@ def _apply_savant_catcher_defense(
                 }
                 if not metrics:
                     continue
-                # FRV does not currently expose player_id in our parsed row,
-                # so name-based matching is the primary lookup for this table.
+                player_id = _as_int(row.get("player_id"))
                 normalized = _normalized_name(player_name)
-                if normalized and normalized not in frv_by_name:
-                    frv_by_name[normalized] = metrics
+                if player_id is not None:
+                    frv_by_id[player_id] = _merge_metric_values(frv_by_id.get(player_id), metrics)
+                if normalized:
+                    frv_by_name[normalized] = _merge_metric_values(frv_by_name.get(normalized), metrics)
 
-    if not catcher_by_id and not catcher_by_name and not frv_by_name:
+        framing_payload = _fetch_savant_catcher_framing_csv(
+            season=season,
+            ssl_context=ssl_context,
+            baseball_savant=baseball_savant,
+        )
+        if framing_payload:
+            for row in parse_savant_catcher_framing_csv(framing_payload):
+                framing_runs = _as_float(row.get("framing_runs"))
+                if framing_runs is None:
+                    continue
+                metrics = {"framing_runs": framing_runs}
+                player_id = _as_int(row.get("player_id"))
+                player_name = _as_str(row.get("name"))
+                if player_id is not None:
+                    framing_by_id[player_id] = _merge_metric_values(framing_by_id.get(player_id), metrics)
+                if player_name:
+                    normalized = _normalized_name(player_name)
+                    if normalized:
+                        framing_by_name[normalized] = _merge_metric_values(framing_by_name.get(normalized), metrics)
+
+    if not catcher_by_id and not catcher_by_name and not frv_by_id and not frv_by_name and not framing_by_id and not framing_by_name:
         return
 
     for player in players:
@@ -1842,11 +1964,24 @@ def _apply_savant_catcher_defense(
         player_name = _as_str(player.get("name"))
         normalized_name = _normalized_name(player_name) if player_name else None
 
-        catcher_metrics = catcher_by_id.get(player_id) if player_id is not None else None
-        if catcher_metrics is None and normalized_name:
-            catcher_metrics = catcher_by_name.get(normalized_name)
-
-        frv_metrics = frv_by_name.get(normalized_name) if normalized_name else None
+        catcher_metrics = _lookup_metric_values(
+            player_id=player_id,
+            normalized_name=normalized_name,
+            metrics_by_id=catcher_by_id,
+            metrics_by_name=catcher_by_name,
+        )
+        frv_metrics = _lookup_metric_values(
+            player_id=player_id,
+            normalized_name=normalized_name,
+            metrics_by_id=frv_by_id,
+            metrics_by_name=frv_by_name,
+        )
+        framing_metrics = _lookup_metric_values(
+            player_id=player_id,
+            normalized_name=normalized_name,
+            metrics_by_id=framing_by_id,
+            metrics_by_name=framing_by_name,
+        )
 
         if catcher_metrics:
             if _as_float(fielding.get("caughtStealingAboveAverage")) is None and _as_float(fielding.get("catcherThrowValue")) is None:
@@ -1862,8 +1997,9 @@ def _apply_savant_catcher_defense(
                 if arm is not None:
                     fielding["armStrength"] = arm
 
-        if frv_metrics and _as_float(fielding.get("framingRuns")) is None and _as_float(fielding.get("catcherFramingRuns")) is None:
-            framing = _as_float(frv_metrics.get("framing_runs"))
+        framing_source = framing_metrics or frv_metrics
+        if framing_source and _as_float(fielding.get("framingRuns")) is None and _as_float(fielding.get("catcherFramingRuns")) is None:
+            framing = _as_float(framing_source.get("framing_runs"))
             if framing is not None:
                 fielding["framingRuns"] = framing
         if frv_metrics and _as_float(fielding.get("caughtStealingAboveAverage")) is None and _as_float(fielding.get("catcherThrowValue")) is None:

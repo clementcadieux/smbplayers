@@ -22,6 +22,7 @@ from smb4_mlb_ratings.ingest.live_team_data import (
     parse_savant_oaa_csv,
     parse_savant_arm_strength_csv,
     parse_savant_catcher_throwing_csv,
+    parse_savant_catcher_framing_csv,
     parse_savant_statcast_summary,
 )
 
@@ -795,6 +796,63 @@ class LiveTeamDataTests(unittest.TestCase):
         self.assertEqual(rows[0]["catcher_throw_value"], 0.2)
         self.assertEqual(rows[0]["pop_time"], 1.9676)
         self.assertEqual(rows[0]["arm_strength"], 78.96)
+
+    def test_parse_savant_catcher_framing_csv_handles_current_leaderboard_schema(self) -> None:
+        payload = (
+            '"player_id","player_name","team_name","pitches","rv_tot"\n'
+            '"672386","Kirk, Alejandro","TOR","388","0.9"\n'
+        )
+
+        rows = parse_savant_catcher_framing_csv(payload)
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["name"], "Alejandro Kirk")
+        self.assertEqual(rows[0]["player_id"], 672386)
+        self.assertEqual(rows[0]["team"], "TOR")
+        self.assertEqual(rows[0]["pitches"], 388.0)
+        self.assertEqual(rows[0]["framing_runs"], 0.9)
+
+    def test_apply_savant_catcher_defense_backfills_framing_metric_wise_across_seasons(self) -> None:
+        players = [
+            {
+                "player_id": 672386,
+                "name": "Alejandro Kirk",
+                "team": "TOR",
+                "type": "hitter",
+                "position": "C",
+                "fielding_stats": {},
+            }
+        ]
+        catcher_current = (
+            '"player_id","player_name","team_name","caught_stealing_above_average","pop_time","arm_strength"\n'
+            '"672386","Kirk, Alejandro","TOR","0.20","1.9676","78.96"\n'
+        )
+        frv_current = (
+            '"name","id","total_runs","range_runs","arm_runs","framing_runs","throwing_runs"\n'
+            '"Kirk, Alejandro",672386,1,0,0,,0.2\n'
+        )
+        framing_previous = (
+            '"player_id","player_name","team_name","pitches","rv_tot"\n'
+            '"672386","Kirk, Alejandro","TOR","1200","1.5"\n'
+        )
+
+        with (
+            patch.object(live_team_data_module, "_fetch_savant_catcher_throwing_csv", side_effect=[catcher_current, None]),
+            patch.object(live_team_data_module, "_fetch_savant_fielding_run_value_csv", side_effect=[frv_current, None]),
+            patch.object(live_team_data_module, "_fetch_savant_catcher_framing_csv", side_effect=[None, framing_previous]),
+        ):
+            live_team_data_module._apply_savant_catcher_defense(
+                players,
+                seasons=(2026, 2025),
+                ssl_context=None,
+                baseball_savant="https://baseballsavant.mlb.com",
+            )
+
+        fielding = players[0]["fielding_stats"]
+        self.assertEqual(fielding["caughtStealingAboveAverage"], 0.2)
+        self.assertEqual(fielding["avgPopTime2B"], 1.9676)
+        self.assertEqual(fielding["armStrength"], 78.96)
+        self.assertEqual(fielding["framingRuns"], 1.5)
 
     def test_build_fangraphs_fielding_rows_uses_savant_fallback_when_fangraphs_missing(self) -> None:
         players = [
