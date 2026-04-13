@@ -1,0 +1,111 @@
+{
+  "season_weighting": {
+    "full_season_pa_threshold": 500.0,
+    "full_season_ip_threshold": 150.0,
+    "season_recency_weights": {
+      "current": 2.0,
+      "previous": 1.0,
+      "two_years_ago": 0.8
+    }
+  },
+  "rating_curve": {
+    "percentile_to_rating": [
+      [0.0, 5],
+      [5.0, 20],
+      [15.0, 32],
+      [35.0, 47],
+      [55.0, 62],
+      [75.0, 75],
+      [88.0, 85],
+      [93.0, 90],
+      [96.0, 94],
+      [98.0, 96],
+      [99.5, 98],
+      [100.0, 99]
+    ],
+    "grade_breakpoints": [
+      [97, "S"],
+      [93, "A+"],
+      [89, "A"],
+      [85, "A-"],
+      [79, "B+"],
+      [73, "B"],
+      [67, "B-"],
+      [60, "C+"],
+      [53, "C"],
+      [46, "C-"],
+      [38, "D+"],
+      [30, "D"],
+      [0, "D-"]
+    ]
+  },
+  "confidence_weights": {
+    "high": 1.0,
+    "medium": 0.7,
+    "low": 0.4
+  },
+  "personality_weights": {
+    "personal": 0.7,
+    "team": 0.3
+  },
+  "trait_limits": {
+    "max_traits_per_player": 2,
+    "max_elite_pitch_traits": 1,
+    "elite_pitch_traits": []
+  },
+  "trait_conflict_groups": [
+    ["First Pitch Slayer", "First Pitch Prayer"],
+    ["CON vs LHP", "CON vs RHP"],
+    ["POW vs LHP", "POW vs RHP"],
+    ["RBI Hero", "RBI Zero"],
+    ["Consistent", "Volatile"],
+    ["Durable", "Injury Prone"],
+    ["Clutch", "Choker"],
+    ["Mind Gamer", "Easy Target"],
+    ["Sprinter", "Slow Poke"],
+    ["Base Rounder", "Base Jogger"],
+    ["Cannon Arm", "Noodle Arm"],
+    ["Magic Hands", "Butter Fingers"],
+    ["K Collector", "K Neglecter"],
+    ["Composed", "BB Prone"],
+    ["Gets Ahead", "Falls Behind"],
+    ["Rally Stopper", "Surrounded"],
+    ["Pick Officer", "Easy Jumps"],
+    ["Reverse Splits", "Specialist"],
+    ["Big Hack", "Little Hack"],
+    ["Tough Out", "Whiffer"],
+    ["Two Way (C)", "Two Way (IF)", "Two Way (OF)"]
+  ],
+  "role_overall_weights": {
+    "hitter": {
+      "power": 0.3,
+      "contact": 0.3,
+      "speed": 0.2,
+      "fielding": 0.12,
+      "arm": 0.08
+    },
+    "pitcher": {
+      "velocity": 0.38,
+      "junk": 0.37,
+      "accuracy": 0.25
+    },
+    "two_way": {
+      "power": 0.14,
+      "contact": 0.14,
+      "speed": 0.1,
+      "fielding": 0.07,
+      "arm": 0.05,
+      "velocity": 0.18,
+      "junk": 0.18,
+      "accuracy": 0.14
+    }
+  },
+  "secondary_positions": {
+    "minimum_positional_games": 1.0,
+    "coverage_groups": {
+      "OF": ["LF", "CF", "RF"],
+      "IF": ["1B", "2B", "3B", "SS"]
+    },
+    "utility_bonus_weight": 1.0
+  }
+}
