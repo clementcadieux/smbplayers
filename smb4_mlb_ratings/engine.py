@@ -2263,6 +2263,24 @@ def rate_players(players: list[PlayerInput | dict], trim_final_traits: bool = Tr
     players_by_identity = {_player_identity_key(player): player for player in player_objects}
     states = [state_from_player(player) for player in player_objects]
     peer_state_index = build_peer_state_index(states)
+    weighted_metric_cache: dict[tuple[int, str, str | None, float, bool], float | None] = {}
+
+    def cached_weighted_metric_value(player: PlayerInput, metric_name: str, spec: RatingSpec) -> float | None:
+        # Cache weighted metric calculations for this rate_players invocation.
+        cache_key = (id(player), metric_name, spec.sample_key, spec.volume_exponent, spec.raw_tools_bias)
+        if cache_key in weighted_metric_cache:
+            return weighted_metric_cache[cache_key]
+        value = weighted_metric_value(
+            player.metrics.get(metric_name),
+            player.samples.get(spec.sample_key),
+            sample_key=spec.sample_key,
+            player=player,
+            volume_exponent=spec.volume_exponent,
+            age=player.age,
+            raw_tools_bias=spec.raw_tools_bias,
+        )
+        weighted_metric_cache[cache_key] = value
+        return value
 
     for spec in RATING_SPECS:
         eligible_states = [state for state in states if player_matches_spec(state, spec)]
@@ -2277,30 +2295,14 @@ def rate_players(players: list[PlayerInput | dict], trim_final_traits: bool = Tr
                 if not component_applies_to_state(component, state):
                     continue
 
-                raw_value = weighted_metric_value(
-                    state.player.metrics.get(component.metric),
-                    state.player.samples.get(spec.sample_key),
-                    sample_key=spec.sample_key,
-                    player=state.player,
-                    volume_exponent=spec.volume_exponent,
-                    age=state.player.age,
-                    raw_tools_bias=spec.raw_tools_bias,
-                )
+                raw_value = cached_weighted_metric_value(state.player, component.metric, spec)
                 if raw_value is None:
                     missing_components.append(component.metric)
                     continue
 
                 peers = peer_states_for_component(peer_state_index, spec, state)
                 peer_values = [
-                    weighted_metric_value(
-                        peer.player.metrics.get(component.metric),
-                        peer.player.samples.get(spec.sample_key),
-                        sample_key=spec.sample_key,
-                        player=peer.player,
-                        volume_exponent=spec.volume_exponent,
-                        age=peer.player.age,
-                        raw_tools_bias=spec.raw_tools_bias,
-                    )
+                    cached_weighted_metric_value(peer.player, component.metric, spec)
                     for peer in peers
                     if component_applies_to_state(component, peer)
                 ]
@@ -2326,15 +2328,7 @@ def rate_players(players: list[PlayerInput | dict], trim_final_traits: bool = Tr
                     for peer, peer_value in (
                         (
                             peer,
-                            weighted_metric_value(
-                                peer.player.metrics.get(component.metric),
-                                peer.player.samples.get(spec.sample_key),
-                                sample_key=spec.sample_key,
-                                player=peer.player,
-                                volume_exponent=spec.volume_exponent,
-                                age=peer.player.age,
-                                raw_tools_bias=spec.raw_tools_bias,
-                            ),
+                            cached_weighted_metric_value(peer.player, component.metric, spec),
                         )
                         for peer in peers
                     )
