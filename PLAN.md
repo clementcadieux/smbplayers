@@ -44,33 +44,63 @@
 - **#92 – More Extreme Platoon Separation** – Defined a platoon-dependence score based on split ratios; applied a configurable base-rating penalty for heavy platoon players; confirmed platoon trait still fires correctly; added named-player test assertions; documented in `RATINGS_GUIDE.md`.
 - **#94 – Boost Starting Pitcher Ratings** – Implemented role-specific percentile ranking (SPs ranked against SPs, RPs against RPs) in `engine.py` to eliminate cross-role comparison bias; added configurable starter-quality multiplier in config; added assertions confirming average SP score ≥ average RP score.
 - **#95 – Elite Hitters Should Reach Extreme Rating Values** – Switched to percentile-based rating mapping with a non-linear curve for all hitting components; stored curve parameters in config; validated that the top power and contact players reach 95–99; verified no general rating inflation; updated all affected tests.
+- **#100 – Platoon Traits Are Too Common** – Defined a statistically meaningful minimum split threshold (wRC+/OPS difference) below which the platoon trait is not assigned; decoupled the platoon penalty from trait assignment so balanced hitters receive neither; applied threshold gate in `engine.py` before computing the penalty; stored threshold in config; added tests for balanced, heavy-platoon, and borderline cases; updated `RATINGS_GUIDE.md`.
 
 ---
 
 ## Open Issues
 
-## Issue #100 – Platoon Traits Are Too Common
+## Issue #104 – Improved Handling of HTTP Failure During Ingestion
 
-**Problem:** Platoon traits currently fire for players with only minor variance in performance against left-handed vs. right-handed pitching. The trait should only appear when a player's split is significantly imbalanced, and the current logic is also incorrectly pulling down ratings for strong hitters with modest platoon variance.
+**Problem:** When an HTTP failure occurs while fetching a player's stats, the ingestion layer currently silently ignores the missing data. This makes it difficult to diagnose partial runs and leaves permanently missing players undetected.
 
 ### Steps
 
-1. **Define a minimum threshold for platoon trait eligibility:**
-   - Establish a statistically meaningful minimum split difference (e.g. wRC+ difference ≥ 20 points, or OPS difference ≥ .100) below which the platoon trait is not assigned.
-   - Store the threshold in config / `smb4_player_reference.json` so it can be tuned without code changes.
+1. **Compile a failure list during ingestion:**
+   - Track every player whose HTTP request fails (any non-2xx status or connection error) in an in-memory list during the ingestion run.
+   - Surface the list in the ingestion layer's output metadata so callers can inspect it.
 
-2. **Decouple platoon trait assignment from the base-rating penalty:**
-   - Ensure that small platoon variances do not trigger a base-rating penalty (introduced in Issue #92); the penalty should only apply when the split clears the same threshold used for trait assignment.
-   - Confirm that balanced hitters receive neither the trait nor the penalty.
+2. **Retry failed players at the end of ingestion:**
+   - After all players have been processed, attempt a single retry for each player on the failure list.
+   - Remove a player from the failure list if the retry succeeds and merge the retrieved data normally.
 
-3. **Update the platoon-dependence score logic in `engine.py`:**
-   - Apply the new threshold gate before computing the platoon penalty or assigning the trait.
-   - Keep the existing split-ratio calculation but short-circuit at the threshold.
+3. **Report remaining failures:**
+   - After the retry pass, log/output the names (and any available IDs) of players who still could not be fetched.
+   - Return or persist this list so users can act on it (e.g. manual fallback, re-run).
 
 4. **Add tests:**
-   - Add a test for a balanced hitter (small platoon variance) and assert no platoon trait is assigned and no rating penalty is applied.
-   - Add a test for a heavy platoon player (large split) and assert the trait fires and the penalty is applied.
-   - Add a test for a borderline case near the threshold to confirm the correct behaviour on both sides.
+   - Test that a simulated HTTP failure adds the player to the failure list.
+   - Test that a successful retry removes the player from the failure list and merges data.
+   - Test that persistent failures appear in the final reported list.
 
-5. **Document the change:**
-   - Update `RATINGS_GUIDE.md` (and/or `TRAITS_GUIDE.md`) to document the minimum threshold and its interaction with the platoon penalty.
+---
+
+## Issue #105 – Additional Traits Not Being Produced
+
+**Problem:** A number of traits that should be assignable given available data are not currently produced, either due to missing logic or an incorrect understanding of the trait criteria.
+
+### Traits to implement
+
+**Hitting:**
+- *Mind Gamer* – High walk rate (BB%)
+- *Easy Target* – Low walk rate (BB%)
+
+**Pitching:**
+- *Workhorse* – High-volume starter (high innings-pitched totals)
+- *Stimulated* – High performance in high-leverage situations (especially closers/top relievers)
+
+**Fielding:**
+- *Dive Wizard* – Particularly high range (OAA / UZR / DRS)
+- *Butter Finger* – Particularly low range (OAA / UZR / DRS)
+
+**Miscellaneous:**
+- *Durable* – High percentage of high-volume seasons relative to the player's role
+- *Injury Prone* – Low percentage of high-volume seasons relative to the player's role
+
+### Steps
+
+1. **Audit available data fields** for each trait and confirm which metrics can support the logic (BB%, leverage index, range metrics, season volume history).
+2. **Define thresholds** for each trait in `smb4_player_reference.json` / `config.json`; do not hard-code values.
+3. **Implement trait logic** in `engine.py` for all feasible traits; add criteria entries in `smb4_player_reference.json`.
+4. **Add tests** asserting each new trait fires for a qualifying synthetic player and does not fire below threshold.
+5. **Update `TRAITS_GUIDE.md`** with descriptions and threshold documentation for each new trait.
