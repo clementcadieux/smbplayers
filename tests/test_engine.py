@@ -1595,6 +1595,122 @@ class SurfaceBlendTests(unittest.TestCase):
         self.assertGreaterEqual(average_output.overall_numeric or 0, 70)
         self.assertLessEqual(average_output.overall_numeric or 0, 84)
 
+    def test_heavy_platoon_dependency_reduces_contact_and_power_percentiles(self) -> None:
+        outputs = rate_players(
+            [
+                self._platoon_hitter(
+                    "Heavy Platoon",
+                    weighted_pa=520,
+                    contact_gap=18.0,
+                    power_gap=30.0,
+                ),
+                self._platoon_hitter(
+                    "Balanced Peer",
+                    weighted_pa=520,
+                    contact_gap=0.0,
+                    power_gap=0.0,
+                ),
+                self._platoon_hitter(
+                    "Strong Peer",
+                    weighted_pa=540,
+                    contact_gap=0.0,
+                    power_gap=0.0,
+                    batting_average=0.301,
+                    adjusted_obp=0.372,
+                    slugging=0.510,
+                    iso=0.218,
+                    hr_per_pa=0.040,
+                    barrel_rate=0.108,
+                    avg_exit_velocity=90.8,
+                ),
+                self._platoon_hitter(
+                    "Weak Peer",
+                    weighted_pa=510,
+                    contact_gap=0.0,
+                    power_gap=0.0,
+                    batting_average=0.246,
+                    adjusted_obp=0.314,
+                    slugging=0.401,
+                    iso=0.144,
+                    hr_per_pa=0.022,
+                    barrel_rate=0.061,
+                    avg_exit_velocity=87.2,
+                ),
+            ],
+            trim_final_traits=False,
+        )
+
+        heavy = next(output for output in outputs if output.name == "Heavy Platoon")
+        balanced = next(output for output in outputs if output.name == "Balanced Peer")
+
+        self.assertLess(heavy.percentiles["contact"], balanced.percentiles["contact"])
+        self.assertLess(heavy.percentiles["power"], balanced.percentiles["power"])
+
+    def test_heavy_platoon_profile_still_assigns_platoon_traits(self) -> None:
+        outputs = rate_players(
+            [
+                self._platoon_hitter(
+                    "Trait Platoon",
+                    weighted_pa=540,
+                    contact_gap=18.0,
+                    power_gap=30.0,
+                ),
+                self._platoon_hitter("Peer A", weighted_pa=520, contact_gap=0.0, power_gap=0.0),
+                self._platoon_hitter(
+                    "Peer B",
+                    weighted_pa=515,
+                    contact_gap=0.0,
+                    power_gap=0.0,
+                    batting_average=0.250,
+                    adjusted_obp=0.320,
+                    slugging=0.410,
+                    iso=0.150,
+                    hr_per_pa=0.024,
+                    barrel_rate=0.064,
+                ),
+            ],
+            trim_final_traits=False,
+        )
+
+        hitter = next(output for output in outputs if output.name == "Trait Platoon")
+        assigned_traits = {trait.name for trait in hitter.assigned_traits}
+
+        self.assertIn("CON vs LHP", assigned_traits)
+        self.assertIn("POW vs LHP", assigned_traits)
+
+    def test_platoon_penalty_requires_minimum_weighted_pa(self) -> None:
+        low_sample_player = PlayerInput.from_dict(
+            {
+                "name": "Low Sample Split",
+                "role": "hitter",
+                "team": "NYM",
+                "primary_position": "CF",
+                "samples": {"weighted_pa": 180},
+                "trait_metrics": {
+                    "contact_vs_lhp_minus_rhp": 18.0,
+                    "power_vs_lhp_minus_rhp": 30.0,
+                },
+            }
+        )
+        full_sample_player = PlayerInput.from_dict(
+            {
+                "name": "Full Sample Split",
+                "role": "hitter",
+                "team": "NYM",
+                "primary_position": "CF",
+                "samples": {"weighted_pa": 520},
+                "trait_metrics": {
+                    "contact_vs_lhp_minus_rhp": 18.0,
+                    "power_vs_lhp_minus_rhp": 30.0,
+                },
+            }
+        )
+
+        self.assertEqual(processing_core_module.platoon_penalty_percentile("contact", low_sample_player, 180), 0.0)
+        self.assertEqual(processing_core_module.platoon_penalty_percentile("power", low_sample_player, 180), 0.0)
+        self.assertGreater(processing_core_module.platoon_penalty_percentile("contact", full_sample_player, 520), 0.0)
+        self.assertGreater(processing_core_module.platoon_penalty_percentile("power", full_sample_player, 520), 0.0)
+
     def test_pitcher_components_use_role_specific_peer_groups(self) -> None:
         players = [
             self._pitcher_peer(
@@ -1821,6 +1937,44 @@ class SurfaceBlendTests(unittest.TestCase):
             },
             "samples": samples,
             "metadata": metadata,
+        }
+
+    def _platoon_hitter(
+        self,
+        name: str,
+        *,
+        weighted_pa: float,
+        contact_gap: float,
+        power_gap: float,
+        batting_average: float = 0.272,
+        adjusted_obp: float = 0.341,
+        slugging: float = 0.445,
+        iso: float = 0.182,
+        hr_per_pa: float = 0.030,
+        barrel_rate: float = 0.082,
+        avg_exit_velocity: float = 89.1,
+    ) -> dict[str, object]:
+        return {
+            "name": name,
+            "role": "hitter",
+            "team": "NYM",
+            "primary_position": "CF",
+            "metrics": {
+                "iso": iso,
+                "hr_per_pa": hr_per_pa,
+                "barrel_rate": barrel_rate,
+                "slugging": slugging,
+                "avg_exit_velocity": avg_exit_velocity,
+                "strikeout_rate": 0.196,
+                "contact_rate": 0.786,
+                "batting_average": batting_average,
+                "adjusted_obp": adjusted_obp,
+            },
+            "samples": {"weighted_pa": weighted_pa},
+            "trait_metrics": {
+                "contact_vs_lhp_minus_rhp": contact_gap,
+                "power_vs_lhp_minus_rhp": power_gap,
+            },
         }
 
 
