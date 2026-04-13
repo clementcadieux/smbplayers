@@ -942,6 +942,205 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertFalse(inactive_player["active"])
         self.assertEqual(inactive_player["team"], "PHI")
 
+    def test_ingest_keeps_il_player_active_without_current_stat_rows(self) -> None:
+        roster_path = self.root / "rehab_roster_2026.csv"
+        previous_hitters_path = self.root / "rehab_hitters_2025.csv"
+        manifest_path = self.root / "rehab_manifest.json"
+        normalized_path = self.root / "rehab_normalized.json"
+        ratings_path = self.root / "rehab_ratings.json"
+
+        self._write_csv(
+            roster_path,
+            [
+                {
+                    "player_id": 720,
+                    "player_name": "Rehab Hitter",
+                    "team": "NYM",
+                    "status": "Rehab Assignment",
+                    "status_code": "RL",
+                    "age": 29,
+                    "position": "LF",
+                    "bats": "L",
+                    "throws": "R",
+                }
+            ],
+        )
+        self._write_csv(
+            previous_hitters_path,
+            [
+                {
+                    "player_id": 720,
+                    "player_name": "Rehab Hitter",
+                    "team": "NYM",
+                    "position": "LF",
+                    "PA": 440,
+                    "ISO": 0.176,
+                    "HR": 19,
+                    "Barrel %": 8.7,
+                    "SLG": 0.434,
+                    "AVG": 0.262,
+                    "OBP": 0.327,
+                    "K %": 21.6,
+                    "Contact %": 77.1,
+                    "Two Strike Contact %": 61.2,
+                    "Avg Exit Velocity": 88.8,
+                    "2B": 23,
+                    "3B": 1,
+                    "SB": 5,
+                    "CS": 2,
+                    "BB": 31,
+                    "HBP": 2,
+                    "H": 108,
+                    "Sprint Speed": 27.2,
+                }
+            ],
+        )
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "source": "baseball_savant",
+                    "roster_filter": {"team": "NYM", "year": 2026},
+                    "seasons": {
+                        "current": {
+                            "year": 2026,
+                            "files": {
+                                "roster": "rehab_roster_2026.csv",
+                            },
+                        },
+                        "previous": {
+                            "year": 2025,
+                            "files": {
+                                "hitters": "rehab_hitters_2025.csv",
+                            },
+                        },
+                    },
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        players = ingest_from_manifest(load_manifest(manifest_path))
+        self.assertEqual(len(players), 1)
+        player = players[0]
+        self.assertTrue(player["active"])
+        self.assertTrue(player["metadata"]["on_il"])
+
+        normalized_path.write_text(json.dumps({"players": players}, indent=2), encoding="utf-8")
+        result = main(["rate", str(normalized_path), str(ratings_path), "--team", "NYM"])
+
+        self.assertEqual(result, 0)
+        ratings = json.loads(ratings_path.read_text(encoding="utf-8"))
+        self.assertEqual([item["name"] for item in ratings], ["Rehab Hitter"])
+
+    def test_mixed_ingest_keeps_current_il_player_active_with_previous_only_stats(self) -> None:
+        roster_path = self.root / "mixed_rehab_roster_2026.csv"
+        previous_savant_pitchers_path = self.root / "mixed_rehab_savant_pitchers_2025.csv"
+        previous_br_pitchers_path = self.root / "mixed_rehab_br_pitchers_2025.csv"
+        manifest_path = self.root / "mixed_rehab_manifest.json"
+
+        self._write_csv(
+            roster_path,
+            [
+                {
+                    "player_id": 721,
+                    "player_name": "Rehab Pitcher",
+                    "team": "NYM",
+                    "status": "Injured 15-Day",
+                    "status_code": "D15",
+                    "age": 27,
+                    "position": "P",
+                    "bats": "R",
+                    "throws": "R",
+                }
+            ],
+        )
+        self._write_csv(
+            previous_savant_pitchers_path,
+            [
+                {
+                    "player_id": 721,
+                    "player_name": "Rehab Pitcher",
+                    "team": "NYM",
+                    "position": "P",
+                    "BF": 210,
+                    "Pitches": 810,
+                    "Avg Fastball Velocity": 95.1,
+                    "FF %": 52.0,
+                    "SL %": 30.0,
+                    "CH %": 12.0,
+                    "SwStr %": 14.3,
+                    "BB %": 7.1,
+                    "Strike %": 65.2,
+                }
+            ],
+        )
+        self._write_csv(
+            previous_br_pitchers_path,
+            [
+                {
+                    "player_id": 721,
+                    "player_name": "Rehab Pitcher",
+                    "team": "NYM",
+                    "position": "P",
+                    "Days On Roster": 118,
+                    "BF": 210,
+                    "BB": 15,
+                    "SO": 54,
+                    "HR": 4,
+                    "H": 40,
+                    "IP": "51.0",
+                    "Pitches": 810,
+                    "Strikes": 528,
+                }
+            ],
+        )
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "source": "mixed",
+                    "roster_filter": {"team": "NYM", "year": 2026},
+                    "seasons": {
+                        "current": {
+                            "year": 2026,
+                            "sources": {
+                                "baseball_savant": {
+                                    "files": {
+                                        "roster": "mixed_rehab_roster_2026.csv",
+                                    }
+                                }
+                            },
+                        },
+                        "previous": {
+                            "year": 2025,
+                            "sources": {
+                                "baseball_reference": {
+                                    "files": {
+                                        "pitchers": "mixed_rehab_br_pitchers_2025.csv",
+                                    }
+                                },
+                                "baseball_savant": {
+                                    "files": {
+                                        "pitchers": "mixed_rehab_savant_pitchers_2025.csv",
+                                    }
+                                }
+                            },
+                        },
+                    },
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        players = ingest_from_manifest(load_manifest(manifest_path))
+
+        self.assertEqual(len(players), 1)
+        player = players[0]
+        self.assertTrue(player["active"])
+        self.assertTrue(player["metadata"]["on_il"])
+        self.assertEqual(player["samples"]["weighted_bf"]["previous"], 210.0)
+
     def test_cli_rate_team_filter_excludes_other_teams(self) -> None:
         normalized_path = self.root / "filtered_players.json"
         ratings_path = self.root / "filtered_ratings.json"
@@ -1097,6 +1296,7 @@ class IngestFrameworkTests(unittest.TestCase):
         players = ingest_from_manifest(load_manifest(manifest_path))
 
         player = players[0]
+        self.assertTrue(player["active"])
         self.assertEqual(player["metadata"]["status"], "Injured 10-Day")
         self.assertEqual(player["metadata"]["status_code"], "D10")
         self.assertTrue(player["metadata"]["on_il"])

@@ -206,6 +206,8 @@ Example local files:
 - `exports/bluejays_bref_pitchers_2026.csv`
 - `exports/bluejays_manifest.json`
 
+When using `roster_filter`, treat the referenced roster file as a 40-man eligibility source (active roster plus IL/rehab players), not just the 26-man active list.
+
 Example mixed-source manifest:
 
 ```json

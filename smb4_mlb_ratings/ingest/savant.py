@@ -567,6 +567,7 @@ class PlayerAccumulator:
     source: str = "baseball_savant"
     source_id: str | None = None
     active: bool = True
+    matched_current_roster_filter: bool = False
     roster_status: str | None = None
     roster_status_code: str | None = None
     team: str | None = None
@@ -670,7 +671,7 @@ class PlayerAccumulator:
             metadata["source_player_id"] = self.source_id
         if self.roster_status:
             metadata["status"] = self.roster_status
-            metadata["on_il"] = "injured" in self.roster_status.lower()
+            metadata["on_il"] = _is_injured_list_or_rehab(self.roster_status, self.roster_status_code)
         if self.roster_status_code:
             metadata["status_code"] = self.roster_status_code
         role = "two_way" if {"hitter", "pitcher"}.issubset(self.roles) else ("pitcher" if "pitcher" in self.roles else "hitter")
@@ -793,6 +794,14 @@ def _normalized_team(value: str | None) -> str | None:
     return cleaned.upper()
 
 
+def _is_injured_list_or_rehab(status: str | None, status_code: str | None) -> bool:
+    normalized_status = status.lower() if isinstance(status, str) else ""
+    if "injured" in normalized_status or "rehab" in normalized_status:
+        return True
+    normalized_code = status_code.upper() if isinstance(status_code, str) else ""
+    return normalized_code in {"D10", "D15", "D60", "IL10", "IL15", "IL60", "RL"}
+
+
 def _read_csv(path: Path) -> list[dict[str, str]]:
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
@@ -833,10 +842,20 @@ def _mark_active_status(
     season_key: str | None,
     season_year: int | None,
     roster_filter: RosterFilter | None,
+    is_roster_row: bool = False,
 ) -> None:
     if roster_filter is None or season_year != roster_filter.year or season_key != "current":
         return
     row_team = _normalized_team(_pick_first(row, "team", "team_abbr", "team_name", "last_team"))
+    if is_roster_row:
+        if row_team == roster_filter.team:
+            player.matched_current_roster_filter = True
+            player.active = True
+        elif row_team is not None and row_team != roster_filter.team:
+            player.active = False
+        return
+    if player.matched_current_roster_filter:
+        return
     if row_team is not None and row_team != roster_filter.team:
         player.active = False
 
@@ -889,7 +908,14 @@ def _apply_roster_rows(
         player = _ensure_player(players, row, source=source)
         if season_key is not None and season_year is not None:
             player.source_years[season_key] = season_year
-        _mark_active_status(player, row, season_key=season_key, season_year=season_year, roster_filter=roster_filter)
+        _mark_active_status(
+            player,
+            row,
+            season_key=season_key,
+            season_year=season_year,
+            roster_filter=roster_filter,
+            is_roster_row=True,
+        )
         _apply_identity(player, row)
 
 
@@ -901,6 +927,8 @@ def _finalize_active_status(
     if roster_filter is None:
         return
     for player in players.values():
+        if player.matched_current_roster_filter:
+            continue
         if "current" not in player.source_years:
             player.active = False
 

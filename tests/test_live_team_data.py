@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
+
+from smb4_mlb_ratings.ingest import live_team_data as live_team_data_module
 
 from smb4_mlb_ratings.ingest.live_team_data import (
     build_baseball_reference_hitter_rows,
@@ -223,6 +226,79 @@ class LiveTeamDataTests(unittest.TestCase):
         self.assertEqual(savant_pitcher_rows[0]["pressure_pitching"], 80.5)
         self.assertEqual(savant_pitcher_rows[0]["three_ball_accuracy"], 58.0)
         self.assertEqual(savant_pitcher_rows[0]["steal_suppression"], 59.2)
+
+    def test_build_rows_skip_zero_sample_players_but_keep_roster_rows(self) -> None:
+        roster_only_hitter = {
+            "player_id": 10,
+            "name": "Roster Only Hitter",
+            "team": "TOR",
+            "type": "hitter",
+            "position": "LF",
+            "status": "Injured 10-Day",
+            "status_code": "D10",
+            "age": 25,
+            "bats": "L",
+            "throws": "R",
+            "plate_appearances": 0,
+        }
+        roster_only_pitcher = {
+            "player_id": 11,
+            "name": "Roster Only Pitcher",
+            "team": "TOR",
+            "type": "pitcher",
+            "position": "P",
+            "status": "Injured 60-Day",
+            "status_code": "D60",
+            "age": 26,
+            "bats": "R",
+            "throws": "R",
+            "batters_faced": 0,
+        }
+
+        roster_rows = build_roster_rows([roster_only_hitter, roster_only_pitcher], team_abbreviation="TOR")
+
+        self.assertEqual(len(roster_rows), 2)
+        self.assertEqual(build_baseball_reference_hitter_rows([roster_only_hitter], team_abbreviation="TOR"), [])
+        self.assertEqual(build_savant_hitter_rows([roster_only_hitter], team_abbreviation="TOR"), [])
+        self.assertEqual(build_baseball_reference_pitcher_rows([roster_only_pitcher], team_abbreviation="TOR"), [])
+        self.assertEqual(build_savant_pitcher_rows([roster_only_pitcher], team_abbreviation="TOR"), [])
+
+    def test_fetch_roster_player_keeps_injured_pitcher_without_current_sample(self) -> None:
+        roster_entry = {
+            "person": {"id": 702056, "fullName": "Trey Yesavage"},
+            "position": {"abbreviation": "P", "type": "Pitcher"},
+            "status": {"description": "Injured 60-Day", "code": "D60"},
+        }
+        person_payload = {
+            "people": [
+                {
+                    "fullName": "Trey Yesavage",
+                    "currentAge": 26,
+                    "primaryPosition": {"abbreviation": "P"},
+                    "batSide": {"code": "R"},
+                    "pitchHand": {"code": "R"},
+                }
+            ]
+        }
+
+        with patch.object(live_team_data_module, "_fetch_json", return_value=person_payload), patch.object(
+            live_team_data_module, "_fetch_stats", return_value={"battersFaced": 0}
+        ), patch.object(live_team_data_module, "_fetch_days_on_roster", return_value=None):
+            player = live_team_data_module._fetch_roster_player(
+                roster_entry,
+                team_abbreviation="TOR",
+                seasons=(2026, 2026),
+                ssl_context=None,
+                mlb_stats_api="https://statsapi.mlb.com/api/v1",
+                baseball_savant="https://baseballsavant.mlb.com",
+            )
+
+        self.assertIsNotNone(player)
+        assert player is not None
+        self.assertEqual(player["name"], "Trey Yesavage")
+        self.assertEqual(player["type"], "pitcher")
+        self.assertEqual(player["status"], "Injured 60-Day")
+        self.assertNotIn("batters_faced", player)
 
     def test_parse_savant_statcast_summary_extracts_contact_and_tool_fields(self) -> None:
         payload = """
