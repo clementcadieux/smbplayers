@@ -1748,7 +1748,7 @@ def apply_review_flags(state: PlayerState, spec: RatingSpec, available_weight: f
         state.review_flags.append(f"{spec.name}: low component coverage ({available_weight:.2f})")
 
 
-def rate_players(players: list[PlayerInput | dict], trim_final_traits: bool = True) -> list[RatingOutput]:
+def _rate_players_core(players: list[PlayerInput | dict], trim_final_traits: bool = True) -> list[RatingOutput]:
     player_objects = [player if isinstance(player, PlayerInput) else PlayerInput.from_dict(player) for player in players]
     player_objects = [player for player in player_objects if player.active]
     players_by_identity = {_player_identity_key(player): player for player in player_objects}
@@ -1920,3 +1920,8 @@ def rate_players(players: list[PlayerInput | dict], trim_final_traits: bool = Tr
         else:
             output.assigned_traits = all_player_traits(output, player)
     return outputs
+
+
+def rate_players(players: list[PlayerInput | dict], trim_final_traits: bool = True) -> list[RatingOutput]:
+    # Compatibility wrapper: the processing layer is the preferred public entrypoint.
+    return _rate_players_core(players, trim_final_traits=trim_final_traits)
