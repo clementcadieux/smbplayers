@@ -358,3 +358,138 @@
    - Add or update unit tests for each layer in isolation.
    - Ensure the existing end-to-end tests still pass after the refactor.
    - Add integration tests that run adjacent layer pairs to verify the intermediate format contract.
+
+---
+
+## Issue #91 – Make Config Values Easily Viewable and Editable
+
+**Problem:** Most impactful tuning values (season weights, number of seasons considered, rating aggressiveness, etc.) are buried inside code or dense JSON files. Users cannot easily read or adjust them without agent assistance.
+
+### Steps
+
+1. **Audit all tunable values across the codebase:**
+   - Search `engine.py`, `smb4_player_reference.json`, `ingest/savant.py`, `ingest/baseball_reference.py`, and the CLI for any hard-coded constants that affect ratings or traits.
+   - Categorise findings into groups: season weights, season count, rating aggressiveness thresholds, trait thresholds, position data, and miscellaneous.
+   - Confirm the full list with the user before moving to extraction.
+
+2. **Design a `config.json` (or `config.yaml`) file:**
+   - Create a human-readable configuration file at the repository root with clearly labelled sections for each category.
+   - Each value should have a comment explaining what it does and its valid range or expected format.
+   - Ensure the file can be loaded by the engine at startup without breaking existing behaviour.
+
+3. **Extract season-weight and season-count settings:**
+   - Move the season weighting scheme (e.g. exponential decay factors, number of seasons to consider) out of code into the config file.
+   - Update `engine.py` (or `aggregation.py`) to read these values from config at runtime.
+
+4. **Extract rating-aggressiveness settings:**
+   - Identify the parameters that control how extreme high and low ratings can be (e.g. scaling factors, percentile cutoffs, floor/ceiling values).
+   - Move them to the config file with descriptive keys.
+
+5. **Extract trait and position thresholds:**
+   - Any trait-assignment cutoffs or position-eligibility values currently in `smb4_player_reference.json` that a user might want to tune should be surfaced in the config file or a dedicated `thresholds.json`.
+
+6. **Create `RATINGS_GUIDE.md`:**
+   - Write a standalone document explaining how ratings are calculated step by step (inputs → weighted metrics → component scores → final ratings).
+   - Reference the config keys so users know which setting to change to alter each stage.
+
+7. **Create `TRAITS_GUIDE.md`:**
+   - Write a standalone document explaining how traits are assigned (eligibility criteria, scoring thresholds, precedence rules, trait limit).
+   - Reference the config keys relevant to trait assignment.
+
+8. **Update tests:**
+   - Add a test that loads the config file and verifies required keys are present and within valid ranges.
+   - Ensure all existing tests still pass after values are externalised to config.
+
+---
+
+## Issue #92 – More Extreme Platoon Separation
+
+**Problem:** Players who rely heavily on platoon splits (e.g. strong only vs. one handedness) currently receive ratings that do not reflect their true platoon dependency. Their base rating should be lower to reflect reduced overall value, with the system relying on the existing platoon trait mechanics to represent their split performance.
+
+### Steps
+
+1. **Identify the platoon-split inputs:**
+   - Locate where platoon split data (OPS vs. LHP / RHP, or wRC+ splits) is ingested from Baseball Savant or Baseball Reference.
+   - Confirm the field names used internally after aggregation.
+
+2. **Define a platoon-dependence score:**
+   - Calculate a split ratio: e.g. `|metric_vs_same_hand - metric_vs_opposite_hand| / average_metric`.
+   - Establish thresholds (to be stored in config / `smb4_player_reference.json`) that classify players as light, moderate, or heavy platoon players.
+
+3. **Apply a base-rating penalty for heavy platoon players:**
+   - For players above the heavy-platoon threshold, apply a downward adjustment to the relevant hitting components (contact, power, eye) to reflect reduced value against the unfavourable side.
+   - The penalty magnitude should be proportional to the severity of the split and should be stored in config.
+
+4. **Verify trait assignment still fires correctly:**
+   - Confirm that the platoon trait (if defined in `smb4_player_reference.json`) is still assigned to heavy platoon players after the rating penalty.
+   - The trait should then boost their performance back up in-game against the favourable side.
+
+5. **Add named examples to tests:**
+   - Add or update tests using example players (e.g. those with extreme known platoon splits) to assert the penalty fires when expected and does not fire for balanced hitters.
+
+6. **Document the change:**
+   - Add a note to `RATINGS_GUIDE.md` (once created in Issue #91) or inline in `engine.py` explaining the platoon penalty logic and its interaction with the platoon trait.
+
+---
+
+## Issue #94 – Boost Starting Pitcher Ratings
+
+**Problem:** Starting pitchers receive lower raw metrics than relievers because they pitch more innings and accumulate fatigue-related statistical degradation. This causes starters to appear weaker than relievers despite being generally considered more valuable. Their ratings should reflect their true quality rather than volume-depressed stats.
+
+### Steps
+
+1. **Quantify the gap:**
+   - Run a batch rating on the current dataset and compare average component scores for starters vs. relievers.
+   - Identify which specific metrics (ERA, FIP, xFIP, K%, BB%, etc.) are most responsible for the gap.
+
+2. **Choose a normalisation approach:**
+   - **Option A – Innings-based scaling:** Adjust starter metrics upward by a factor proportional to the difference in average innings pitched between starters and relievers.
+   - **Option B – Role-specific percentile ranking:** Rank starters against other starters and relievers against other relievers when computing percentile scores, eliminating cross-role comparison bias.
+   - Prefer Option B as it is more statistically sound and self-calibrating. Confirm with user if unsure.
+
+3. **Implement role-specific percentile ranking:**
+   - In `engine.py` (or the Processing layer), split the player pool by role (`SP` vs. `RP`) before computing percentile ranks for pitching metrics.
+   - Each pitcher is then rated relative to peers in the same role rather than the combined pool.
+
+4. **Add a starter-quality multiplier (optional):**
+   - If role-specific percentiles alone are insufficient, introduce a small configurable boost (e.g. +2–3 rating points on the composite score) for starters stored in config.
+   - This should only be applied if the percentile approach alone does not close the gap.
+
+5. **Update tests:**
+   - Add assertions that, after rating, the average SP composite score is >= the average RP composite score (or within a defined acceptable range).
+   - Ensure no individual SP is penalised relative to an equivalent RP with the same underlying quality metrics.
+
+6. **Document in `RATINGS_GUIDE.md`:**
+   - Explain the role-based normalisation approach and any applied multiplier so future tuning is transparent.
+
+---
+
+## Issue #95 – Elite Hitters Should Reach Extreme Rating Values
+
+**Problem:** The current rating scale does not produce sufficiently extreme values for elite hitters. The best contact hitter tops out at 88 and the best power hitter at 92, when the system should be producing ratings close to 99 for the true best players at each attribute. The root cause is using raw metric values rather than percentile-based scaling.
+
+### Steps
+
+1. **Switch to percentile-based rating mapping:**
+   - For each hitting component (contact vs. LHP, contact vs. RHP, power, eye/discipline, speed), compute the percentile rank of each player's weighted metric across the full rated population.
+   - Map percentile to rating using a non-linear curve (e.g. sigmoid or power curve) so that the 99th percentile player reliably receives a rating of 99 (or very close to it) and the 1st percentile player receives a rating near the floor (e.g. 25–30).
+
+2. **Define the mapping curve in config:**
+   - Store the curve parameters (e.g. inflection point, steepness, floor, ceiling) in the config file introduced in Issue #91.
+   - The curve should be tunable without code changes.
+
+3. **Ensure the mapping is applied per attribute:**
+   - Apply the percentile-to-rating conversion independently for each attribute rather than using a single composite score, so that a player who excels in one attribute reaches a near-elite rating in that attribute specifically.
+
+4. **Validate with known players:**
+   - After the change, confirm that the player with the best power metric receives a rating of 95–99 in power.
+   - Confirm that the player with the best contact metric receives a rating of 95–99 in contact.
+   - Add these as regression test assertions (using real data snapshots or mocked percentile values).
+
+5. **Check for unintended inflation across the board:**
+   - Verify that average ratings do not inflate significantly; the curve should spread the distribution, not shift it upward uniformly.
+   - Adjust curve parameters in config if the middle of the distribution shifts too high.
+
+6. **Update all affected tests:**
+   - Any test asserting specific rating values may need to be updated to reflect the new scale.
+   - Add a test that verifies the maximum rating produced across a sample population is >= 95 for at least one player per attribute.
