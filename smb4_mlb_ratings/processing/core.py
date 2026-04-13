@@ -59,6 +59,16 @@ TRAIT_CONFLICT_GROUPS: tuple[frozenset[str], ...] = ()
 ROLE_OVERALL_WEIGHTS: dict[str, dict[str, float]] = {}
 PLATOON_ADJUSTMENT_CONFIG: dict[str, object] = {}
 SURFACE_WEIGHT_CAPS: dict[str, float] = {}
+HITTER_PLATOON_TRAIT_TO_SPEC = {
+    "CON vs LHP": "contact",
+    "CON vs RHP": "contact",
+    "POW vs LHP": "power",
+    "POW vs RHP": "power",
+}
+HITTER_PLATOON_SPEC_TO_TRAITS = {
+    "contact": frozenset({"CON vs LHP", "CON vs RHP"}),
+    "power": frozenset({"POW vs LHP", "POW vs RHP"}),
+}
 
 
 def refresh_runtime_tuning() -> None:
@@ -185,6 +195,8 @@ def refresh_runtime_tuning() -> None:
     parsed_platoon_adjustment: dict[str, object] = {
         "minimum_weighted_pa": 225.0,
         "contact": {
+            "eligibility_gap": 20.0,
+            "split_imbalance_weight": 0.35,
             "light_gap": 8.0,
             "moderate_gap": 14.0,
             "heavy_gap": 22.0,
@@ -194,6 +206,8 @@ def refresh_runtime_tuning() -> None:
             "max_penalty_percentile": 16.0,
         },
         "power": {
+            "eligibility_gap": 20.0,
+            "split_imbalance_weight": 0.35,
             "light_gap": 10.0,
             "moderate_gap": 18.0,
             "heavy_gap": 28.0,
@@ -799,6 +813,30 @@ def linear_scale(value: float, start: float, end: float, start_result: float, en
     return start_result + progress * (end_result - start_result)
 
 
+def platoon_eligibility_gap(spec_name: str) -> float:
+    raw_rating_config = PLATOON_ADJUSTMENT_CONFIG.get(spec_name, {})
+    if not isinstance(raw_rating_config, Mapping):
+        return 0.0
+    raw_value = raw_rating_config.get("eligibility_gap")
+    if raw_value is None:
+        raw_value = raw_rating_config.get("light_gap", 0.0)
+    try:
+        return max(0.0, float(raw_value))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def hitter_platoon_trait_eligible(player: PlayerInput, trait_name: str) -> bool:
+    spec_name = HITTER_PLATOON_TRAIT_TO_SPEC.get(trait_name)
+    if spec_name is None:
+        return True
+    metric_name = "contact_vs_lhp_minus_rhp" if spec_name == "contact" else "power_vs_lhp_minus_rhp"
+    gap_value = player_trait_metric(player, metric_name)
+    if not isinstance(gap_value, (int, float)):
+        return False
+    return abs(float(gap_value)) >= platoon_eligibility_gap(spec_name)
+
+
 def platoon_penalty_percentile(spec_name: str, player: PlayerInput, sample: float | None = None) -> float:
     if spec_name not in {"contact", "power"}:
         return 0.0
@@ -816,6 +854,23 @@ def platoon_penalty_percentile(spec_name: str, player: PlayerInput, sample: floa
     if gap_value is None:
         return 0.0
     severity = abs(float(gap_value))
+
+    pa_vs_lhp = player_trait_metric(player, "pa_vs_lhp")
+    pa_vs_rhp = player_trait_metric(player, "pa_vs_rhp")
+    if isinstance(pa_vs_lhp, (int, float)) and isinstance(pa_vs_rhp, (int, float)):
+        total_split_pa = float(pa_vs_lhp) + float(pa_vs_rhp)
+        if total_split_pa > 0:
+            split_imbalance = abs(float(pa_vs_lhp) - float(pa_vs_rhp)) / total_split_pa
+            raw_rating_config = PLATOON_ADJUSTMENT_CONFIG.get(spec_name, {})
+            if isinstance(raw_rating_config, Mapping):
+                try:
+                    imbalance_weight = max(0.0, float(raw_rating_config.get("split_imbalance_weight", 0.0)))
+                except (TypeError, ValueError):
+                    imbalance_weight = 0.0
+                severity *= 1.0 + (clamp(split_imbalance, 0.0, 1.0) * imbalance_weight)
+
+    if severity < platoon_eligibility_gap(spec_name):
+        return 0.0
 
     raw_rating_config = PLATOON_ADJUSTMENT_CONFIG.get(spec_name, {})
     if not isinstance(raw_rating_config, Mapping):
@@ -839,6 +894,17 @@ def platoon_penalty_percentile(spec_name: str, player: PlayerInput, sample: floa
         return linear_scale(severity, moderate_gap, heavy_gap, moderate_penalty, heavy_penalty)
     overflow_gap = max(heavy_gap * 1.5, heavy_gap + 1.0)
     return linear_scale(severity, heavy_gap, overflow_gap, heavy_penalty, max_penalty)
+
+
+def assigned_platoon_trait_names(output: RatingOutput, spec_name: str) -> set[str]:
+    spec_traits = HITTER_PLATOON_SPEC_TO_TRAITS.get(spec_name)
+    if not spec_traits:
+        return set()
+    return {
+        trait.name
+        for trait in output.assigned_traits
+        if trait.name in spec_traits
+    }
 
 
 def interpolate_rating(percentile: float) -> int:
@@ -1396,6 +1462,8 @@ def apply_configured_trait_criteria(
             total_score += score
             matched_rules.append(summary)
         if total_score < minimum_value:
+            continue
+        if role_scope == "non_pitcher" and not hitter_platoon_trait_eligible(state.player, trait_name):
             continue
         reason = payload.get("description")
         if not isinstance(reason, str) or not reason:
@@ -2047,11 +2115,7 @@ def _rate_players_core(
                 threshold=spec.stabilization_threshold,
                 surface_weight_cap=SURFACE_WEIGHT_CAPS.get(spec.name, 0.5),
             )
-            combined_percentile = clamp(
-                combined_percentile - platoon_penalty_percentile(spec.name, state.player, state.samples.get(spec.sample_key, 0.0)),
-                0.0,
-                100.0,
-            )
+            combined_percentile = clamp(combined_percentile, 0.0, 100.0)
             state.percentiles[spec.name] = round(combined_percentile, 2)
             state.ratings[spec.name] = interpolate_rating(combined_percentile)
             apply_review_flags(state, spec, available_weight, missing_components)
@@ -2122,6 +2186,22 @@ def _rate_players_core(
             output.assigned_traits = trim_traits_for_output(output, player)
         else:
             output.assigned_traits = all_player_traits(output, player)
+
+        weighted_pa_sample = weighted_value(player.samples.get("weighted_pa")) or 0.0
+        for spec_name in ("contact", "power"):
+            if spec_name not in output.percentiles:
+                continue
+            if not assigned_platoon_trait_names(output, spec_name):
+                continue
+            penalty = platoon_penalty_percentile(spec_name, player, weighted_pa_sample)
+            if penalty <= 0.0:
+                continue
+            penalized_percentile = clamp(output.percentiles[spec_name] - penalty, 0.0, 100.0)
+            output.percentiles[spec_name] = round(penalized_percentile, 2)
+            output.ratings[spec_name] = interpolate_rating(penalized_percentile)
+
+        output.overall_numeric = role_weighted_overall_numeric(player.role, output.ratings)
+        output.overall_grade = overall_grade(output.overall_numeric)
     return outputs
 
 

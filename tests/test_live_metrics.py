@@ -11,6 +11,7 @@ from smb4_mlb_ratings.ingest.live_metrics import (
     game_log_days_on_roster,
     hitter_contact_platoon_delta,
     hitter_power_platoon_delta,
+    hitter_split_volume_metrics,
     hitter_split_score,
     pitcher_handedness_gap,
     pitcher_handedness_score,
@@ -32,6 +33,7 @@ class LiveMetricsTests(unittest.TestCase):
         self.assertAlmostEqual(aggregated["slg"], 0.5)
         self.assertAlmostEqual(aggregated["iso"], 0.2)
         self.assertAlmostEqual(aggregated["strikeout_rate"], 20 / 115)
+        self.assertEqual(aggregated["plate_appearances"], 115.0)
 
     def test_aggregate_pitching_splits_combines_rows(self) -> None:
         splits = [
@@ -54,6 +56,18 @@ class LiveMetricsTests(unittest.TestCase):
 
         self.assertEqual(hitter_contact_platoon_delta(splits), 42.0)
         self.assertEqual(hitter_power_platoon_delta(splits), 45.0)
+
+    def test_hitter_split_volume_metrics_derive_pa_imbalance(self) -> None:
+        split_metrics = hitter_split_volume_metrics(
+            {
+                "vl": {"plate_appearances": 220.0},
+                "vr": {"plate_appearances": 580.0},
+            }
+        )
+
+        self.assertEqual(split_metrics["pa_vs_lhp"], 220.0)
+        self.assertEqual(split_metrics["pa_vs_rhp"], 580.0)
+        self.assertEqual(split_metrics["pa_split_imbalance"], 0.45)
 
     def test_hitter_split_score_rewards_strong_contextual_hitting(self) -> None:
         score = hitter_split_score({"obp": 0.380, "slg": 0.520, "iso": 0.190, "strikeout_rate": 0.17})

@@ -18,6 +18,7 @@ from .live_metrics import (
     game_log_days_on_roster,
     hitter_contact_platoon_delta,
     hitter_power_platoon_delta,
+    hitter_split_volume_metrics,
     pitcher_handedness_gap,
     pitcher_handedness_score,
 )
@@ -182,6 +183,7 @@ def build_baseball_reference_hitter_rows(
         if (_as_int(player.get("plate_appearances")) or 0) <= 0:
             continue
         hitting_splits = player.get("hitting_handedness_splits") if isinstance(player.get("hitting_handedness_splits"), Mapping) else {}
+        split_volume_metrics = hitter_split_volume_metrics(hitting_splits)
         rows.append(
             {
                 "player_id": player.get("player_id"),
@@ -205,6 +207,9 @@ def build_baseball_reference_hitter_rows(
                 "SLG": player.get("slg"),
                 "Contact vs LHP Minus RHP": hitter_contact_platoon_delta(hitting_splits),
                 "Power vs LHP Minus RHP": hitter_power_platoon_delta(hitting_splits),
+                "PA vs LHP": split_volume_metrics.get("pa_vs_lhp"),
+                "PA vs RHP": split_volume_metrics.get("pa_vs_rhp"),
+                "PA Split Imbalance": split_volume_metrics.get("pa_split_imbalance"),
             }
         )
     return rows
@@ -224,6 +229,7 @@ def build_savant_hitter_rows(
             continue
         advanced = player.get("advanced_hitting") if isinstance(player.get("advanced_hitting"), Mapping) else {}
         hitting_splits = player.get("hitting_handedness_splits") if isinstance(player.get("hitting_handedness_splits"), Mapping) else {}
+        split_volume_metrics = hitter_split_volume_metrics(hitting_splits)
         savant_hitting_summary = player.get("savant_hitting_summary") if isinstance(player.get("savant_hitting_summary"), Mapping) else {}
         situational_hitting_metrics = player.get("situational_hitting_metrics") if isinstance(player.get("situational_hitting_metrics"), Mapping) else {}
         pitch_type_hitting_metrics = player.get("pitch_type_hitting_metrics") if isinstance(player.get("pitch_type_hitting_metrics"), Mapping) else {}
@@ -273,6 +279,9 @@ def build_savant_hitter_rows(
                 "H": player.get("hits"),
                 "Contact vs LHP Minus RHP": hitter_contact_platoon_delta(hitting_splits),
                 "Power vs LHP Minus RHP": hitter_power_platoon_delta(hitting_splits),
+                "PA vs LHP": split_volume_metrics.get("pa_vs_lhp"),
+                "PA vs RHP": split_volume_metrics.get("pa_vs_rhp"),
+                "PA Split Imbalance": split_volume_metrics.get("pa_split_imbalance"),
             }
         )
     return rows

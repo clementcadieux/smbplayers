@@ -113,6 +113,8 @@
   "platoon_adjustment": {
     "minimum_weighted_pa": 225.0,
     "contact": {
+      "eligibility_gap": 20.0,
+      "split_imbalance_weight": 0.35,
       "light_gap": 8.0,
       "moderate_gap": 14.0,
       "heavy_gap": 22.0,
@@ -122,6 +124,8 @@
       "max_penalty_percentile": 16.0
     },
     "power": {
+      "eligibility_gap": 20.0,
+      "split_imbalance_weight": 0.35,
       "light_gap": 10.0,
       "moderate_gap": 18.0,
       "heavy_gap": 28.0,

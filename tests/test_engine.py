@@ -18,7 +18,7 @@ from smb4_mlb_ratings.engine import (
     surface_weight_factor,
     weighted_metric_value,
 )
-from smb4_mlb_ratings.models import PlayerInput
+from smb4_mlb_ratings.models import PlayerInput, RatingOutput
 from smb4_mlb_ratings.ingest.savant import HITTER_TRAIT_METRIC_COLUMNS, PITCHER_TRAIT_METRIC_COLUMNS
 
 
@@ -1628,7 +1628,7 @@ class SurfaceBlendTests(unittest.TestCase):
                 self._platoon_hitter(
                     "Heavy Platoon",
                     weighted_pa=520,
-                    contact_gap=18.0,
+                    contact_gap=24.0,
                     power_gap=30.0,
                 ),
                 self._platoon_hitter(
@@ -1679,7 +1679,7 @@ class SurfaceBlendTests(unittest.TestCase):
                 self._platoon_hitter(
                     "Trait Platoon",
                     weighted_pa=540,
-                    contact_gap=18.0,
+                    contact_gap=24.0,
                     power_gap=30.0,
                 ),
                 self._platoon_hitter("Peer A", weighted_pa=520, contact_gap=0.0, power_gap=0.0),
@@ -1705,6 +1705,132 @@ class SurfaceBlendTests(unittest.TestCase):
         self.assertIn("CON vs LHP", assigned_traits)
         self.assertIn("POW vs LHP", assigned_traits)
 
+    def test_balanced_platoon_profile_has_no_trait_or_penalty(self) -> None:
+        outputs = rate_players(
+            [
+                self._platoon_hitter(
+                    "Below Threshold Split",
+                    weighted_pa=540,
+                    contact_gap=19.0,
+                    power_gap=19.0,
+                ),
+                self._platoon_hitter(
+                    "No Split Baseline",
+                    weighted_pa=540,
+                    contact_gap=0.0,
+                    power_gap=0.0,
+                ),
+                self._platoon_hitter(
+                    "Peer C",
+                    weighted_pa=520,
+                    contact_gap=0.0,
+                    power_gap=0.0,
+                    batting_average=0.252,
+                    adjusted_obp=0.324,
+                    slugging=0.412,
+                    iso=0.148,
+                    hr_per_pa=0.023,
+                    barrel_rate=0.062,
+                ),
+            ],
+            trim_final_traits=False,
+        )
+
+        below = next(output for output in outputs if output.name == "Below Threshold Split")
+        baseline = next(output for output in outputs if output.name == "No Split Baseline")
+        below_traits = {trait.name for trait in below.assigned_traits}
+
+        self.assertEqual(below.percentiles["contact"], baseline.percentiles["contact"])
+        self.assertEqual(below.percentiles["power"], baseline.percentiles["power"])
+        self.assertNotIn("CON vs LHP", below_traits)
+        self.assertNotIn("CON vs RHP", below_traits)
+        self.assertNotIn("POW vs LHP", below_traits)
+        self.assertNotIn("POW vs RHP", below_traits)
+
+    def test_platoon_threshold_borderline_behavior(self) -> None:
+        below_outputs = rate_players(
+            [
+                self._platoon_hitter(
+                    "Contact Below",
+                    weighted_pa=540,
+                    contact_gap=19.0,
+                    power_gap=0.0,
+                ),
+                self._platoon_hitter("Peer 1", weighted_pa=520, contact_gap=0.0, power_gap=0.0),
+                self._platoon_hitter("Peer 2", weighted_pa=515, contact_gap=0.0, power_gap=0.0),
+            ],
+            trim_final_traits=False,
+        )
+        above_outputs = rate_players(
+            [
+                self._platoon_hitter(
+                    "Contact Above",
+                    weighted_pa=540,
+                    contact_gap=21.0,
+                    power_gap=0.0,
+                ),
+                self._platoon_hitter("Peer A", weighted_pa=520, contact_gap=0.0, power_gap=0.0),
+                self._platoon_hitter("Peer B", weighted_pa=515, contact_gap=0.0, power_gap=0.0),
+            ],
+            trim_final_traits=False,
+        )
+        power_outputs = rate_players(
+            [
+                self._platoon_hitter(
+                    "Power Above",
+                    weighted_pa=540,
+                    contact_gap=0.0,
+                    power_gap=21.0,
+                ),
+                self._platoon_hitter("Peer X", weighted_pa=520, contact_gap=0.0, power_gap=0.0),
+                self._platoon_hitter("Peer Y", weighted_pa=515, contact_gap=0.0, power_gap=0.0),
+            ],
+            trim_final_traits=False,
+        )
+
+        contact_below_player = PlayerInput.from_dict(
+            {
+                "name": "Contact Below Sample",
+                "role": "hitter",
+                "team": "NYM",
+                "primary_position": "CF",
+                "samples": {"weighted_pa": 540},
+                "trait_metrics": {
+                    "contact_vs_lhp_minus_rhp": 19.0,
+                    "power_vs_lhp_minus_rhp": 0.0,
+                },
+            }
+        )
+        contact_above_player = PlayerInput.from_dict(
+            {
+                "name": "Contact Above Sample",
+                "role": "hitter",
+                "team": "NYM",
+                "primary_position": "CF",
+                "samples": {"weighted_pa": 540},
+                "trait_metrics": {
+                    "contact_vs_lhp_minus_rhp": 21.0,
+                    "power_vs_lhp_minus_rhp": 0.0,
+                },
+            }
+        )
+
+        below_traits = {
+            trait.name for trait in next(output for output in below_outputs if output.name == "Contact Below").assigned_traits
+        }
+        above_traits = {
+            trait.name for trait in next(output for output in above_outputs if output.name == "Contact Above").assigned_traits
+        }
+        power_traits = {
+            trait.name for trait in next(output for output in power_outputs if output.name == "Power Above").assigned_traits
+        }
+
+        self.assertEqual(processing_core_module.platoon_penalty_percentile("contact", contact_below_player, 540), 0.0)
+        self.assertGreater(processing_core_module.platoon_penalty_percentile("contact", contact_above_player, 540), 0.0)
+        self.assertNotIn("CON vs LHP", below_traits)
+        self.assertIn("CON vs LHP", above_traits)
+        self.assertIn("POW vs LHP", power_traits)
+
     def test_platoon_penalty_requires_minimum_weighted_pa(self) -> None:
         low_sample_player = PlayerInput.from_dict(
             {
@@ -1714,7 +1840,7 @@ class SurfaceBlendTests(unittest.TestCase):
                 "primary_position": "CF",
                 "samples": {"weighted_pa": 180},
                 "trait_metrics": {
-                    "contact_vs_lhp_minus_rhp": 18.0,
+                    "contact_vs_lhp_minus_rhp": 24.0,
                     "power_vs_lhp_minus_rhp": 30.0,
                 },
             }
@@ -1727,7 +1853,7 @@ class SurfaceBlendTests(unittest.TestCase):
                 "primary_position": "CF",
                 "samples": {"weighted_pa": 520},
                 "trait_metrics": {
-                    "contact_vs_lhp_minus_rhp": 18.0,
+                    "contact_vs_lhp_minus_rhp": 24.0,
                     "power_vs_lhp_minus_rhp": 30.0,
                 },
             }
@@ -1737,6 +1863,96 @@ class SurfaceBlendTests(unittest.TestCase):
         self.assertEqual(processing_core_module.platoon_penalty_percentile("power", low_sample_player, 180), 0.0)
         self.assertGreater(processing_core_module.platoon_penalty_percentile("contact", full_sample_player, 520), 0.0)
         self.assertGreater(processing_core_module.platoon_penalty_percentile("power", full_sample_player, 520), 0.0)
+
+    def test_platoon_penalty_increases_with_split_pa_imbalance(self) -> None:
+        balanced_split_player = PlayerInput.from_dict(
+            {
+                "name": "Balanced Split Volume",
+                "role": "hitter",
+                "team": "NYM",
+                "primary_position": "CF",
+                "samples": {"weighted_pa": 520},
+                "trait_metrics": {
+                    "contact_vs_lhp_minus_rhp": 24.0,
+                    "power_vs_lhp_minus_rhp": 30.0,
+                    "pa_vs_lhp": 260.0,
+                    "pa_vs_rhp": 260.0,
+                },
+            }
+        )
+        imbalanced_split_player = PlayerInput.from_dict(
+            {
+                "name": "Imbalanced Split Volume",
+                "role": "hitter",
+                "team": "NYM",
+                "primary_position": "CF",
+                "samples": {"weighted_pa": 520},
+                "trait_metrics": {
+                    "contact_vs_lhp_minus_rhp": 24.0,
+                    "power_vs_lhp_minus_rhp": 30.0,
+                    "pa_vs_lhp": 460.0,
+                    "pa_vs_rhp": 60.0,
+                },
+            }
+        )
+
+        balanced_contact_penalty = processing_core_module.platoon_penalty_percentile("contact", balanced_split_player, 520)
+        imbalanced_contact_penalty = processing_core_module.platoon_penalty_percentile("contact", imbalanced_split_player, 520)
+        balanced_power_penalty = processing_core_module.platoon_penalty_percentile("power", balanced_split_player, 520)
+        imbalanced_power_penalty = processing_core_module.platoon_penalty_percentile("power", imbalanced_split_player, 520)
+
+        self.assertGreater(imbalanced_contact_penalty, balanced_contact_penalty)
+        self.assertGreater(imbalanced_power_penalty, balanced_power_penalty)
+
+    def test_platoon_penalty_only_applies_when_platoon_trait_assigned(self) -> None:
+        player = PlayerInput.from_dict(
+            self._platoon_hitter(
+                "Penalty Gate",
+                weighted_pa=540,
+                contact_gap=24.0,
+                power_gap=30.0,
+            )
+        )
+
+        penalty_contact = processing_core_module.platoon_penalty_percentile("contact", player, 540)
+        penalty_power = processing_core_module.platoon_penalty_percentile("power", player, 540)
+
+        no_platoon_output = RatingOutput.from_dict(
+            {
+                "name": "Penalty Gate",
+                "role": "hitter",
+                "team": "NYM",
+                "primary_position": "CF",
+                "ratings": {"contact": 50, "power": 50},
+                "percentiles": {"contact": 50.0, "power": 50.0},
+                "overall_numeric": 50,
+                "overall_grade": "C",
+                "confidence": "medium",
+                "review_flags": [],
+                "suggested_traits": [],
+                "assigned_traits": [
+                    {
+                        "name": "Stealer",
+                        "chemistry_type": "Crafty",
+                        "polarity": "positive",
+                        "confidence": "high",
+                        "reason": "Test trait",
+                    }
+                ],
+                "recommended_personalities": [],
+                "metadata": {},
+            }
+        )
+
+        contact_assigned = processing_core_module.assigned_platoon_trait_names(no_platoon_output, "contact")
+        power_assigned = processing_core_module.assigned_platoon_trait_names(no_platoon_output, "power")
+        effective_contact_penalty = penalty_contact if contact_assigned else 0.0
+        effective_power_penalty = penalty_power if power_assigned else 0.0
+
+        self.assertGreater(penalty_contact, 0.0)
+        self.assertGreater(penalty_power, 0.0)
+        self.assertEqual(effective_contact_penalty, 0.0)
+        self.assertEqual(effective_power_penalty, 0.0)
 
     def test_pitcher_components_use_role_specific_peer_groups(self) -> None:
         players = [
@@ -2151,6 +2367,8 @@ class SurfaceBlendTests(unittest.TestCase):
         weighted_pa: float,
         contact_gap: float,
         power_gap: float,
+        pa_vs_lhp: float | None = None,
+        pa_vs_rhp: float | None = None,
         batting_average: float = 0.272,
         adjusted_obp: float = 0.341,
         slugging: float = 0.445,
@@ -2179,6 +2397,8 @@ class SurfaceBlendTests(unittest.TestCase):
             "trait_metrics": {
                 "contact_vs_lhp_minus_rhp": contact_gap,
                 "power_vs_lhp_minus_rhp": power_gap,
+                "pa_vs_lhp": pa_vs_lhp,
+                "pa_vs_rhp": pa_vs_rhp,
             },
         }
 

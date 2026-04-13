@@ -89,6 +89,7 @@ def aggregate_split_stats(group: str, splits: Sequence[Mapping[str, Any]]) -> di
             "slg": slg or 0.0,
             "iso": iso or 0.0,
             "strikeout_rate": strikeout_rate or 0.0,
+            "plate_appearances": plate_appearances or 0.0,
         }
 
     if group == "pitching":
@@ -132,6 +133,31 @@ def hitter_power_platoon_delta(splits: Mapping[str, Mapping[str, float]]) -> flo
     if not isinstance(vs_left, Mapping) or not isinstance(vs_right, Mapping):
         return None
     return round(((_as_float(vs_left.get("iso")) or 0.0) - (_as_float(vs_right.get("iso")) or 0.0)) * 1000.0, 3)
+
+
+def _split_plate_appearances(split: Mapping[str, float]) -> float | None:
+    if not isinstance(split, Mapping):
+        return None
+    return _as_float(split.get("plate_appearances"))
+
+
+def hitter_split_volume_metrics(splits: Mapping[str, Mapping[str, float]]) -> dict[str, float | None]:
+    vs_left = splits.get("vl") if isinstance(splits.get("vl"), Mapping) else None
+    vs_right = splits.get("vr") if isinstance(splits.get("vr"), Mapping) else None
+    pa_vs_lhp = _split_plate_appearances(vs_left) if isinstance(vs_left, Mapping) else None
+    pa_vs_rhp = _split_plate_appearances(vs_right) if isinstance(vs_right, Mapping) else None
+
+    imbalance = None
+    if pa_vs_lhp is not None and pa_vs_rhp is not None:
+        total = pa_vs_lhp + pa_vs_rhp
+        if total > 0:
+            imbalance = abs(pa_vs_lhp - pa_vs_rhp) / total
+
+    return {
+        "pa_vs_lhp": round(pa_vs_lhp, 3) if pa_vs_lhp is not None else None,
+        "pa_vs_rhp": round(pa_vs_rhp, 3) if pa_vs_rhp is not None else None,
+        "pa_split_imbalance": round(imbalance, 4) if imbalance is not None else None,
+    }
 
 
 def hitter_split_score(split: Mapping[str, float]) -> float | None:
