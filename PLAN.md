@@ -153,3 +153,160 @@
 5. **Add tests:**
    - For each newly implemented trait metric, add a unit test confirming the metric is computed and the trait fires for a synthetic player at the expected threshold.
    - Add a smoke test that checks no trait in `smb4_player_reference.json` references a `trait_metrics.*` key that is permanently `None` for all plausible player inputs.
+
+---
+
+## Issue #80 – Fix Player Identity Collisions in Rating Post-Processing When Names Are Duplicated
+
+**Problem:** The rating pipeline maps players by name during downstream steps (personality and trait assignment). When two players share the same name, one record can overwrite the other, causing cross-assignment of metadata and traits.
+
+### Steps
+
+1. **Identify all name-keyed dictionaries in `engine.py`:**
+   - Search for any `dict` or mapping built using player name as the sole key during personality and trait assignment post-processing.
+   - Enumerate every place where a player lookup by name can silently overwrite an earlier entry.
+
+2. **Replace name-only keys with a stable composite key:**
+   - Define a helper that returns a stable identity key: prefer `player_id` from the source data when available; fall back to a deterministic composite of `(name, team, primary_position, roster_season)`.
+   - Apply this key consistently throughout `engine.py` post-processing and in any downstream serialisation step.
+
+3. **Update `PlayerInput` / `PlayerOutput` models if needed:**
+   - Ensure `player_id` is an optional field in `PlayerInput` and is threaded through to `PlayerOutput` so it is available for keying at all pipeline stages.
+
+4. **Add regression tests:**
+   - Create a test with two synthetic players sharing the same name on different teams or positions and run them through the full rating pipeline in one batch.
+   - Assert that each player retains its own traits and personality — no cross-assignment occurs.
+   - Verify existing single-player tests are unaffected.
+
+---
+
+## Issue #81 – Use Full Secondary Positions in Roster Eligibility
+
+**Problem:** Roster eligibility logic considers primary position plus only a single secondary position, while the data model supports a full list of secondary positions. Utility players may be under-eligible, leading to less accurate roster recommendations.
+
+### Steps
+
+1. **Audit `roster_selector.py` eligibility logic:**
+   - Locate where `secondary_position` (singular) is read and used to determine slot eligibility.
+   - Confirm that the `secondary_positions` (plural) list on `PlayerOutput` is ignored or only partially consumed.
+
+2. **Expand eligibility to cover all secondary positions:**
+   - Update the eligibility check so that a player qualifies for a slot if their primary position **or any** entry in `secondary_positions` maps to that slot's position group.
+   - Preserve backwards compatibility with records that only populate the legacy `secondary_position` field (treat it as a one-element list fallback).
+
+3. **Keep slot-count rules unchanged:**
+   - Ensure the 22-slot composition (4 SP, 5 RP, 5 IF, 4 OF, 2 C, 2 Flex) is not altered by this change.
+   - Multi-eligible players should be assigned to the slot that maximises overall team rating, consistent with the existing greedy selection logic.
+
+4. **Add tests:**
+   - Add a test with a synthetic player who has three valid positions and confirm they appear as eligible for all three corresponding slot groups.
+   - Add a test verifying that a player with overlapping eligibility is assigned exactly once to the optimal slot and not duplicated.
+
+---
+
+## Issue #82 – Harden Mixed-Source Merge Key to Avoid Name Collisions
+
+**Problem:** Mixed-source ingestion falls back to a normalised player name when source IDs are missing. This can incorrectly merge records for different players who share similar names, corrupting merged player records and producing unreliable downstream ratings.
+
+### Steps
+
+1. **Audit the current merge key logic in `ingest/savant.py` and `ingest/baseball_reference.py`:**
+   - Identify where name normalisation is used as the sole fallback merge key.
+   - Document the exact conditions under which a name-only key is accepted.
+
+2. **Strengthen the fallback merge key:**
+   - When no source ID is available, construct a composite key from normalised name **plus** additional disambiguating fields (e.g. team abbreviation, primary role/position, roster season).
+   - Ensure the composite key is computed consistently across all ingest sources so cross-source merges still succeed for legitimate same-player records.
+
+3. **Add ambiguity detection and warnings:**
+   - After merge, detect cases where two source records produce the same composite key but differ on one or more non-key fields (e.g. handedness, birth year) that suggest they may be different players.
+   - Emit a structured warning (logged to `stderr` or captured in ingest metadata) for each ambiguous merge so operators can review.
+
+4. **Update ingest metadata model:**
+   - Add a `merge_warnings` list to the ingest output metadata (or `PlayerInput`) to surface ambiguous merges for downstream inspection without failing the pipeline.
+
+5. **Add regression tests:**
+   - Add a test with two synthetic source records for players with the same name but different teams and assert they produce separate `PlayerInput` records, not one merged record.
+   - Add a test where the same player appears in two sources with matching composite keys and assert a clean merge with no warning.
+
+---
+
+## Issue #83 – Remove Unverified SSL Default in Live Refresh Command
+
+**Problem:** The live refresh path uses unverified SSL by default, disabling certificate validation and exposing the tool to potential man-in-the-middle attacks in insecure network environments.
+
+### Steps
+
+1. **Locate the unverified SSL usage:**
+   - Search `cli.py` and any ingest helpers for HTTP/HTTPS requests that pass `verify=False` or equivalent.
+   - Identify the specific command(s) and code paths affected.
+
+2. **Switch to verified SSL by default:**
+   - Remove or replace `verify=False` with the default `verify=True` (or omit the parameter, which defaults to verified).
+   - Ensure the underlying library (e.g. `requests`, `urllib3`) respects system CA certificates.
+
+3. **Add an explicit opt-in flag for insecure SSL:**
+   - Add a CLI flag (e.g. `--insecure` or `--no-verify-ssl`) that allows users to bypass certificate verification when they explicitly need it (e.g. corporate proxies with self-signed certs).
+   - Log a clear warning when the insecure flag is used.
+
+4. **Update CLI help text and documentation:**
+   - Document the secure default and the opt-in insecure flag in the relevant `--help` output and in any README/docs sections covering the live refresh command.
+
+5. **Add tests:**
+   - Add a test confirming that the default code path does **not** pass `verify=False`.
+   - Add a test confirming the `--insecure` flag correctly sets `verify=False` when provided.
+
+---
+
+## Issue #84 – Memoize Repeated Weighted Metric Calculations for Performance
+
+**Problem:** The engine recomputes weighted metric values many times inside nested component and peer loops, creating avoidable overhead that slows both the test suite and batch rating runs.
+
+### Steps
+
+1. **Profile the hot paths in `engine.py`:**
+   - Run `python -m pytest tests/ --durations=20` and identify which engine functions consume the most time.
+   - Instrument the weighted metric computation function(s) to count call frequency per player rating run.
+
+2. **Add per-run memoization:**
+   - Introduce a per-player cache (e.g. a local dict keyed by `(metric_name, season_weights_hash)`) that stores weighted metric results.
+   - On each call to the weighted metric helper, check the cache before recomputing; store the result on first computation.
+   - Scope the cache to a single `rate_player` invocation so it does not leak between players.
+
+3. **Verify output parity:**
+   - After adding memoization, run the full test suite and confirm all assertions pass with identical output values.
+   - Add a determinism test that rates the same player twice in one run and asserts identical output.
+
+4. **Measure and document the improvement:**
+   - Record test suite runtime before and after the change.
+   - Note the improvement in a comment near the cache or in the PR description.
+
+5. **Preserve deterministic behavior:**
+   - Ensure the cache does not cause stale results if the same player object is mutated between calls (treat inputs as immutable within a rating run).
+
+---
+
+## Issue #85 – Align Trait-Limit Documentation with Runtime Default
+
+**Problem:** Documentation states the default final trait limit is 3, while runtime behaviour currently defaults to 2. This inconsistency causes user confusion and incorrect expectations during validation and tuning.
+
+### Steps
+
+1. **Determine the canonical default:**
+   - Review `smb4_player_reference.json` (`max_traits_per_player`) and `engine.py` to confirm the runtime-enforced default.
+   - Decide whether the intended canonical default is 2 or 3 (favour whatever the runtime currently enforces unless there is a design reason to change it).
+
+2. **Align documentation to the runtime default:**
+   - Search all documentation files (README, docstrings, comments, `PLAN.md`) for references to the trait limit.
+   - Update every reference to match the confirmed canonical default.
+
+3. **Align runtime to documentation if needed:**
+   - If the decision is to change the runtime default (e.g. from 2 to 3), update `max_traits_per_player` in `smb4_player_reference.json` and any hard-coded fallback in `engine.py`.
+
+4. **Update tests to reflect the chosen default:**
+   - Search `tests/` for assertions on the number of traits assigned.
+   - Update any test that hard-codes the old value.
+   - Add a test that explicitly verifies no player exceeds the canonical trait limit after a full rating run.
+
+5. **Capture in changelog or release notes:**
+   - Add a brief entry noting the alignment change so it is visible in project history.
