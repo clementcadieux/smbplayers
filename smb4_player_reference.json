@@ -1100,6 +1100,14 @@
         "sources": ["baseball_savant", "baseball_reference"],
         "criteria": [{"stat": "trait_metrics.risp_hitting", "operator": ">=", "value": 65, "weight": 1.0}]
       },
+      "Base Rounder": {
+        "description": "Award when baserunning impact and straight-line speed are both clear strengths.",
+        "sources": ["baseball_savant", "baseball_reference"],
+        "criteria": [
+          {"stat": "metrics.baserunning_value", "operator": ">=", "value": 4.0, "weight": 1.0},
+          {"stat": "metrics.sprint_speed", "operator": ">=", "value": 28.0, "weight": 0.5}
+        ]
+      },
       "RBI Zero": {
         "description": "Award when run-producing situational hitting is a clear weakness.",
         "sources": ["baseball_savant", "baseball_reference"],
@@ -1192,6 +1200,11 @@
         "description": "Award when pitcher-disruption or plate-presence signals are clearly above average.",
         "sources": ["baseball_savant"],
         "criteria": [{"stat": "trait_metrics.mind_games", "operator": ">=", "value": 65, "weight": 1.0}]
+      },
+      "Easy Target": {
+        "description": "Award when batter-side disruption signals are clearly below average.",
+        "sources": ["baseball_savant"],
+        "criteria": [{"stat": "trait_metrics.mind_games", "operator": "<=", "value": 35, "weight": 1.0}]
       },
       "Sign Stealer": {
         "description": "Award when pitch recognition and anticipation indicators are clearly above average.",

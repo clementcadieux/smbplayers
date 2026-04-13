@@ -139,7 +139,9 @@ TRAIT_CONFLICT_GROUPS = (
     frozenset({"Consistent", "Volatile"}),
     frozenset({"Durable", "Injury Prone"}),
     frozenset({"Clutch", "Choker"}),
+    frozenset({"Mind Gamer", "Easy Target"}),
     frozenset({"Sprinter", "Slow Poke"}),
+    frozenset({"Base Rounder", "Base Jogger"}),
     frozenset({"Cannon Arm", "Noodle Arm"}),
     frozenset({"Magic Hands", "Butter Fingers"}),
     frozenset({"K Collector", "K Neglecter"}),
@@ -149,6 +151,7 @@ TRAIT_CONFLICT_GROUPS = (
     frozenset({"Pick Officer", "Easy Jumps"}),
     frozenset({"Reverse Splits", "Specialist"}),
     frozenset({"Big Hack", "Little Hack"}),
+    frozenset({"Tough Out", "Whiffer"}),
     frozenset({"Two Way (C)", "Two Way (IF)", "Two Way (OF)"}),
 )
 
@@ -1934,6 +1937,22 @@ def suggest_traits(state: PlayerState) -> list[TraitSuggestion]:
                 score=score,
                 reason="The bat still carries playable contact indicators, but strikeout rate is a clear negative outlier within the contact profile.",
             )
+        if (
+            strikeout_pct is not None
+            and contact_rate_pct is not None
+            and batting_average_pct is not None
+            and strikeout_pct >= 72
+            and contact_rate_pct <= 60
+            and batting_average_pct <= 60
+            and (contact_pct is None or contact_pct <= 70)
+        ):
+            add_trait(
+                suggestions,
+                name="Tough Out",
+                polarity="positive",
+                score=(strikeout_pct - 62) + max(60 - max(contact_rate_pct, batting_average_pct), 0) * 0.25,
+                reason="Strikeout avoidance is a clear strength even though the broader contact profile is only middling.",
+            )
         if contact_rate_pct is not None and batting_average_pct is not None and max(contact_rate_pct, batting_average_pct) >= 75:
             score = max(contact_rate_pct, batting_average_pct) - 55
             add_trait(
@@ -1959,6 +1978,14 @@ def suggest_traits(state: PlayerState) -> list[TraitSuggestion]:
                 polarity="positive",
                 score=((attempt_pct + success_pct) / 2) - 48,
                 reason="Steal aggression and success indicate a base-stealing trait beyond raw speed alone.",
+            )
+        if baserunning_pct is not None and baserunning_pct >= 65 and (speed_pct or 0) >= 55:
+            add_trait(
+                suggestions,
+                name="Base Rounder",
+                polarity="positive",
+                score=(baserunning_pct - 55) + max((speed_pct or 0) - 60, 0) * 0.25,
+                reason="Baserunning value and speed percentile both support an above-average base-rounding profile.",
             )
         if sprint_pct is not None and sprint_pct <= 22:
             add_trait(
