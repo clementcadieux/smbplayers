@@ -1824,12 +1824,54 @@ def normalized_scores(scores: dict[str, float]) -> dict[str, float]:
     }
 
 
-def team_trait_scores(outputs: list[RatingOutput], players_by_name: dict[str, PlayerInput]) -> dict[str, dict[str, float]]:
+def _normalized_identity_value(value: str | None) -> str:
+    if not isinstance(value, str):
+        return ""
+    return " ".join(value.strip().lower().split())
+
+
+def _player_identity_key(player: PlayerInput) -> str:
+    if isinstance(player.player_id, str) and player.player_id:
+        return f"id:{player.player_id}"
+    source_player_id = metadata_lookup(player.metadata, "source_player_id")
+    if isinstance(source_player_id, str) and source_player_id:
+        return f"id:{source_player_id}"
+    roster_season = metadata_lookup(player.metadata, "source_years.current")
+    return (
+        "composite:"
+        f"{_normalized_identity_value(player.name)}|"
+        f"{_normalized_identity_value(player.team)}|"
+        f"{_normalized_identity_value(player.primary_position)}|"
+        f"{_normalized_identity_value(player.role)}|"
+        f"{roster_season if roster_season is not None else ''}"
+    )
+
+
+def _output_identity_key(output: RatingOutput) -> str:
+    if isinstance(output.player_id, str) and output.player_id:
+        return f"id:{output.player_id}"
+    source_player_id = metadata_lookup(output.metadata, "source_player_id")
+    if isinstance(source_player_id, str) and source_player_id:
+        return f"id:{source_player_id}"
+    roster_season = metadata_lookup(output.metadata, "source_years.current")
+    return (
+        "composite:"
+        f"{_normalized_identity_value(output.name)}|"
+        f"{_normalized_identity_value(output.team)}|"
+        f"{_normalized_identity_value(output.primary_position)}|"
+        f"{_normalized_identity_value(output.role)}|"
+        f"{roster_season if roster_season is not None else ''}"
+    )
+
+
+def team_trait_scores(outputs: list[RatingOutput], players_by_identity: dict[str, PlayerInput]) -> dict[str, dict[str, float]]:
     totals_by_team: dict[str, dict[str, float]] = defaultdict(lambda: {chemistry_type: 0.0 for chemistry_type in configured_chemistry_types()})
     for output in outputs:
         if not output.team:
             continue
-        player = players_by_name[output.name]
+        player = players_by_identity.get(_output_identity_key(output))
+        if player is None:
+            continue
         player_scores = chemistry_scores_from_traits(all_player_traits(output, player))
         for chemistry_type, score in player_scores.items():
             totals_by_team[output.team][chemistry_type] += score
@@ -2218,7 +2260,7 @@ def apply_review_flags(state: PlayerState, spec: RatingSpec, available_weight: f
 def rate_players(players: list[PlayerInput | dict], trim_final_traits: bool = True) -> list[RatingOutput]:
     player_objects = [player if isinstance(player, PlayerInput) else PlayerInput.from_dict(player) for player in players]
     player_objects = [player for player in player_objects if player.active]
-    players_by_name = {player.name: player for player in player_objects}
+    players_by_identity = {_player_identity_key(player): player for player in player_objects}
     states = [state_from_player(player) for player in player_objects]
     peer_state_index = build_peer_state_index(states)
 
@@ -2372,19 +2414,24 @@ def rate_players(players: list[PlayerInput | dict], trim_final_traits: bool = Tr
                 projected_pa=resolved_projected_pa(state.player),
                 projected_ip=resolved_projected_ip(state.player),
                 recommended_pitches=select_pitch_mix(state.player.pitch_mix) if state.player.role in {"pitcher", "two_way"} else [],
+                on_il=state.player.on_il if state.player.on_il is not None else metadata_lookup(state.player.metadata, "on_il"),
+                player_id=state.player.player_id or metadata_lookup(state.player.metadata, "source_player_id"),
                 metadata=output_metadata,
             )
         )
 
-    team_scores = team_trait_scores(outputs, players_by_name)
+    team_scores = team_trait_scores(outputs, players_by_identity)
     for output in outputs:
+        player = players_by_identity.get(_output_identity_key(output))
+        if player is None:
+            continue
         output.recommended_personalities = recommend_personalities_for_output(
             output,
-            players_by_name[output.name],
+            player,
             team_scores.get(output.team or "", {chemistry_type: 0.0 for chemistry_type in configured_chemistry_types()}),
         )
         if trim_final_traits:
-            output.assigned_traits = trim_traits_for_output(output, players_by_name[output.name])
+            output.assigned_traits = trim_traits_for_output(output, player)
         else:
-            output.assigned_traits = all_player_traits(output, players_by_name[output.name])
+            output.assigned_traits = all_player_traits(output, player)
     return outputs

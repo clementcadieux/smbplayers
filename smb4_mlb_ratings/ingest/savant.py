@@ -678,6 +678,8 @@ class PlayerAccumulator:
         player_dict = {
             "name": self.name,
             "role": role,
+            "player_id": self.source_id,
+            "on_il": metadata.get("on_il") if isinstance(metadata.get("on_il"), bool) else None,
             "active": self.active,
             "team": self.team,
             "age": self.age,
@@ -808,14 +810,19 @@ def _read_csv(path: Path) -> list[dict[str, str]]:
         return [_normalize_row(row) for row in reader if any((value or "").strip() for value in row.values())]
 
 
-def _player_key(row: dict[str, str]) -> tuple[str, str]:
+def _player_key(row: dict[str, str], *, season_year: int | None = None) -> tuple[str, str]:
     player_id = _row_player_id(row)
     if player_id:
         return ("id", player_id)
     name = _row_player_name(row)
     if not name:
         raise ValueError("CSV row is missing both player id and player name")
-    return ("name", _normalized_name(name))
+    normalized_name = _normalized_name(name)
+    team = _normalized_team(_pick_first(row, "team", "team_abbr", "team_name", "last_team")) or ""
+    primary_position = _canonical_position(_pick_first(row, "primary_position", "position", "pos", "fielding_position", "mlb_pos")) or ""
+    role = "pitcher" if primary_position == "P" else "hitter"
+    season_text = str(season_year) if season_year is not None else ""
+    return ("composite", f"{normalized_name}|{team}|{primary_position}|{role}|{season_text}")
 
 
 def _ensure_player(
@@ -823,8 +830,9 @@ def _ensure_player(
     row: dict[str, str],
     *,
     source: str = "baseball_savant",
+    season_year: int | None = None,
 ) -> PlayerAccumulator:
-    key = _player_key(row)
+    key = _player_key(row, season_year=season_year)
     player = players.get(key)
     if player is None:
         player = PlayerAccumulator(name=_row_player_name(row) or key[1], source=source, source_id=_row_player_id(row))
@@ -905,7 +913,7 @@ def _apply_roster_rows(
     roster_filter: RosterFilter | None = None,
 ) -> None:
     for row in rows:
-        player = _ensure_player(players, row, source=source)
+        player = _ensure_player(players, row, source=source, season_year=season_year)
         if season_key is not None and season_year is not None:
             player.source_years[season_key] = season_year
         _mark_active_status(
@@ -1288,7 +1296,7 @@ def ingest_from_manifest(manifest: IngestManifest | Path) -> list[dict[str, Any]
         hitters_path = season_inputs.files.get("hitters")
         if hitters_path is not None:
             for row in _read_csv(hitters_path):
-                player = _ensure_player(players, row, source=manifest_obj.source)
+                player = _ensure_player(players, row, source=manifest_obj.source, season_year=season_inputs.year)
                 if season_inputs.year is not None:
                     player.source_years[season_key] = season_inputs.year
                 _mark_active_status(
@@ -1303,7 +1311,7 @@ def ingest_from_manifest(manifest: IngestManifest | Path) -> list[dict[str, Any]
         pitchers_path = season_inputs.files.get("pitchers")
         if pitchers_path is not None:
             for row in _read_csv(pitchers_path):
-                player = _ensure_player(players, row, source=manifest_obj.source)
+                player = _ensure_player(players, row, source=manifest_obj.source, season_year=season_inputs.year)
                 if season_inputs.year is not None:
                     player.source_years[season_key] = season_inputs.year
                 _mark_active_status(
@@ -1324,7 +1332,7 @@ def ingest_from_manifest(manifest: IngestManifest | Path) -> list[dict[str, Any]
         fielding_path = season_inputs.files.get("fielding")
         if fielding_path is not None:
             for row in _read_csv(fielding_path):
-                player = _ensure_player(players, row, source=manifest_obj.source)
+                player = _ensure_player(players, row, source=manifest_obj.source, season_year=season_inputs.year)
                 if season_inputs.year is not None:
                     player.source_years[season_key] = season_inputs.year
                 _mark_active_status(
@@ -1342,7 +1350,7 @@ def ingest_from_manifest(manifest: IngestManifest | Path) -> list[dict[str, Any]
         running_path = season_inputs.files.get("running")
         if running_path is not None:
             for row in _read_csv(running_path):
-                player = _ensure_player(players, row, source=manifest_obj.source)
+                player = _ensure_player(players, row, source=manifest_obj.source, season_year=season_inputs.year)
                 if season_inputs.year is not None:
                     player.source_years[season_key] = season_inputs.year
                 _mark_active_status(

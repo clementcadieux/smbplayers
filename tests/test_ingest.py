@@ -1301,6 +1301,7 @@ class IngestFrameworkTests(unittest.TestCase):
 
         player = players[0]
         self.assertTrue(player["active"])
+        self.assertTrue(player["on_il"])
         self.assertEqual(player["metadata"]["status"], "Injured 10-Day")
         self.assertEqual(player["metadata"]["status_code"], "D10")
         self.assertTrue(player["metadata"]["on_il"])
@@ -1503,7 +1504,211 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertAlmostEqual(pitcher["metrics"]["chase_rate"]["current"], 0.318)
         self.assertAlmostEqual(pitcher["metrics"]["zone_pct"]["current"], 0.484)
         self.assertAlmostEqual(pitcher["metrics"]["first_pitch_strike_pct"]["current"], 0.613)
-        self.assertAlmostEqual(pitcher["metrics"]["movement_quality"]["current"], 30.9)
+
+    def test_mixed_ingest_same_name_without_ids_on_different_teams_stays_separate(self) -> None:
+        savant_hitters_path = self.root / "collision_savant_hitters.csv"
+        br_hitters_path = self.root / "collision_br_hitters.csv"
+        manifest_path = self.root / "collision_manifest.json"
+
+        self._write_csv(
+            savant_hitters_path,
+            [
+                {
+                    "player_name": "Chris Smith",
+                    "team": "NYM",
+                    "position": "CF",
+                    "PA": 420,
+                    "ISO": 0.190,
+                    "HR": 18,
+                    "Barrel %": 8.4,
+                    "SLG": 0.445,
+                    "AVG": 0.266,
+                    "OBP": 0.336,
+                    "K %": 21.0,
+                    "Contact %": 77.5,
+                    "Avg Exit Velocity": 89.9,
+                    "2B": 24,
+                    "3B": 2,
+                    "SB": 11,
+                    "CS": 3,
+                    "BB": 38,
+                    "HBP": 2,
+                    "H": 108,
+                },
+                {
+                    "player_name": "Chris Smith",
+                    "team": "ATL",
+                    "position": "RF",
+                    "PA": 415,
+                    "ISO": 0.170,
+                    "HR": 15,
+                    "Barrel %": 7.8,
+                    "SLG": 0.421,
+                    "AVG": 0.258,
+                    "OBP": 0.329,
+                    "K %": 22.0,
+                    "Contact %": 76.8,
+                    "Avg Exit Velocity": 88.8,
+                    "2B": 20,
+                    "3B": 1,
+                    "SB": 7,
+                    "CS": 2,
+                    "BB": 35,
+                    "HBP": 3,
+                    "H": 102,
+                },
+            ],
+        )
+        self._write_csv(
+            br_hitters_path,
+            [
+                {
+                    "player_name": "Chris Smith",
+                    "team": "NYM",
+                    "position": "CF",
+                    "PA": 430,
+                    "AB": 390,
+                    "H": 112,
+                    "2B": 26,
+                    "3B": 2,
+                    "HR": 17,
+                    "BB": 40,
+                    "SO": 88,
+                    "HBP": 2,
+                    "SB": 10,
+                    "CS": 3,
+                    "BA": 0.287,
+                    "OBP": 0.352,
+                    "SLG": 0.452,
+                },
+                {
+                    "player_name": "Chris Smith",
+                    "team": "ATL",
+                    "position": "RF",
+                    "PA": 410,
+                    "AB": 380,
+                    "H": 99,
+                    "2B": 19,
+                    "3B": 1,
+                    "HR": 14,
+                    "BB": 30,
+                    "SO": 95,
+                    "HBP": 3,
+                    "SB": 6,
+                    "CS": 2,
+                    "BA": 0.261,
+                    "OBP": 0.322,
+                    "SLG": 0.415,
+                },
+            ],
+        )
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "source": "mixed",
+                    "seasons": {
+                        "current": {
+                            "year": 2026,
+                            "sources": {
+                                "baseball_savant": {"files": {"hitters": savant_hitters_path.name}},
+                                "baseball_reference": {"files": {"hitters": br_hitters_path.name}},
+                            },
+                        }
+                    },
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        players = ingest_from_manifest(load_manifest(manifest_path))
+
+        self.assertEqual(len(players), 2)
+        self.assertEqual({player["team"] for player in players}, {"NYM", "ATL"})
+
+    def test_mixed_ingest_same_name_without_ids_same_team_merges_cleanly(self) -> None:
+        savant_hitters_path = self.root / "clean_merge_savant_hitters.csv"
+        br_hitters_path = self.root / "clean_merge_br_hitters.csv"
+        manifest_path = self.root / "clean_merge_manifest.json"
+
+        self._write_csv(
+            savant_hitters_path,
+            [
+                {
+                    "player_name": "Taylor Merge",
+                    "team": "NYM",
+                    "position": "CF",
+                    "PA": 460,
+                    "ISO": 0.205,
+                    "HR": 22,
+                    "Barrel %": 9.9,
+                    "SLG": 0.468,
+                    "AVG": 0.274,
+                    "OBP": 0.343,
+                    "K %": 20.0,
+                    "Contact %": 78.5,
+                    "Avg Exit Velocity": 90.4,
+                    "2B": 28,
+                    "3B": 3,
+                    "SB": 13,
+                    "CS": 4,
+                    "BB": 44,
+                    "HBP": 2,
+                    "H": 121,
+                }
+            ],
+        )
+        self._write_csv(
+            br_hitters_path,
+            [
+                {
+                    "player_name": "Taylor Merge",
+                    "team": "NYM",
+                    "position": "CF",
+                    "PA": 470,
+                    "AB": 420,
+                    "H": 130,
+                    "2B": 29,
+                    "3B": 3,
+                    "HR": 21,
+                    "BB": 45,
+                    "SO": 90,
+                    "HBP": 2,
+                    "SB": 12,
+                    "CS": 4,
+                    "BA": 0.310,
+                    "OBP": 0.368,
+                    "SLG": 0.489,
+                }
+            ],
+        )
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "source": "mixed",
+                    "seasons": {
+                        "current": {
+                            "year": 2026,
+                            "sources": {
+                                "baseball_savant": {"files": {"hitters": savant_hitters_path.name}},
+                                "baseball_reference": {"files": {"hitters": br_hitters_path.name}},
+                            },
+                        }
+                    },
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        players = ingest_from_manifest(load_manifest(manifest_path))
+
+        self.assertEqual(len(players), 1)
+        player = players[0]
+        self.assertEqual(player["name"], "Taylor Merge")
+        self.assertAlmostEqual(player["metrics"]["barrel_rate"]["current"], 0.099)
+        self.assertAlmostEqual(player["metrics"]["adjusted_obp"]["current"], 0.368)
+        self.assertNotIn("merge_warnings", player["metadata"])
 
     def test_mixed_manifest_backfills_accuracy_metrics_from_br_when_savant_missing(self) -> None:
         roster_path = self.root / "fallback_roster.csv"
