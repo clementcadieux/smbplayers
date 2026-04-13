@@ -86,6 +86,10 @@ class SurfaceBlendTests(unittest.TestCase):
         self.assertEqual(surface_weight_factor(425, 425), 0.5)
         self.assertEqual(surface_weight_factor(900, 425), 0.5)
 
+    def test_surface_weight_factor_supports_configurable_cap(self) -> None:
+        self.assertAlmostEqual(surface_weight_factor(425, 425, cap=0.72), 0.72)
+        self.assertAlmostEqual(surface_weight_factor(212.5, 425, cap=0.60), 0.30)
+
     def test_blend_uses_only_underlying_when_surface_share_is_zero(self) -> None:
         combined = blend_component_percentiles(
             [
@@ -1482,6 +1486,29 @@ class SurfaceBlendTests(unittest.TestCase):
         self.assertEqual(interpolate_rating(96.0), 94)
         self.assertEqual(interpolate_rating(99.5), 98)
 
+    def test_elite_contact_hitter_reaches_extreme_rating_values(self) -> None:
+        outputs = rate_players(self._build_contact_players())
+        elite = next(output for output in outputs if output.name == "Elite Contact")
+
+        self.assertGreaterEqual(elite.ratings["contact"], 95)
+        self.assertGreaterEqual(elite.percentiles["contact"], 96.0)
+
+    def test_elite_power_hitter_reaches_extreme_rating_values(self) -> None:
+        outputs = rate_players(self._build_elite_power_players())
+        elite = next(output for output in outputs if output.name == "Elite Power")
+
+        self.assertGreaterEqual(elite.ratings["power"], 95)
+        self.assertGreaterEqual(elite.percentiles["power"], 96.0)
+
+    def test_average_hitter_profile_stays_in_middle_band_after_surface_cap_tuning(self) -> None:
+        outputs = rate_players(self._build_average_hitter_band())
+        average = next(output for output in outputs if output.name == "Average Hitter")
+
+        self.assertGreaterEqual(average.ratings["contact"], 45)
+        self.assertLessEqual(average.ratings["contact"], 75)
+        self.assertGreaterEqual(average.ratings["power"], 38)
+        self.assertLessEqual(average.ratings["power"], 75)
+
     def test_elite_pitcher_profile_reaches_elite_overall_rating(self) -> None:
         peers = [
             {
@@ -1861,6 +1888,126 @@ class SurfaceBlendTests(unittest.TestCase):
             self._player("Low Peer", 0.360, 425, iso=0.120, hr_per_pa=0.025, barrel_rate=0.060, avg_exit_velocity=87.5),
         ]
 
+    def _build_contact_players(self) -> list[dict[str, object]]:
+        players = [
+            self._contact_hitter(
+                "Elite Contact",
+                0.080,
+                0.905,
+                0.334,
+                0.417,
+                0.512,
+                620,
+            )
+        ]
+        players.extend(
+            self._contact_hitter(
+                f"Contact Peer {index}",
+                0.148 + (index * 0.005),
+                0.842 - (index * 0.009),
+                0.302 - (index * 0.006),
+                0.374 - (index * 0.006),
+                0.485 - (index * 0.011),
+                560,
+            )
+            for index in range(1, 11)
+        )
+        players.extend(
+            self._contact_hitter(
+                f"Whiff Peer {index}",
+                0.210 + (index * 0.007),
+                0.765 - (index * 0.010),
+                0.264 - (index * 0.005),
+                0.332 - (index * 0.004),
+                0.424 - (index * 0.008),
+                535,
+            )
+            for index in range(1, 11)
+        )
+        return players
+
+    def _build_elite_power_players(self) -> list[dict[str, object]]:
+        players = [
+            self._power_hitter(
+                "Elite Power",
+                0.315,
+                0.071,
+                0.183,
+                0.626,
+                95.4,
+                610,
+            )
+        ]
+        players.extend(
+            self._power_hitter(
+                f"Power Peer {index}",
+                0.230 - (index * 0.006),
+                0.050 - (index * 0.001),
+                0.128 - (index * 0.004),
+                0.535 - (index * 0.010),
+                92.4 - (index * 0.25),
+                560,
+            )
+            for index in range(1, 11)
+        )
+        players.extend(
+            self._power_hitter(
+                f"Light Bat {index}",
+                0.142 - (index * 0.003),
+                0.024 - (index * 0.0007),
+                0.067 - (index * 0.002),
+                0.408 - (index * 0.007),
+                88.4 - (index * 0.20),
+                520,
+            )
+            for index in range(1, 11)
+        )
+        return players
+
+    def _build_average_hitter_band(self) -> list[dict[str, object]]:
+        players = [
+            {
+                "name": "Average Hitter",
+                "role": "hitter",
+                "team": "NYM",
+                "primary_position": "CF",
+                "metrics": {
+                    "iso": 0.176,
+                    "hr_per_pa": 0.031,
+                    "barrel_rate": 0.082,
+                    "slugging": 0.439,
+                    "avg_exit_velocity": 89.1,
+                    "strikeout_rate": 0.196,
+                    "contact_rate": 0.784,
+                    "batting_average": 0.272,
+                    "adjusted_obp": 0.341,
+                },
+                "samples": {"weighted_pa": 560},
+            }
+        ]
+        players.extend(
+            {
+                "name": f"Band Peer {index}",
+                "role": "hitter",
+                "team": "NYM",
+                "primary_position": "CF",
+                "metrics": {
+                    "iso": 0.150 + (index * 0.004),
+                    "hr_per_pa": 0.024 + (index * 0.001),
+                    "barrel_rate": 0.068 + (index * 0.003),
+                    "slugging": 0.410 + (index * 0.010),
+                    "avg_exit_velocity": 87.8 + (index * 0.22),
+                    "strikeout_rate": 0.228 - (index * 0.004),
+                    "contact_rate": 0.742 + (index * 0.008),
+                    "batting_average": 0.248 + (index * 0.004),
+                    "adjusted_obp": 0.316 + (index * 0.004),
+                },
+                "samples": {"weighted_pa": 540},
+            }
+            for index in range(1, 16)
+        )
+        return players
+
     def _player(
         self,
         name: str,
@@ -1937,6 +2084,64 @@ class SurfaceBlendTests(unittest.TestCase):
             },
             "samples": samples,
             "metadata": metadata,
+        }
+
+    def _contact_hitter(
+        self,
+        name: str,
+        strikeout_rate: float,
+        contact_rate: float,
+        batting_average: float,
+        adjusted_obp: float,
+        slugging: float,
+        sample: float,
+    ) -> dict[str, object]:
+        return {
+            "name": name,
+            "role": "hitter",
+            "team": "NYM",
+            "primary_position": "CF",
+            "metrics": {
+                "iso": max(0.120, slugging - batting_average),
+                "hr_per_pa": 0.020 + max(0.0, slugging - 0.400) * 0.09,
+                "barrel_rate": 0.060 + max(0.0, slugging - 0.400) * 0.18,
+                "slugging": slugging,
+                "avg_exit_velocity": 88.0 + max(0.0, slugging - 0.400) * 20.0,
+                "strikeout_rate": strikeout_rate,
+                "contact_rate": contact_rate,
+                "batting_average": batting_average,
+                "adjusted_obp": adjusted_obp,
+            },
+            "samples": {"weighted_pa": sample},
+        }
+
+    def _power_hitter(
+        self,
+        name: str,
+        iso: float,
+        hr_per_pa: float,
+        barrel_rate: float,
+        slugging: float,
+        avg_exit_velocity: float,
+        sample: float,
+    ) -> dict[str, object]:
+        return {
+            "name": name,
+            "role": "hitter",
+            "team": "NYM",
+            "primary_position": "RF",
+            "metrics": {
+                "iso": iso,
+                "hr_per_pa": hr_per_pa,
+                "barrel_rate": barrel_rate,
+                "slugging": slugging,
+                "avg_exit_velocity": avg_exit_velocity,
+                "strikeout_rate": 0.214,
+                "contact_rate": 0.758,
+                "batting_average": max(0.220, slugging - iso),
+                "adjusted_obp": max(0.300, slugging - iso + 0.070),
+            },
+            "samples": {"weighted_pa": sample},
         }
 
     def _platoon_hitter(

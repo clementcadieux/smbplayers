@@ -58,6 +58,7 @@ DEFAULT_MAX_ELITE_PITCH_TRAITS = 1
 TRAIT_CONFLICT_GROUPS: tuple[frozenset[str], ...] = ()
 ROLE_OVERALL_WEIGHTS: dict[str, dict[str, float]] = {}
 PLATOON_ADJUSTMENT_CONFIG: dict[str, object] = {}
+SURFACE_WEIGHT_CAPS: dict[str, float] = {}
 
 
 def refresh_runtime_tuning() -> None:
@@ -69,6 +70,7 @@ def refresh_runtime_tuning() -> None:
     global TRAIT_CONFLICT_GROUPS
     global ROLE_OVERALL_WEIGHTS
     global PLATOON_ADJUSTMENT_CONFIG
+    global SURFACE_WEIGHT_CAPS
 
     tuning = load_processing_tuning_config()
     rating_curve = tuning.get("rating_curve", {})
@@ -100,6 +102,27 @@ def refresh_runtime_tuning() -> None:
     if not parsed_grade_breakpoints:
         parsed_grade_breakpoints = [(97, "S"), (0, "D-")]
     GRADE_BREAKPOINTS = sorted(parsed_grade_breakpoints, key=lambda entry: entry[0], reverse=True)
+
+    raw_surface_weight_caps = rating_curve.get("surface_weight_caps", {}) if isinstance(rating_curve, Mapping) else {}
+    parsed_surface_weight_caps = {
+        "power": 0.58,
+        "contact": 0.72,
+        "speed": 0.50,
+        "fielding": 0.50,
+        "arm": 0.50,
+        "velocity": 0.50,
+        "junk": 0.50,
+        "accuracy": 0.50,
+    }
+    if isinstance(raw_surface_weight_caps, Mapping):
+        for rating_name, raw_value in raw_surface_weight_caps.items():
+            if not isinstance(rating_name, str):
+                continue
+            try:
+                parsed_surface_weight_caps[rating_name] = clamp(float(raw_value), 0.0, 1.0)
+            except (TypeError, ValueError):
+                continue
+    SURFACE_WEIGHT_CAPS = parsed_surface_weight_caps
 
     raw_confidence_weights = tuning.get("confidence_weights", {})
     parsed_confidence_weights: dict[str, float] = {"high": 1.0, "medium": 0.7, "low": 0.4}
@@ -725,10 +748,10 @@ def stabilize_metric(raw_value: float, sample: float, threshold: float, league_a
     return league_average + reliability * (raw_value - league_average)
 
 
-def surface_weight_factor(sample: float, threshold: float) -> float:
+def surface_weight_factor(sample: float, threshold: float, cap: float = 0.5) -> float:
     if sample <= 0 or threshold <= 0:
         return 0.0
-    return 0.5 * clamp(sample / threshold, 0.0, 1.0)
+    return clamp(cap, 0.0, 1.0) * clamp(sample / threshold, 0.0, 1.0)
 
 
 def blend_component_percentiles(
@@ -736,6 +759,7 @@ def blend_component_percentiles(
     *,
     sample: float,
     threshold: float,
+    surface_weight_cap: float = 0.5,
 ) -> float:
     underlying_components = [(percentile, weight) for percentile, weight, is_surface in component_percentiles if not is_surface]
     surface_components = [(percentile, weight) for percentile, weight, is_surface in component_percentiles if is_surface]
@@ -747,7 +771,7 @@ def blend_component_percentiles(
     if not underlying_components or not surface_components:
         return weighted_average([(percentile, weight) for percentile, weight, _ in component_percentiles])
 
-    surface_share = surface_weight_factor(sample, threshold)
+    surface_share = surface_weight_factor(sample, threshold, cap=surface_weight_cap)
     if surface_share == 0.0:
         return weighted_average(underlying_components)
 
@@ -2021,6 +2045,7 @@ def _rate_players_core(
                 component_percentiles,
                 sample=state.samples.get(spec.sample_key, 0.0),
                 threshold=spec.stabilization_threshold,
+                surface_weight_cap=SURFACE_WEIGHT_CAPS.get(spec.name, 0.5),
             )
             combined_percentile = clamp(
                 combined_percentile - platoon_penalty_percentile(spec.name, state.player, state.samples.get(spec.sample_key, 0.0)),
