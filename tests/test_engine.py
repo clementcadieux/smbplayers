@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import re
 import unittest
 from dataclasses import fields
 from pathlib import Path
 
+from smb4_mlb_ratings import engine as engine_module
 from smb4_mlb_ratings.engine import (
     blend_component_percentiles,
     interpolate_rating,
@@ -1057,6 +1059,284 @@ class SurfaceBlendTests(unittest.TestCase):
                 self.assertIsInstance(rule, dict, trait_name)
                 root = str(rule.get("stat", "")).split(".", 1)[0]
                 self.assertIn(root, player_input_fields, f"{trait_name}: unknown stat root {root}")
+
+    def test_trait_catalog_assignment_paths_are_audited(self) -> None:
+        reference_path = Path(__file__).resolve().parents[1] / "smb4_player_reference.json"
+        payload = json.loads(reference_path.read_text(encoding="utf-8"))
+
+        catalog_traits = {
+            str(trait.get("name"))
+            for group in payload.get("traits", {}).values()
+            if isinstance(group, list)
+            for trait in group
+            if isinstance(trait, dict) and isinstance(trait.get("name"), str)
+        }
+        criteria_traits = {
+            str(name)
+            for name in payload.get("trait_criteria", {}).get("traits", {}).keys()
+            if isinstance(name, str)
+        }
+
+        engine_source = Path(engine_module.__file__).read_text(encoding="utf-8")
+        heuristic_traits = set(re.findall(r'name="([^"]+)"', engine_source))
+
+        # Two-way assignment happens in a loop and does not appear as name="..." literals.
+        heuristic_traits.update({"Two Way (C)", "Two Way (IF)", "Two Way (OF)"})
+
+        covered_traits = criteria_traits | heuristic_traits
+        uncovered_traits = catalog_traits - covered_traits
+
+        self.assertEqual(
+            uncovered_traits,
+            set(),
+            f"Unexpected uncovered catalog traits: {sorted(uncovered_traits)}",
+        )
+
+    def test_base_rounder_assigns_from_speed_and_baserunning_signals(self) -> None:
+        outputs = rate_players(
+            [
+                {
+                    "name": "Base Rounder Candidate",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "CF",
+                    "metrics": {
+                        "iso": 0.165,
+                        "hr_per_pa": 0.026,
+                        "barrel_rate": 0.070,
+                        "slugging": 0.420,
+                        "avg_exit_velocity": 88.2,
+                        "strikeout_rate": 0.182,
+                        "contact_rate": 0.804,
+                        "batting_average": 0.281,
+                        "adjusted_obp": 0.349,
+                        "sprint_speed": 29.9,
+                        "baserunning_value": 7.1,
+                        "stolen_bases": 29,
+                        "caught_stealing": 4,
+                        "plate_appearances": 565,
+                    },
+                    "samples": {"weighted_pa": 565},
+                },
+                {
+                    "name": "Speed Peer",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "CF",
+                    "metrics": {
+                        "iso": 0.160,
+                        "hr_per_pa": 0.024,
+                        "barrel_rate": 0.067,
+                        "slugging": 0.410,
+                        "avg_exit_velocity": 87.8,
+                        "strikeout_rate": 0.195,
+                        "contact_rate": 0.790,
+                        "batting_average": 0.272,
+                        "adjusted_obp": 0.337,
+                        "sprint_speed": 28.2,
+                        "baserunning_value": 3.5,
+                        "stolen_bases": 18,
+                        "caught_stealing": 6,
+                        "plate_appearances": 545,
+                    },
+                    "samples": {"weighted_pa": 545},
+                },
+                {
+                    "name": "Base Jogger Peer",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "1B",
+                    "metrics": {
+                        "iso": 0.175,
+                        "hr_per_pa": 0.030,
+                        "barrel_rate": 0.080,
+                        "slugging": 0.432,
+                        "avg_exit_velocity": 89.0,
+                        "strikeout_rate": 0.215,
+                        "contact_rate": 0.752,
+                        "batting_average": 0.260,
+                        "adjusted_obp": 0.324,
+                        "sprint_speed": 25.4,
+                        "baserunning_value": -2.9,
+                        "stolen_bases": 2,
+                        "caught_stealing": 3,
+                        "plate_appearances": 530,
+                    },
+                    "samples": {"weighted_pa": 530},
+                },
+            ],
+            trim_final_traits=False,
+        )
+
+        candidate = next(output for output in outputs if output.name == "Base Rounder Candidate")
+        trait_names = {trait.name for trait in candidate.assigned_traits}
+        self.assertIn("Base Rounder", trait_names)
+
+    def test_easy_target_assigns_from_low_mind_games_metric(self) -> None:
+        outputs = rate_players(
+            [
+                {
+                    "name": "Easy Target Candidate",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "LF",
+                    "metrics": {
+                        "iso": 0.150,
+                        "hr_per_pa": 0.021,
+                        "barrel_rate": 0.058,
+                        "slugging": 0.393,
+                        "avg_exit_velocity": 87.2,
+                        "strikeout_rate": 0.224,
+                        "contact_rate": 0.748,
+                        "batting_average": 0.254,
+                        "adjusted_obp": 0.319,
+                    },
+                    "samples": {"weighted_pa": 520},
+                    "trait_metrics": {
+                        "mind_games": {"current": 24},
+                    },
+                },
+                self._player("Peer 1", 0.500, 425, iso=0.220, hr_per_pa=0.045, barrel_rate=0.110, avg_exit_velocity=91.0),
+                self._player("Peer 2", 0.360, 425, iso=0.120, hr_per_pa=0.025, barrel_rate=0.060, avg_exit_velocity=87.5),
+            ],
+            trim_final_traits=False,
+        )
+
+        candidate = next(output for output in outputs if output.name == "Easy Target Candidate")
+        trait_names = {trait.name for trait in candidate.assigned_traits}
+        self.assertIn("Easy Target", trait_names)
+        self.assertNotIn("Mind Gamer", trait_names)
+
+    def test_tough_out_assigns_when_strikeout_avoidance_outpaces_other_contact_signals(self) -> None:
+        outputs = rate_players(
+            [
+                {
+                    "name": "Tough Out Candidate",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "2B",
+                    "metrics": {
+                        "iso": 0.150,
+                        "hr_per_pa": 0.020,
+                        "barrel_rate": 0.055,
+                        "slugging": 0.395,
+                        "avg_exit_velocity": 86.8,
+                        "strikeout_rate": 0.090,
+                        "contact_rate": 0.758,
+                        "batting_average": 0.247,
+                        "adjusted_obp": 0.314,
+                    },
+                    "samples": {"weighted_pa": 540},
+                },
+                {
+                    "name": "Elite Contact Peer",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "CF",
+                    "metrics": {
+                        "iso": 0.175,
+                        "hr_per_pa": 0.028,
+                        "barrel_rate": 0.078,
+                        "slugging": 0.435,
+                        "avg_exit_velocity": 89.0,
+                        "strikeout_rate": 0.120,
+                        "contact_rate": 0.855,
+                        "batting_average": 0.311,
+                        "adjusted_obp": 0.381,
+                    },
+                    "samples": {"weighted_pa": 560},
+                },
+                {
+                    "name": "High Whiff Peer",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "RF",
+                    "metrics": {
+                        "iso": 0.180,
+                        "hr_per_pa": 0.031,
+                        "barrel_rate": 0.082,
+                        "slugging": 0.445,
+                        "avg_exit_velocity": 89.2,
+                        "strikeout_rate": 0.298,
+                        "contact_rate": 0.688,
+                        "batting_average": 0.228,
+                        "adjusted_obp": 0.302,
+                    },
+                    "samples": {"weighted_pa": 535},
+                },
+            ],
+            trim_final_traits=False,
+        )
+
+        candidate = next(output for output in outputs if output.name == "Tough Out Candidate")
+        trait_names = {trait.name for trait in candidate.assigned_traits}
+        self.assertIn("Tough Out", trait_names)
+        self.assertNotIn("Whiffer", trait_names)
+
+    def test_tough_out_does_not_assign_for_elite_contact_profile(self) -> None:
+        outputs = rate_players(
+            [
+                {
+                    "name": "Elite Contact Candidate",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "CF",
+                    "metrics": {
+                        "iso": 0.170,
+                        "hr_per_pa": 0.026,
+                        "barrel_rate": 0.072,
+                        "slugging": 0.430,
+                        "avg_exit_velocity": 88.7,
+                        "strikeout_rate": 0.108,
+                        "contact_rate": 0.872,
+                        "batting_average": 0.319,
+                        "adjusted_obp": 0.392,
+                    },
+                    "samples": {"weighted_pa": 560},
+                },
+                {
+                    "name": "Peer One",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "LF",
+                    "metrics": {
+                        "iso": 0.162,
+                        "hr_per_pa": 0.023,
+                        "barrel_rate": 0.066,
+                        "slugging": 0.414,
+                        "avg_exit_velocity": 87.9,
+                        "strikeout_rate": 0.176,
+                        "contact_rate": 0.786,
+                        "batting_average": 0.271,
+                        "adjusted_obp": 0.338,
+                    },
+                    "samples": {"weighted_pa": 545},
+                },
+                {
+                    "name": "Peer Two",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "1B",
+                    "metrics": {
+                        "iso": 0.179,
+                        "hr_per_pa": 0.031,
+                        "barrel_rate": 0.081,
+                        "slugging": 0.446,
+                        "avg_exit_velocity": 89.3,
+                        "strikeout_rate": 0.220,
+                        "contact_rate": 0.744,
+                        "batting_average": 0.252,
+                        "adjusted_obp": 0.322,
+                    },
+                    "samples": {"weighted_pa": 540},
+                },
+            ],
+            trim_final_traits=False,
+        )
+
+        candidate = next(output for output in outputs if output.name == "Elite Contact Candidate")
+        trait_names = {trait.name for trait in candidate.assigned_traits}
+        self.assertNotIn("Tough Out", trait_names)
 
     def test_interpolate_rating_expands_elite_percentile_band(self) -> None:
         self.assertEqual(interpolate_rating(88.0), 85)
