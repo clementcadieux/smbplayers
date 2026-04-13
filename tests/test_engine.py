@@ -905,6 +905,113 @@ class SurfaceBlendTests(unittest.TestCase):
         self.assertIn("Elite SL", assigned)
         self.assertNotIn("Elite 4F", assigned)
 
+    def test_rating_outputs_are_deterministic_across_repeated_runs(self) -> None:
+        players = [
+            {
+                "name": "Deterministic Pitcher",
+                "role": "pitcher",
+                "team": "NYM",
+                "primary_position": "P",
+                "metrics": {
+                    "avg_fastball_velocity": 95.4,
+                    "peak_fastball_velocity": 97.4,
+                    "fastball_usage": 0.53,
+                    "swinging_strike_rate": 0.126,
+                    "chase_rate": 0.299,
+                    "movement_quality": 23.8,
+                    "stuff_metric": 126.0,
+                    "arsenal_diversity": 0.81,
+                    "weak_contact_rate": 0.64,
+                    "walk_rate": 0.074,
+                    "strike_pct": 0.656,
+                    "zone_pct": 0.488,
+                    "first_pitch_strike_pct": 0.622,
+                    "command_error_rate": 0.344,
+                },
+                "samples": {"weighted_bf": 680, "tracked_pitches": 2720, "tracked_fastballs": 1480},
+                "trait_metrics": {
+                    "pitch_quality_fk": {"current": 84},
+                    "pressure_pitching": {"current": 79},
+                },
+            },
+            self._pitcher_peer("Determinism Peer 1", 95.0, 0.13, 0.30, 0.075),
+            self._pitcher_peer("Determinism Peer 2", 93.5, 0.11, 0.28, 0.085),
+        ]
+
+        first = [output.to_dict() for output in rate_players(players)]
+        second = [output.to_dict() for output in rate_players(players)]
+
+        self.assertEqual(first, second)
+
+    def test_assigned_traits_never_exceed_canonical_limit(self) -> None:
+        players = [
+            {
+                "name": "Trait Limit Hitter",
+                "role": "hitter",
+                "team": "NYM",
+                "primary_position": "CF",
+                "metrics": {
+                    "iso": 0.190,
+                    "hr_per_pa": 0.036,
+                    "barrel_rate": 0.095,
+                    "slugging": 0.470,
+                    "avg_exit_velocity": 90.0,
+                    "strikeout_rate": 0.195,
+                    "contact_rate": 0.790,
+                    "batting_average": 0.281,
+                    "adjusted_obp": 0.349,
+                    "sprint_speed": 29.5,
+                    "baserunning_value": 6.0,
+                    "sb_attempt_rate": 0.10,
+                    "sb_success_rate": 0.84,
+                    "triple_double_rate": 0.071,
+                },
+                "samples": {"weighted_pa": 600, "baserunning_opportunities": 170},
+                "trait_metrics": {
+                    "fastball_hitting": {"current": 78},
+                    "offspeed_hitting": {"current": 74},
+                    "zone_hitting_inside": {"current": 72},
+                    "zone_hitting_outside": {"current": 70},
+                },
+            },
+            {
+                "name": "Trait Limit Pitcher",
+                "role": "pitcher",
+                "team": "NYM",
+                "primary_position": "P",
+                "metrics": {
+                    "avg_fastball_velocity": 95.8,
+                    "peak_fastball_velocity": 98.1,
+                    "fastball_usage": 0.55,
+                    "swinging_strike_rate": 0.131,
+                    "chase_rate": 0.305,
+                    "movement_quality": 24.2,
+                    "stuff_metric": 129.0,
+                    "arsenal_diversity": 0.84,
+                    "weak_contact_rate": 0.65,
+                    "walk_rate": 0.070,
+                    "strike_pct": 0.662,
+                    "zone_pct": 0.495,
+                    "first_pitch_strike_pct": 0.629,
+                    "command_error_rate": 0.338,
+                },
+                "samples": {"weighted_bf": 700, "tracked_pitches": 2800, "tracked_fastballs": 1560},
+                "trait_metrics": {
+                    "pitch_quality_2f": {"current": 84},
+                    "pitch_quality_cf": {"current": 85},
+                    "pitch_quality_fk": {"current": 86},
+                    "pressure_pitching": {"current": 81},
+                },
+            },
+            self._pitcher_peer("Trait Cap Peer 1", 95.0, 0.13, 0.30, 0.075),
+            self._pitcher_peer("Trait Cap Peer 2", 93.5, 0.11, 0.28, 0.085),
+        ]
+
+        outputs = rate_players(players)
+        canonical_limit = int(engine_module.TRAIT_LIMIT_CONFIG.get("max_traits_per_player", engine_module.DEFAULT_FINAL_TRAIT_LIMIT))
+
+        self.assertTrue(all(len(output.assigned_traits) <= canonical_limit for output in outputs))
+
     def test_elite_pitch_traits_prefer_mlb_wide_percentiles_from_metadata(self) -> None:
         outputs = rate_players(
             [
