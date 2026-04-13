@@ -80,10 +80,15 @@ def _filter_players_by_team(players: list[dict], team: str | None, *, active_onl
     ]
 
 
-def run_rate(input_path: Path, output_path: Path, team: str | None = None) -> int:
+def run_rate(
+    input_path: Path,
+    output_path: Path,
+    team: str | None = None,
+    config_path: Path | None = None,
+) -> int:
     players = load_players(input_path)
     players = _filter_players_by_team(players, team, active_only=True)
-    outputs = process_players(players)
+    outputs = process_players(players, config_path=str(config_path) if config_path is not None else None)
     write_json(output_path, [output.to_dict() for output in outputs])
     return 0
 
@@ -121,13 +126,14 @@ def run_ingest_rate(
     normalized_output_path: Path | None,
     structured_output_path: Path | None,
     team: str | None = None,
+    config_path: Path | None = None,
 ) -> int:
     manifest = load_manifest(manifest_path)
     players = aggregate_from_manifest(manifest)
     players = _filter_players_by_team(players, team, active_only=True)
     if normalized_output_path is not None:
         write_json(normalized_output_path, {"players": players})
-    outputs = process_players(players)
+    outputs = process_players(players, config_path=str(config_path) if config_path is not None else None)
     if output_path is not None:
         write_json(output_path, [output.to_dict() for output in outputs])
     if structured_output_path is not None:
@@ -272,6 +278,12 @@ def build_parser() -> argparse.ArgumentParser:
     rate_parser.add_argument("input", type=Path, help="Normalized player JSON file")
     rate_parser.add_argument("output", type=Path, help="Output ratings JSON file")
     rate_parser.add_argument("--team", type=str, default=None, help="Optional team abbreviation to filter before rating")
+    rate_parser.add_argument(
+        "--config-path",
+        type=Path,
+        default=None,
+        help="Optional YAML config path to override runtime rating and trait tuning values",
+    )
 
     ingest_parser = subparsers.add_parser("ingest", help="Normalize supported source files into engine input JSON")
     ingest_parser.add_argument("manifest", type=Path, help="Ingestion manifest JSON file")
@@ -310,6 +322,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional directory path for league/division/team JSON output",
     )
     ingest_rate_parser.add_argument("--team", type=str, default=None, help="Optional team abbreviation to filter before rating")
+    ingest_rate_parser.add_argument(
+        "--config-path",
+        type=Path,
+        default=None,
+        help="Optional YAML config path to override runtime rating and trait tuning values",
+    )
 
     refresh_bluejays_parser = subparsers.add_parser(
         "refresh-bluejays-example",
@@ -337,7 +355,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     namespace = parser.parse_args(args)
     if namespace.command == "rate":
-        return run_rate(namespace.input, namespace.output, team=namespace.team)
+        return run_rate(namespace.input, namespace.output, team=namespace.team, config_path=namespace.config_path)
     if namespace.command == "ingest":
         return run_ingest(namespace.manifest, namespace.output)
     if namespace.command == "aggregate":
@@ -357,6 +375,7 @@ def main(argv: list[str] | None = None) -> int:
             namespace.normalized_output,
             namespace.structured_output,
             namespace.team,
+            namespace.config_path,
         )
     if namespace.command == "refresh-bluejays-example":
         return run_refresh_bluejays_example(namespace.example_root, insecure_ssl=namespace.insecure)

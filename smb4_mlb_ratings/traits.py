@@ -4,46 +4,72 @@ from collections import defaultdict
 from typing import Mapping
 
 from .models import PersonalityRecommendation, PlayerInput, RatingOutput, TraitSuggestion
-from .reference import load_trait_catalog, load_trait_limit_config
+from .reference import load_processing_tuning_config, load_trait_catalog, load_trait_limit_config
 
 
 CHEMISTRY_TYPES, TRAIT_CATALOG = load_trait_catalog()
-TRAIT_LIMIT_CONFIG = load_trait_limit_config()
+TRAIT_LIMIT_CONFIG: dict[str, object] = {}
 
-CONFIDENCE_WEIGHTS = {
-    "high": 1.0,
-    "medium": 0.7,
-    "low": 0.4,
-}
+CONFIDENCE_WEIGHTS: dict[str, float] = {}
 
 PERSONALITY_PERSONAL_WEIGHT = 0.70
 PERSONALITY_TEAM_WEIGHT = 0.30
 DEFAULT_FINAL_TRAIT_LIMIT = 2
 DEFAULT_MAX_ELITE_PITCH_TRAITS = 1
+TRAIT_CONFLICT_GROUPS: tuple[frozenset[str], ...] = ()
 
-TRAIT_CONFLICT_GROUPS = (
-    frozenset({"First Pitch Slayer", "First Pitch Prayer"}),
-    frozenset({"CON vs LHP", "CON vs RHP"}),
-    frozenset({"POW vs LHP", "POW vs RHP"}),
-    frozenset({"RBI Hero", "RBI Zero"}),
-    frozenset({"Consistent", "Volatile"}),
-    frozenset({"Durable", "Injury Prone"}),
-    frozenset({"Clutch", "Choker"}),
-    frozenset({"Mind Gamer", "Easy Target"}),
-    frozenset({"Sprinter", "Slow Poke"}),
-    frozenset({"Base Rounder", "Base Jogger"}),
-    frozenset({"Cannon Arm", "Noodle Arm"}),
-    frozenset({"Magic Hands", "Butter Fingers"}),
-    frozenset({"K Collector", "K Neglecter"}),
-    frozenset({"Composed", "BB Prone"}),
-    frozenset({"Gets Ahead", "Falls Behind"}),
-    frozenset({"Rally Stopper", "Surrounded"}),
-    frozenset({"Pick Officer", "Easy Jumps"}),
-    frozenset({"Reverse Splits", "Specialist"}),
-    frozenset({"Big Hack", "Little Hack"}),
-    frozenset({"Tough Out", "Whiffer"}),
-    frozenset({"Two Way (C)", "Two Way (IF)", "Two Way (OF)"}),
-)
+
+def refresh_runtime_tuning() -> None:
+    global TRAIT_LIMIT_CONFIG
+    global CONFIDENCE_WEIGHTS
+    global PERSONALITY_PERSONAL_WEIGHT
+    global PERSONALITY_TEAM_WEIGHT
+    global TRAIT_CONFLICT_GROUPS
+
+    TRAIT_LIMIT_CONFIG = load_trait_limit_config()
+    tuning = load_processing_tuning_config()
+
+    raw_confidence_weights = tuning.get("confidence_weights", {})
+    parsed_confidence_weights: dict[str, float] = {"high": 1.0, "medium": 0.7, "low": 0.4}
+    if isinstance(raw_confidence_weights, Mapping):
+        for key in ("high", "medium", "low"):
+            try:
+                parsed_confidence_weights[key] = float(raw_confidence_weights.get(key, parsed_confidence_weights[key]))
+            except (TypeError, ValueError):
+                continue
+    CONFIDENCE_WEIGHTS = parsed_confidence_weights
+
+    raw_personality_weights = tuning.get("personality_weights", {})
+    if isinstance(raw_personality_weights, Mapping):
+        try:
+            PERSONALITY_PERSONAL_WEIGHT = float(raw_personality_weights.get("personal", 0.70))
+        except (TypeError, ValueError):
+            PERSONALITY_PERSONAL_WEIGHT = 0.70
+        try:
+            PERSONALITY_TEAM_WEIGHT = float(raw_personality_weights.get("team", 0.30))
+        except (TypeError, ValueError):
+            PERSONALITY_TEAM_WEIGHT = 0.30
+    else:
+        PERSONALITY_PERSONAL_WEIGHT = 0.70
+        PERSONALITY_TEAM_WEIGHT = 0.30
+
+    raw_trait_conflicts = tuning.get("trait_conflict_groups", [])
+    parsed_trait_conflicts: list[frozenset[str]] = []
+    if isinstance(raw_trait_conflicts, list):
+        for raw_group in raw_trait_conflicts:
+            if not isinstance(raw_group, list):
+                continue
+            group_values = {
+                str(item)
+                for item in raw_group
+                if isinstance(item, str) and str(item).strip()
+            }
+            if group_values:
+                parsed_trait_conflicts.append(frozenset(group_values))
+    TRAIT_CONFLICT_GROUPS = tuple(parsed_trait_conflicts)
+
+
+refresh_runtime_tuning()
 
 ELITE_FASTBALL_TRAIT_NAMES = frozenset({"Elite 4F", "Elite 2F", "Elite CF"})
 
