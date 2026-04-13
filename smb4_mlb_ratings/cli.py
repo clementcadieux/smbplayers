@@ -7,9 +7,10 @@ import ssl
 import sys
 from pathlib import Path
 
+from .aggregation import aggregate_from_manifest
 from .engine import rate_players
 from .generation import generate_output
-from .ingest import ingest_from_manifest, load_manifest
+from .ingest import load_manifest
 from .ingest.live_team_data import (
     build_baseball_reference_hitter_rows,
     build_baseball_reference_pitcher_rows,
@@ -89,7 +90,7 @@ def run_rate(input_path: Path, output_path: Path, team: str | None = None) -> in
 
 def run_ingest(manifest_path: Path, output_path: Path) -> int:
     manifest = load_manifest(manifest_path)
-    players = ingest_from_manifest(manifest)
+    players = aggregate_from_manifest(manifest)
     write_json(output_path, {"players": players})
     return 0
 
@@ -122,7 +123,7 @@ def run_ingest_rate(
     team: str | None = None,
 ) -> int:
     manifest = load_manifest(manifest_path)
-    players = ingest_from_manifest(manifest)
+    players = aggregate_from_manifest(manifest)
     players = _filter_players_by_team(players, team, active_only=True)
     if normalized_output_path is not None:
         write_json(normalized_output_path, {"players": players})
