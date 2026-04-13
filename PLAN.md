@@ -26,6 +26,9 @@
 - **#52 – Ratings Are Too Conservative** – Recalibrated normalisation bounds, widened upper thresholds for key metrics (ERA-, FIP-, wRC+, barrel rate), adjusted composite weights so elite stat lines (e.g. Skubal-tier) produce overall ratings ≥ 95; added regression assertions for elite and average tiers.
 - **#53 – Hitter Pitch Type/Location Specific Traits** – Identified Baseball Savant as the source for pitch-type and zone-level batting splits; extended `savant.py` and `models.py` with new split fields; wired splits into `engine.py` trait allocation and updated `smb4_player_reference.json` `trait_criteria`; added unit tests for fastball and location-specific traits.
 - **#56 – Potential Undervaluing of Elite Pitches** – Added `pitch_run_values` manifest type; implemented `parse_savant_pitch_run_value_csv()` in `savant.py`; merged `run_value_per_100` into `savant_pitch_details`; added `rv_score` (~30% weight) to `_savant_pitch_quality_score` in `engine.py`; stored normalisation bounds in `smb4_player_reference.json`; added unit tests confirming elite pitches reach the top tier.
+- **#64 – Outsized Focus on Current 2026 Minimal Sample Size** – Implemented sample-size-based seasonal weighting with recency decay; stored `full_season_pa_threshold`, `full_season_ip_threshold`, and `season_recency_weights` in `smb4_player_reference.json`; replaced static year weights in `engine.py` with volume-adjusted fractional weights normalised across all available seasons; added tests confirming small current-season samples are outweighed by full prior seasons.
+- **#66 – Missing Metrics for Pitchers That Should Be Available** – Added column-name aliases for `first_pitch_strike_pct`, `zone_pct`, `chase_rate`, and `movement_quality` in `savant.py`; added Baseball Reference fallbacks in `baseball_reference.py` (merged only when Savant value is absent); updated normalisation bounds in `smb4_player_reference.json`; added unit tests confirming all four metrics parse correctly and produce non-zero composite scores.
+- **#67 – Elite Pitch Traits Almost Never Appear** – Fixed `rv_score` merge into `savant_pitch_details` before trait evaluation; lowered elite-pitch confidence threshold to match genuinely elite pitches (top 10–15 %); added priority bonus for elite-pitch traits so they survive the global 2-trait cap; recalibrated `rv_score` normalisation bounds; added regression tests confirming at least one `Elite *` trait appears for elite-grade pitchers and the 1-elite-pitch-trait cap is respected.
 
 ---
 
@@ -71,94 +74,52 @@
 
 ---
 
-## Issue #66 – Missing Metrics for Pitchers That Should Be Available
+## Issue #72 – Players on Rehab Stints in the Minors Aren't Included
 
-**Problem:** The engine references `first_pitch_strike_pct`, `zone_pct`, `chase_rate`, and `movement_quality` as pitcher composites, but these fields are currently absent or unreliable in the ingested data. At least partial equivalents are available on Baseball Savant and/or Baseball Reference.
+**Problem:** The roster filter currently uses the 26-man active roster as its base. Players on the 10-day or 60-day injured list who are on rehab assignments in the minors are excluded even though they remain on the 40-man roster and should be eligible for the SMB4 team.
 
 ### Steps
 
-1. **Audit available columns in Savant pitcher exports:**
-   - Review the Statcast pitcher leaderboard CSV headers for columns that map to `first_pitch_strike_pct` (e.g. `f_strike_pct`), `zone_pct` (e.g. `zone_pct` directly), `chase_rate` (e.g. `oz_swing_pct`), and `movement_quality` (derived from `pfx_x`/`pfx_z` or `movement_plus`).
-   - Confirm which column names appear in practice versus what `_pick_number` currently tries.
+1. **Switch the roster base from the 26-man active list to the 40-man roster:**
+   - Update the ingestion manifest schema and documentation to clarify that `roster_filter` should reference the 40-man roster, not the active 26-man list.
+   - Adjust any roster-year filtering logic in `ingest/savant.py` and `ingest/baseball_reference.py` to accept all 40-man roster members (active + IL + rehab) as eligible.
 
-2. **Extend `savant.py` fallback aliases:**
-   - Add any missing column-name aliases to the `_pick_number` calls for each of the four metrics inside `_parse_pitcher_savant_row` (or the equivalent pitcher-row parser).
-   - For `movement_quality`, if no direct column is present, keep the existing derived formula (`|horizontal_break| + |induced_vertical_break|`) but expose the flag so callers can see it is estimated.
+2. **Update `PlayerInput` active flag logic:**
+   - Review the `active` field on `PlayerInput`; ensure that players on the IL or on rehab stints still receive `active=True` so they pass the roster filter and appear in ratings output.
+   - If a separate `on_il` flag would be useful for downstream display, add it as an optional field in `models.py` without changing rating logic.
 
-3. **Add Baseball Reference fallbacks:**
-   - For `first_pitch_strike_pct` and `zone_pct`, check whether Baseball Reference standard pitching CSVs expose a usable proxy (e.g. `F-Strike%`, `Zone%`) and parse them in `baseball_reference.py` if so.
-   - Merge the Baseball Reference values into `PlayerInput.metrics` only when the Savant value is missing.
+3. **Update roster selector:**
+   - Confirm that `roster_selector.py` does not inadvertently exclude IL players when building the 22-slot roster recommendation.
+   - If IL players should be flagged but still included in recommendations, surface the `on_il` flag in the selector output.
 
-4. **Update normalisation bounds in `smb4_player_reference.json`:**
-   - Ensure `normalization_bounds` has entries for all four metrics with realistic MLB ranges (e.g. `zone_pct`: 40–55 %, `chase_rate`: 25–40 %, `first_pitch_strike_pct`: 55–70 %, `movement_quality` composite: tuned to typical pfx magnitude).
-
-5. **Update `PlayerInput` / `PlayerOutput` models if needed:**
-   - If any of the four metrics are not already declared as optional fields in `models.py`, add them.
-
-6. **Add / update tests:**
-   - Add a unit test that provides a synthetic Savant CSV row containing the new column aliases and asserts that all four metrics are parsed and non-None.
-   - Add a test confirming that, with the metrics populated, the corresponding pitcher composite scores (`junk`, `accuracy`) are non-zero.
+4. **Update tests:**
+   - Add a test with a player marked as active but on a rehab assignment and assert they appear in the rated output and roster recommendations.
+   - Verify that purely off-roster (released/traded) players are still excluded correctly.
 
 ---
 
-## Issue #67 – Elite Pitch Traits Almost Never Appear
+## Issue #73 – Verify Any Traits Not Included in the Logic
 
-**Problem:** Elite pitch traits (`Elite 4F`, `Elite CB`, etc.) are absent from rated players even when pitch run-value scores are high. The trait selection pipeline scores and caps elite-pitch traits correctly in isolation, but something upstream prevents them from reaching `high`/`medium` confidence in practice.
-
-### Steps
-
-1. **Trace the elite-pitch scoring path:**
-   - In `engine.py`, locate `_savant_pitch_quality_score` (used in issue #56) and verify that `rv_score` is actually being merged into `savant_pitch_details` before trait evaluation runs.
-   - Confirm that `_assign_pitch_traits` reads `savant_pitch_details` and that the resulting `TraitSuggestion` for each pitch type reaches `all_player_traits`.
-
-2. **Check confidence thresholds:**
-   - Identify the minimum quality score or percentile that yields `high` confidence for an elite-pitch trait; compare against the score range produced by real or synthetic pitch data.
-   - If the threshold is too high (e.g. requires a perfect 100-percentile score), lower it to match what a genuinely elite pitch produces (top 10–15 % of the population).
-
-3. **Verify `elite_pitch_traits` set configuration:**
-   - Confirm that `smb4_player_reference.json`'s `elite_pitch_traits` list matches the trait names emitted by the pitch-trait assignment code exactly (case-sensitive).
-   - If there is a mismatch, align the names.
-
-4. **Fix the `trim_traits_for_output` priority:**
-   - In `final_trait_priority`, check whether elite-pitch traits receive a high enough base score to survive the global 2-trait cap.
-   - If they are consistently outscored by non-pitch traits (e.g. `Contact Hitter`, `Power Hitter`), add a dedicated priority bonus for elite-pitch traits for pitchers, similar to the `explicit_names` bonus.
-
-5. **Update `smb4_player_reference.json` normalisation bounds for pitch quality:**
-   - If the `rv_score` normalisation range is too narrow or miscalibrated, widen it so that strong run values (e.g. −2 runs/100 pitches) clearly map to high percentiles.
-
-6. **Add regression tests:**
-   - Add a test with a pitcher whose `savant_pitch_details` contains an elite-grade pitch (high velocity + strong run value + high whiff rate) and assert that at least one `Elite *` trait appears in the final output.
-   - Add a test confirming the 1-elite-pitch-trait cap is still respected when two pitches both qualify as elite.
-
----
-
-## Issue #64 – Outsized Focus on Current 2026 Minimal Sample Size
-
-**Problem:** The current ratings over-weight the 2026 season, which has a very small sample size. The 2025 full-season data should carry significantly more weight. The general rule: half a season's worth of current-year data should equal one full prior season in importance.
+**Problem:** Some traits defined in `smb4_player_reference.json` may not have corresponding data sources or engine logic to populate them. A full audit is needed to identify gaps and assess feasibility of implementation.
 
 ### Steps
 
-1. **Audit current season-weighting logic in `engine.py`:**
-   - Identify where per-season data is aggregated and how weights are currently assigned to each season.
-   - Determine whether weights are static, sample-size-adjusted, or recency-based.
+1. **Audit all defined traits against available data:**
+   - For each trait in `smb4_player_reference.json`'s `trait_criteria.traits`, check whether the `trait_metrics.*` field it references is actually computed and populated in `engine.py`.
+   - Produce a list of traits that are defined but whose metrics are never set (i.e. always `None` or missing at runtime).
 
-2. **Define a sample-size-based weight formula:**
-   - Establish a "full season" threshold for batters (e.g. 500 PA) and pitchers (e.g. 150 IP) in `smb4_player_reference.json`.
-   - Compute a fractional weight for a partial season as `actual_volume / full_season_threshold`, capped at 1.0.
-   - Apply the rule: a partial season's weight equals `fraction × prior_season_weight`, so half a season ≈ one full prior season.
+2. **Categorise each unimplemented trait by feasibility:**
+   - **Feasible from existing sources:** traits whose required data exists in Savant or Baseball Reference CSVs but is not yet parsed or computed — e.g. `Pinch Perfect` (pinch-hit splits), `Bunter` (bunt stats), `Stimulated`/`Choker`/`Clutch` (late-inning or high-leverage splits), `Surrounded` (runners-on splits for pitchers).
+   - **Partially feasible:** traits that require proxies or derived metrics not directly exported — e.g. `Distractor` (stolen-base pressure), `Mind Gamer`/`Sign Stealer` (plate-discipline signals), `Crossed Up` (catcher sequencing).
+   - **Not feasible with available data:** traits with no reliable public data equivalent — document and flag in `smb4_player_reference.json` with a `"feasibility": "none"` note.
 
-3. **Implement recency decay:**
-   - Assign a recency multiplier to each historical season (e.g. current season weight × 1.0 after volume adjustment, prior season × 1.0, season −2 × 0.8, season −3 × 0.6, etc.) stored in `smb4_player_reference.json`.
-   - Combine volume-based fractional weight with recency decay to produce the final per-season weight.
+3. **Implement logic for feasible traits:**
+   - For each feasible trait, parse the required stat(s) in `savant.py` or `baseball_reference.py`, compute the `trait_metrics.*` value in `engine.py`, and update normalisation bounds in `smb4_player_reference.json`.
+   - For partially feasible traits, implement the best available proxy and annotate the criterion with a `"proxy": true` flag.
 
-4. **Update `engine.py` aggregation:**
-   - Replace static or naïve year weights with the new formula when blending multi-season metrics.
-   - Ensure the weighted blend is normalised so weights sum to 1.0 across all seasons available for a player.
+4. **Update `PlayerInput` / `PlayerOutput` models if needed:**
+   - Add any new `trait_metrics` keys as optional fields in `models.py` if they are not already present.
 
-5. **Update `smb4_player_reference.json`:**
-   - Add `full_season_pa_threshold`, `full_season_ip_threshold`, and `season_recency_weights` (list ordered from current to oldest) keys for easy tuning.
-
-6. **Update tests:**
-   - Add a test with a player who has a tiny 2026 sample and a strong 2025 season; assert the overall rating is driven primarily by 2025 data.
-   - Add a test confirming that a player with a half-season of 2026 data receives roughly equal weight to a full 2025 season.
-   - Regression-test that existing average/elite player score ranges are not materially affected by the change.
+5. **Add tests:**
+   - For each newly implemented trait metric, add a unit test confirming the metric is computed and the trait fires for a synthetic player at the expected threshold.
+   - Add a smoke test that checks no trait in `smb4_player_reference.json` references a `trait_metrics.*` key that is permanently `None` for all plausible player inputs.
