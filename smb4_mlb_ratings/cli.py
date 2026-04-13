@@ -7,8 +7,9 @@ import ssl
 import sys
 from pathlib import Path
 
-from .engine import rate_players
-from .ingest import ingest_from_manifest, load_manifest
+from .aggregation import aggregate_from_manifest
+from .generation import generate_output
+from .ingest import load_manifest
 from .ingest.live_team_data import (
     build_baseball_reference_hitter_rows,
     build_baseball_reference_pitcher_rows,
@@ -19,7 +20,9 @@ from .ingest.live_team_data import (
     build_savant_pitcher_rows,
     fetch_team_players,
 )
+from .models import RatingOutput
 from .output import write_structured_output
+from .processing import process_players
 from .roster_selector import build_rank_output, load_ratings
 
 
@@ -80,15 +83,29 @@ def _filter_players_by_team(players: list[dict], team: str | None, *, active_onl
 def run_rate(input_path: Path, output_path: Path, team: str | None = None) -> int:
     players = load_players(input_path)
     players = _filter_players_by_team(players, team, active_only=True)
-    outputs = rate_players(players)
+    outputs = process_players(players)
     write_json(output_path, [output.to_dict() for output in outputs])
     return 0
 
 
 def run_ingest(manifest_path: Path, output_path: Path) -> int:
     manifest = load_manifest(manifest_path)
-    players = ingest_from_manifest(manifest)
+    players = aggregate_from_manifest(manifest)
     write_json(output_path, {"players": players})
+    return 0
+
+
+def run_aggregate(manifest_path: Path, output_path: Path) -> int:
+    return run_ingest(manifest_path, output_path)
+
+
+def run_process(input_path: Path, output_path: Path, team: str | None = None) -> int:
+    return run_rate(input_path, output_path, team=team)
+
+
+def run_generate(input_path: Path, output_path: Path) -> int:
+    ratings = [RatingOutput.from_dict(item) for item in load_players(input_path)]
+    generate_output(ratings, output_path)
     return 0
 
 
@@ -106,11 +123,11 @@ def run_ingest_rate(
     team: str | None = None,
 ) -> int:
     manifest = load_manifest(manifest_path)
-    players = ingest_from_manifest(manifest)
+    players = aggregate_from_manifest(manifest)
     players = _filter_players_by_team(players, team, active_only=True)
     if normalized_output_path is not None:
         write_json(normalized_output_path, {"players": players})
-    outputs = rate_players(players)
+    outputs = process_players(players)
     if output_path is not None:
         write_json(output_path, [output.to_dict() for output in outputs])
     if structured_output_path is not None:
@@ -260,6 +277,19 @@ def build_parser() -> argparse.ArgumentParser:
     ingest_parser.add_argument("manifest", type=Path, help="Ingestion manifest JSON file")
     ingest_parser.add_argument("output", type=Path, help="Output normalized player JSON file")
 
+    aggregate_parser = subparsers.add_parser("aggregate", help="Aggregate supported source files into normalized player JSON")
+    aggregate_parser.add_argument("manifest", type=Path, help="Ingestion manifest JSON file")
+    aggregate_parser.add_argument("output", type=Path, help="Output normalized player JSON file")
+
+    process_parser = subparsers.add_parser("process", help="Process a normalized player JSON file into ratings")
+    process_parser.add_argument("input", type=Path, help="Normalized player JSON file")
+    process_parser.add_argument("output", type=Path, help="Output ratings JSON file")
+    process_parser.add_argument("--team", type=str, default=None, help="Optional team abbreviation to filter before rating")
+
+    generate_parser = subparsers.add_parser("generate", help="Generate human-readable markdown reports from ratings JSON")
+    generate_parser.add_argument("input", type=Path, help="Ratings JSON file")
+    generate_parser.add_argument("output", type=Path, help="Output directory for team markdown reports")
+
     rank_parser = subparsers.add_parser("rank", help="Rank rated players into recommended 22-man rosters")
     rank_parser.add_argument("input", type=Path, help="Ratings JSON file")
     rank_parser.add_argument("output", type=Path, help="Output roster JSON file")
@@ -310,6 +340,12 @@ def main(argv: list[str] | None = None) -> int:
         return run_rate(namespace.input, namespace.output, team=namespace.team)
     if namespace.command == "ingest":
         return run_ingest(namespace.manifest, namespace.output)
+    if namespace.command == "aggregate":
+        return run_aggregate(namespace.manifest, namespace.output)
+    if namespace.command == "process":
+        return run_process(namespace.input, namespace.output, team=namespace.team)
+    if namespace.command == "generate":
+        return run_generate(namespace.input, namespace.output)
     if namespace.command == "rank":
         return run_rank(namespace.input, namespace.output)
     if namespace.command == "ingest-rate":

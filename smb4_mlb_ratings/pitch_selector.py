@@ -1,24 +1,9 @@
 from __future__ import annotations
 
-import json
 from collections import defaultdict
 from dataclasses import dataclass
-from pathlib import Path
 
-
-REFERENCE_PATH = Path(__file__).resolve().parent.parent / "smb4_player_reference.json"
-DEFAULT_PITCH_SLOT_LIMIT = 4
-DEFAULT_PITCH_MAPPINGS = {
-    "ff": {"mlb_name": "Four-Seam Fastball", "smb4_name": "4-Seam Fastball", "merge_target": None},
-    "si": {"mlb_name": "Sinker", "smb4_name": "2-Seam Fastball", "merge_target": None},
-    "fc": {"mlb_name": "Cutter", "smb4_name": "Cut Fastball", "merge_target": None},
-    "sl": {"mlb_name": "Slider", "smb4_name": "Slider", "merge_target": None},
-    "cu": {"mlb_name": "Curveball", "smb4_name": "Curveball", "merge_target": None},
-    "ch": {"mlb_name": "Changeup", "smb4_name": "Changeup", "merge_target": None},
-    "fs": {"mlb_name": "Splitter", "smb4_name": "Forkball", "merge_target": None},
-    "sv": {"mlb_name": "Sweeper", "smb4_name": None, "merge_target": "Slider"},
-    "kn": {"mlb_name": "Knuckleball", "smb4_name": None, "merge_target": None},
-}
+from .reference import load_pitch_selector_config as load_reference_pitch_selector_config
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,28 +14,10 @@ class PitchMapping:
 
 
 def load_pitch_selector_config() -> tuple[int, dict[str, PitchMapping]]:
-    slot_limit = DEFAULT_PITCH_SLOT_LIMIT
-    raw_mappings = DEFAULT_PITCH_MAPPINGS
-    try:
-        payload = json.loads(REFERENCE_PATH.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        payload = {}
-
-    raw_slot_limit = payload.get("pitch_slot_limit")
-    if raw_slot_limit is not None:
-        try:
-            slot_limit = max(1, int(raw_slot_limit))
-        except (TypeError, ValueError):
-            slot_limit = DEFAULT_PITCH_SLOT_LIMIT
-
-    configured_mappings = payload.get("pitch_mappings")
-    if isinstance(configured_mappings, dict) and configured_mappings:
-        raw_mappings = configured_mappings
+    slot_limit, raw_mappings = load_reference_pitch_selector_config()
 
     mappings: dict[str, PitchMapping] = {}
     for pitch_code, raw_mapping in raw_mappings.items():
-        if not isinstance(raw_mapping, dict):
-            continue
         mappings[str(pitch_code).lower()] = PitchMapping(
             mlb_name=str(raw_mapping.get("mlb_name", pitch_code)),
             smb4_name=str(raw_mapping["smb4_name"]) if raw_mapping.get("smb4_name") is not None else None,
