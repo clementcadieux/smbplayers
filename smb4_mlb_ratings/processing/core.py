@@ -34,6 +34,19 @@ POSITION_GROUPS = {
     "OF": "outfield",
 }
 
+PITCHER_ROLE_HINTS = {
+    "sp": "SP",
+    "starter": "SP",
+    "starting": "SP",
+    "rotation": "SP",
+    "rp": "RP",
+    "reliever": "RP",
+    "relief": "RP",
+    "bullpen": "RP",
+    "closer": "RP",
+    "setup": "RP",
+}
+
 
 GRADE_BREAKPOINTS: list[tuple[int, str]] = []
 PERCENTILE_TO_RATING: list[tuple[float, int]] = []
@@ -266,7 +279,7 @@ RATING_SPECS = (
         sample_key="tracked_fastballs",
         stabilization_threshold=175,
         review_threshold=80,
-        peer_mode="pitcher",
+        peer_mode="pitcher_role",
         volume_exponent=0.50,
         raw_tools_bias=True,
         components=(
@@ -281,7 +294,7 @@ RATING_SPECS = (
         sample_key="tracked_pitches",
         stabilization_threshold=275,
         review_threshold=120,
-        peer_mode="pitcher",
+        peer_mode="pitcher_role",
         volume_exponent=0.60,
         raw_tools_bias=True,
         components=(
@@ -299,7 +312,7 @@ RATING_SPECS = (
         sample_key="weighted_bf",
         stabilization_threshold=800,
         review_threshold=250,
-        peer_mode="pitcher",
+        peer_mode="pitcher_role",
         components=(
             ComponentSpec("walk_rate", 0.35, higher_is_better=False, is_surface_stat=True),
             ComponentSpec("strike_pct", 0.25, is_surface_stat=True),
@@ -1729,6 +1742,32 @@ def component_applies_to_state(component: ComponentSpec, state: PlayerState) -> 
     return state.position_group in component.position_groups
 
 
+def pitcher_role_bucket_for_state(state: PlayerState) -> str | None:
+    if state.player.role not in {"pitcher", "two_way"}:
+        return None
+
+    metadata = state.player.metadata if isinstance(state.player.metadata, Mapping) else {}
+    for key in ("pitching_role", "projected_role", "roster_role", "depth_chart_role"):
+        value = metadata.get(key)
+        if not isinstance(value, str):
+            continue
+        normalized = value.lower()
+        for hint, bucket in PITCHER_ROLE_HINTS.items():
+            if hint in normalized:
+                return bucket
+
+    if state.player.projected_ip is not None:
+        return "SP" if state.player.projected_ip >= 80 else "RP"
+
+    weighted_bf = state.samples.get("weighted_bf")
+    if weighted_bf is not None:
+        return "SP" if (weighted_bf / 4.25) >= 80 else "RP"
+
+    if state.player.role == "pitcher":
+        return "RP"
+    return None
+
+
 def build_peer_state_index(states: list[PlayerState]) -> dict[str, dict[str | None, list[PlayerState]]]:
     indexed: dict[str, dict[str | None, list[PlayerState]]] = {}
     for spec in RATING_SPECS:
@@ -1737,6 +1776,15 @@ def build_peer_state_index(states: list[PlayerState]) -> dict[str, dict[str | No
             grouped: dict[str | None, list[PlayerState]] = defaultdict(list)
             for state in eligible:
                 grouped[state.position_group].append(state)
+            indexed[spec.name] = dict(grouped)
+        elif spec.peer_mode == "pitcher_role":
+            grouped = defaultdict(list)
+            grouped[None] = list(eligible)
+            for state in eligible:
+                role_bucket = pitcher_role_bucket_for_state(state)
+                if role_bucket is None:
+                    continue
+                grouped[role_bucket].append(state)
             indexed[spec.name] = dict(grouped)
         else:
             indexed[spec.name] = {None: eligible}
@@ -1751,6 +1799,11 @@ def peer_states_for_component(
     eligible_by_group = peer_state_index.get(spec.name, {})
     if spec.peer_mode == "position_group":
         return eligible_by_group.get(target_state.position_group, [])
+    if spec.peer_mode == "pitcher_role":
+        role_bucket = pitcher_role_bucket_for_state(target_state)
+        if role_bucket is not None and eligible_by_group.get(role_bucket):
+            return eligible_by_group[role_bucket]
+        return eligible_by_group.get(None, [])
     return eligible_by_group.get(None, [])
 
 

@@ -1595,6 +1595,69 @@ class SurfaceBlendTests(unittest.TestCase):
         self.assertGreaterEqual(average_output.overall_numeric or 0, 70)
         self.assertLessEqual(average_output.overall_numeric or 0, 84)
 
+    def test_pitcher_components_use_role_specific_peer_groups(self) -> None:
+        players = [
+            self._pitcher_peer(
+                "Starter Candidate",
+                94.0,
+                0.125,
+                0.285,
+                0.082,
+                role_hint="starter",
+                weighted_bf=820,
+            ),
+            self._pitcher_peer(
+                "Reliever Candidate",
+                94.0,
+                0.125,
+                0.285,
+                0.082,
+                role_hint="reliever",
+                weighted_bf=300,
+            ),
+            self._pitcher_peer("SP Peer 1", 91.0, 0.105, 0.255, 0.095, role_hint="starter", weighted_bf=790),
+            self._pitcher_peer("SP Peer 2", 91.2, 0.106, 0.256, 0.094, role_hint="starter", weighted_bf=800),
+            self._pitcher_peer("SP Peer 3", 91.4, 0.107, 0.257, 0.093, role_hint="starter", weighted_bf=810),
+            self._pitcher_peer("SP Peer 4", 91.6, 0.108, 0.258, 0.092, role_hint="starter", weighted_bf=805),
+            self._pitcher_peer("RP Peer 1", 97.2, 0.152, 0.322, 0.068, role_hint="reliever", weighted_bf=310),
+            self._pitcher_peer("RP Peer 2", 97.0, 0.150, 0.320, 0.069, role_hint="reliever", weighted_bf=320),
+            self._pitcher_peer("RP Peer 3", 96.8, 0.148, 0.318, 0.070, role_hint="reliever", weighted_bf=330),
+            self._pitcher_peer("RP Peer 4", 96.6, 0.146, 0.316, 0.071, role_hint="reliever", weighted_bf=340),
+        ]
+
+        outputs = rate_players(players)
+        starter = next(output for output in outputs if output.name == "Starter Candidate")
+        reliever = next(output for output in outputs if output.name == "Reliever Candidate")
+
+        self.assertGreater(starter.percentiles["velocity"], reliever.percentiles["velocity"])
+        self.assertGreater(starter.percentiles["junk"], reliever.percentiles["junk"])
+        self.assertGreater(starter.percentiles["accuracy"], reliever.percentiles["accuracy"])
+
+    def test_pitcher_role_peer_group_falls_back_to_combined_pool_for_unknown_two_way_role(self) -> None:
+        players = [
+            self._pitcher_peer("Starter Peer", 95.0, 0.130, 0.295, 0.078, role_hint="starter", weighted_bf=820),
+            self._pitcher_peer("Reliever Peer", 93.0, 0.120, 0.280, 0.086, role_hint="reliever", weighted_bf=300),
+            self._pitcher_peer(
+                "Unknown Role Two-Way",
+                94.0,
+                0.125,
+                0.287,
+                0.082,
+                role="two_way",
+                team="LAA",
+                primary_position="DH",
+                tracked_fastballs=220,
+                tracked_pitches=850,
+                weighted_bf=None,
+            ),
+        ]
+
+        outputs = rate_players(players)
+        unknown = next(output for output in outputs if output.name == "Unknown Role Two-Way")
+
+        self.assertGreater(unknown.percentiles["velocity"], 30.0)
+        self.assertLess(unknown.percentiles["velocity"], 70.0)
+
     def test_two_way_role_weighting_prioritizes_pitching_components(self) -> None:
         ratings = {
             "power": 58,
@@ -1717,12 +1780,28 @@ class SurfaceBlendTests(unittest.TestCase):
         swinging_strike_rate: float,
         chase_rate: float,
         walk_rate: float,
+        *,
+        role: str = "pitcher",
+        role_hint: str | None = None,
+        team: str = "NYM",
+        primary_position: str = "P",
+        tracked_fastballs: float = 1430,
+        tracked_pitches: float = 2600,
+        weighted_bf: float | None = 650,
     ) -> dict[str, object]:
+        metadata = {"pitching_role": role_hint} if role_hint else {}
+        samples: dict[str, float] = {
+            "tracked_pitches": tracked_pitches,
+            "tracked_fastballs": tracked_fastballs,
+        }
+        if weighted_bf is not None:
+            samples["weighted_bf"] = weighted_bf
+
         return {
             "name": name,
-            "role": "pitcher",
-            "team": "NYM",
-            "primary_position": "P",
+            "role": role,
+            "team": team,
+            "primary_position": primary_position,
             "pitch_mix": {"ff": 0.55, "sl": 0.25, "ch": 0.20},
             "metrics": {
                 "avg_fastball_velocity": avg_fastball_velocity,
@@ -1740,7 +1819,8 @@ class SurfaceBlendTests(unittest.TestCase):
                 "first_pitch_strike_pct": 0.60,
                 "command_error_rate": 0.36,
             },
-            "samples": {"weighted_bf": 650, "tracked_pitches": 2600, "tracked_fastballs": 1430},
+            "samples": samples,
+            "metadata": metadata,
         }
 
 
