@@ -99,6 +99,25 @@ DEFAULT_SECONDARY_POSITION_CONFIG = {
 REFERENCE_PATH = Path(__file__).resolve().parent.parent / "smb4_player_reference.json"
 
 
+_REFERENCE_PAYLOAD: dict[str, object] | None = None
+
+
+def load_reference_payload() -> dict[str, object]:
+    global _REFERENCE_PAYLOAD
+    if _REFERENCE_PAYLOAD is not None:
+        return _REFERENCE_PAYLOAD
+    try:
+        payload = json.loads(REFERENCE_PATH.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        _REFERENCE_PAYLOAD = {}
+        return _REFERENCE_PAYLOAD
+    if not isinstance(payload, Mapping):
+        _REFERENCE_PAYLOAD = {}
+        return _REFERENCE_PAYLOAD
+    _REFERENCE_PAYLOAD = dict(payload)
+    return _REFERENCE_PAYLOAD
+
+
 CONFIDENCE_WEIGHTS = {
     "high": 1.0,
     "medium": 0.7,
@@ -135,9 +154,8 @@ TRAIT_CONFLICT_GROUPS = (
 
 
 def load_trait_catalog() -> tuple[tuple[str, ...], dict[str, dict[str, str | bool | None]]]:
-    try:
-        payload = json.loads(REFERENCE_PATH.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
+    payload = load_reference_payload()
+    if not payload:
         return CHEMISTRY_TYPES, {}
 
     chemistry_types = tuple(payload.get("chemistry_types", CHEMISTRY_TYPES))
@@ -158,9 +176,8 @@ def load_trait_catalog() -> tuple[tuple[str, ...], dict[str, dict[str, str | boo
 
 
 def load_volume_projection_config() -> dict[str, float]:
-    try:
-        payload = json.loads(REFERENCE_PATH.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
+    payload = load_reference_payload()
+    if not payload:
         return dict(DEFAULT_VOLUME_PROJECTION)
 
     projection_payload = payload.get("volume_projection", {})
@@ -179,9 +196,8 @@ def load_volume_projection_config() -> dict[str, float]:
 
 
 def load_season_weighting_config() -> dict[str, object]:
-    try:
-        payload = json.loads(REFERENCE_PATH.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
+    payload = load_reference_payload()
+    if not payload:
         return {
             "full_season_pa_threshold": DEFAULT_SEASON_WEIGHTING["full_season_pa_threshold"],
             "full_season_ip_threshold": DEFAULT_SEASON_WEIGHTING["full_season_ip_threshold"],
@@ -225,9 +241,8 @@ def load_season_weighting_config() -> dict[str, object]:
 
 
 def load_trait_criteria_config() -> dict[str, object]:
-    try:
-        payload = json.loads(REFERENCE_PATH.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
+    payload = load_reference_payload()
+    if not payload:
         return {"minimum_score": 10.0, "traits": {}}
 
     trait_payload = payload.get("trait_criteria", {})
@@ -247,9 +262,8 @@ def load_trait_criteria_config() -> dict[str, object]:
 
 
 def load_trait_limit_config() -> dict[str, object]:
-    try:
-        payload = json.loads(REFERENCE_PATH.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
+    payload = load_reference_payload()
+    if not payload:
         return {
             "max_traits_per_player": DEFAULT_FINAL_TRAIT_LIMIT,
             "max_elite_pitch_traits": DEFAULT_MAX_ELITE_PITCH_TRAITS,
@@ -286,9 +300,8 @@ def load_trait_limit_config() -> dict[str, object]:
 
 
 def load_secondary_position_config() -> dict[str, object]:
-    try:
-        payload = json.loads(REFERENCE_PATH.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
+    payload = load_reference_payload()
+    if not payload:
         return dict(DEFAULT_SECONDARY_POSITION_CONFIG)
 
     secondary_payload = payload.get("secondary_positions", {})
@@ -508,6 +521,7 @@ class PlayerState:
     percentiles: dict[str, float]
     component_percentiles: dict[str, dict[str, float]]
     review_flags: list[str]
+    secondary_positions: list[str]
 
 
 def configured_chemistry_types() -> list[str]:
@@ -1021,6 +1035,7 @@ def state_from_player(player: PlayerInput) -> PlayerState:
         percentiles={},
         component_percentiles={},
         review_flags=[],
+        secondary_positions=derive_secondary_positions(player),
     )
 
 
@@ -1878,7 +1893,7 @@ def recommend_personalities_for_output(
 
 def suggest_traits(state: PlayerState) -> list[TraitSuggestion]:
     suggestions: dict[str, TraitSuggestion] = {}
-    derived_secondary_positions = derive_secondary_positions(state.player)
+    derived_secondary_positions = state.secondary_positions
 
     if state.player.role in {"hitter", "two_way"}:
         contact_pct = state.percentiles.get("contact")
@@ -2137,11 +2152,29 @@ def component_applies_to_state(component: ComponentSpec, state: PlayerState) -> 
     return state.position_group in component.position_groups
 
 
-def peer_states_for_component(states: list[PlayerState], spec: RatingSpec, target_state: PlayerState) -> list[PlayerState]:
-    eligible = [state for state in states if player_matches_spec(state, spec)]
+def build_peer_state_index(states: list[PlayerState]) -> dict[str, dict[str | None, list[PlayerState]]]:
+    indexed: dict[str, dict[str | None, list[PlayerState]]] = {}
+    for spec in RATING_SPECS:
+        eligible = [state for state in states if player_matches_spec(state, spec)]
+        if spec.peer_mode == "position_group":
+            grouped: dict[str | None, list[PlayerState]] = defaultdict(list)
+            for state in eligible:
+                grouped[state.position_group].append(state)
+            indexed[spec.name] = dict(grouped)
+        else:
+            indexed[spec.name] = {None: eligible}
+    return indexed
+
+
+def peer_states_for_component(
+    peer_state_index: dict[str, dict[str | None, list[PlayerState]]],
+    spec: RatingSpec,
+    target_state: PlayerState,
+) -> list[PlayerState]:
+    eligible_by_group = peer_state_index.get(spec.name, {})
     if spec.peer_mode == "position_group":
-        return [state for state in eligible if state.position_group == target_state.position_group]
-    return eligible
+        return eligible_by_group.get(target_state.position_group, [])
+    return eligible_by_group.get(None, [])
 
 
 def apply_review_flags(state: PlayerState, spec: RatingSpec, available_weight: float, missing_components: list[str]) -> None:
@@ -2160,6 +2193,7 @@ def rate_players(players: list[PlayerInput | dict], trim_final_traits: bool = Tr
     player_objects = [player for player in player_objects if player.active]
     players_by_name = {player.name: player for player in player_objects}
     states = [state_from_player(player) for player in player_objects]
+    peer_state_index = build_peer_state_index(states)
 
     for spec in RATING_SPECS:
         eligible_states = [state for state in states if player_matches_spec(state, spec)]
@@ -2187,7 +2221,7 @@ def rate_players(players: list[PlayerInput | dict], trim_final_traits: bool = Tr
                     missing_components.append(component.metric)
                     continue
 
-                peers = peer_states_for_component(states, spec, state)
+                peers = peer_states_for_component(peer_state_index, spec, state)
                 peer_values = [
                     weighted_metric_value(
                         peer.player.metrics.get(component.metric),
@@ -2281,7 +2315,7 @@ def rate_players(players: list[PlayerInput | dict], trim_final_traits: bool = Tr
 
     outputs: list[RatingOutput] = []
     for state in states:
-        derived_secondary_positions = derive_secondary_positions(state.player)
+        derived_secondary_positions = state.secondary_positions
         covered_groups = utility_covered_groups(state.player, derived_secondary_positions)
         overall_numeric = role_weighted_overall_numeric(state.player.role, state.ratings)
         deduped_flags = sorted(set(state.review_flags))

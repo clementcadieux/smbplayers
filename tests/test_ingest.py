@@ -11,15 +11,18 @@ from smb4_mlb_ratings.ingest import ingest_from_manifest, load_manifest
 
 
 class IngestFrameworkTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self.tempdir = tempfile.TemporaryDirectory()
-        self.root = Path(self.tempdir.name)
-        self._write_fixture_files()
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.tempdir = tempfile.TemporaryDirectory()
+        cls.root = Path(cls.tempdir.name)
+        cls._write_fixture_files()
 
-    def tearDown(self) -> None:
-        self.tempdir.cleanup()
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.tempdir.cleanup()
 
-    def _write_csv(self, path: Path, rows: list[dict[str, object]]) -> None:
+    @classmethod
+    def _write_csv(cls, path: Path, rows: list[dict[str, object]]) -> None:
         if not rows:
             raise ValueError("CSV fixtures require at least one row")
         with path.open("w", encoding="utf-8", newline="") as handle:
@@ -28,9 +31,10 @@ class IngestFrameworkTests(unittest.TestCase):
             for row in rows:
                 writer.writerow(row)
 
-    def _write_fixture_files(self) -> None:
-        self._write_csv(
-            self.root / "roster_2025.csv",
+    @classmethod
+    def _write_fixture_files(cls) -> None:
+        cls._write_csv(
+            cls.root / "roster_2025.csv",
             [
                 {
                     "player_id": 100,
@@ -52,8 +56,8 @@ class IngestFrameworkTests(unittest.TestCase):
                 },
             ],
         )
-        self._write_csv(
-            self.root / "hitters_2025.csv",
+        cls._write_csv(
+            cls.root / "hitters_2025.csv",
             [
                 {
                     "player_id": 100,
@@ -86,8 +90,8 @@ class IngestFrameworkTests(unittest.TestCase):
                 }
             ],
         )
-        self._write_csv(
-            self.root / "hitters_2024.csv",
+        cls._write_csv(
+            cls.root / "hitters_2024.csv",
             [
                 {
                     "player_id": 100,
@@ -117,8 +121,8 @@ class IngestFrameworkTests(unittest.TestCase):
                 }
             ],
         )
-        self._write_csv(
-            self.root / "fielding_2025.csv",
+        cls._write_csv(
+            cls.root / "fielding_2025.csv",
             [
                 {
                     "player_id": 100,
@@ -138,8 +142,8 @@ class IngestFrameworkTests(unittest.TestCase):
                 }
             ],
         )
-        self._write_csv(
-            self.root / "running_2025.csv",
+        cls._write_csv(
+            cls.root / "running_2025.csv",
             [
                 {
                     "player_id": 100,
@@ -150,8 +154,8 @@ class IngestFrameworkTests(unittest.TestCase):
                 }
             ],
         )
-        self._write_csv(
-            self.root / "pitchers_2025.csv",
+        cls._write_csv(
+            cls.root / "pitchers_2025.csv",
             [
                 {
                     "player_id": 200,
@@ -193,8 +197,8 @@ class IngestFrameworkTests(unittest.TestCase):
                 }
             ],
         )
-        self._write_csv(
-            self.root / "pitch_run_values_2025.csv",
+        cls._write_csv(
+            cls.root / "pitch_run_values_2025.csv",
             [
                 {
                     "player_id": 200,
@@ -226,10 +230,10 @@ class IngestFrameworkTests(unittest.TestCase):
                 },
             },
         }
-        (self.root / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        (cls.root / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
-        self._write_csv(
-            self.root / "br_roster_2025.csv",
+        cls._write_csv(
+            cls.root / "br_roster_2025.csv",
             [
                 {
                     "player_id": 300,
@@ -251,8 +255,8 @@ class IngestFrameworkTests(unittest.TestCase):
                 },
             ],
         )
-        self._write_csv(
-            self.root / "br_hitters_2025.csv",
+        cls._write_csv(
+            cls.root / "br_hitters_2025.csv",
             [
                 {
                     "player_id": 300,
@@ -279,8 +283,8 @@ class IngestFrameworkTests(unittest.TestCase):
                 }
             ],
         )
-        self._write_csv(
-            self.root / "br_pitchers_2025.csv",
+        cls._write_csv(
+            cls.root / "br_pitchers_2025.csv",
             [
                 {
                     "player_id": 400,
@@ -304,8 +308,8 @@ class IngestFrameworkTests(unittest.TestCase):
                 }
             ],
         )
-        self._write_csv(
-            self.root / "br_fielding_2025.csv",
+        cls._write_csv(
+            cls.root / "br_fielding_2025.csv",
             [
                 {
                     "player_id": 300,
@@ -336,10 +340,10 @@ class IngestFrameworkTests(unittest.TestCase):
                 }
             },
         }
-        (self.root / "br_manifest.json").write_text(json.dumps(br_manifest, indent=2), encoding="utf-8")
+        (cls.root / "br_manifest.json").write_text(json.dumps(br_manifest, indent=2), encoding="utf-8")
 
-        self._write_csv(
-            self.root / "fg_roster_2025.csv",
+        cls._write_csv(
+            cls.root / "fg_roster_2025.csv",
             [
                 {
                     "player_id": 500,
@@ -352,8 +356,8 @@ class IngestFrameworkTests(unittest.TestCase):
                 }
             ],
         )
-        self._write_csv(
-            self.root / "fg_fielding_2025.csv",
+        cls._write_csv(
+            cls.root / "fg_fielding_2025.csv",
             [
                 {
                     "player_id": 500,
@@ -380,10 +384,10 @@ class IngestFrameworkTests(unittest.TestCase):
                 }
             },
         }
-        (self.root / "fg_manifest.json").write_text(json.dumps(fg_manifest, indent=2), encoding="utf-8")
+        (cls.root / "fg_manifest.json").write_text(json.dumps(fg_manifest, indent=2), encoding="utf-8")
 
-        self._write_csv(
-            self.root / "mixed_savant_hitters_2025.csv",
+        cls._write_csv(
+            cls.root / "mixed_savant_hitters_2025.csv",
             [
                 {
                     "player_id": 500,
@@ -404,8 +408,8 @@ class IngestFrameworkTests(unittest.TestCase):
                 }
             ],
         )
-        self._write_csv(
-            self.root / "mixed_savant_pitchers_2025.csv",
+        cls._write_csv(
+            cls.root / "mixed_savant_pitchers_2025.csv",
             [
                 {
                     "player_id": 600,
@@ -434,8 +438,8 @@ class IngestFrameworkTests(unittest.TestCase):
                 }
             ],
         )
-        self._write_csv(
-            self.root / "mixed_savant_pitch_run_values_2025.csv",
+        cls._write_csv(
+            cls.root / "mixed_savant_pitch_run_values_2025.csv",
             [
                 {
                     "player_id": 600,
@@ -449,8 +453,8 @@ class IngestFrameworkTests(unittest.TestCase):
                 },
             ],
         )
-        self._write_csv(
-            self.root / "mixed_running_2025.csv",
+        cls._write_csv(
+            cls.root / "mixed_running_2025.csv",
             [
                 {
                     "player_id": 500,
@@ -460,8 +464,8 @@ class IngestFrameworkTests(unittest.TestCase):
                 }
             ],
         )
-        self._write_csv(
-            self.root / "mixed_br_hitters_2025.csv",
+        cls._write_csv(
+            cls.root / "mixed_br_hitters_2025.csv",
             [
                 {
                     "player_id": 500,
@@ -488,8 +492,8 @@ class IngestFrameworkTests(unittest.TestCase):
                 }
             ],
         )
-        self._write_csv(
-            self.root / "mixed_br_pitchers_2025.csv",
+        cls._write_csv(
+            cls.root / "mixed_br_pitchers_2025.csv",
             [
                 {
                     "player_id": 600,
@@ -509,8 +513,8 @@ class IngestFrameworkTests(unittest.TestCase):
                 }
             ],
         )
-        self._write_csv(
-            self.root / "mixed_fg_fielding_2025.csv",
+        cls._write_csv(
+            cls.root / "mixed_fg_fielding_2025.csv",
             [
                 {
                     "player_id": 500,
@@ -555,7 +559,7 @@ class IngestFrameworkTests(unittest.TestCase):
                 }
             },
         }
-        (self.root / "mixed_manifest.json").write_text(json.dumps(mixed_manifest, indent=2), encoding="utf-8")
+        (cls.root / "mixed_manifest.json").write_text(json.dumps(mixed_manifest, indent=2), encoding="utf-8")
 
     def test_ingest_from_manifest_builds_engine_input(self) -> None:
         manifest = load_manifest(self.root / "manifest.json")

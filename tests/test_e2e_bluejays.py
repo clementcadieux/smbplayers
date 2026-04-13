@@ -27,7 +27,7 @@ except ImportError:
     pytest = None
 
 if pytest is not None:
-    pytestmark = pytest.mark.integration
+    pytestmark = [pytest.mark.integration, pytest.mark.slow]
 
 
 TEAM_ID = 141
