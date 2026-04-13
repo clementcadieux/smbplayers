@@ -177,6 +177,47 @@ def hitter_split_score(split: Mapping[str, float]) -> float | None:
     return round(max(0.0, min(99.0, score)), 3)
 
 
+def hitter_contact_split_score(split: Mapping[str, float]) -> float | None:
+    if not isinstance(split, Mapping):
+        return None
+    avg = _as_float(split.get("avg"))
+    obp = _as_float(split.get("obp"))
+    strikeout_rate = _as_float(split.get("strikeout_rate"))
+    if None in (avg, obp, strikeout_rate):
+        return None
+    score = 50.0
+    score += ((avg or 0.0) - 0.250) * 600.0
+    score += ((obp or 0.0) - 0.320) * 120.0
+    score += (0.22 - (strikeout_rate or 0.0)) * 120.0
+    return round(max(0.0, min(99.0, score)), 3)
+
+
+def hitter_power_split_score(split: Mapping[str, float]) -> float | None:
+    if not isinstance(split, Mapping):
+        return None
+    slg = _as_float(split.get("slg"))
+    iso = _as_float(split.get("iso"))
+    obp = _as_float(split.get("obp"))
+    if None in (slg, iso, obp):
+        return None
+    score = 50.0
+    score += ((slg or 0.0) - 0.410) * 110.0
+    score += ((iso or 0.0) - 0.150) * 175.0
+    score += ((obp or 0.0) - 0.320) * 35.0
+    return round(max(0.0, min(99.0, score)), 3)
+
+
+def hitter_platoon_side_metrics(splits: Mapping[str, Mapping[str, float]]) -> dict[str, float | None]:
+    vs_left = splits.get("vl") if isinstance(splits.get("vl"), Mapping) else None
+    vs_right = splits.get("vr") if isinstance(splits.get("vr"), Mapping) else None
+    return {
+        "contact_vs_lhp": hitter_contact_split_score(vs_left or {}),
+        "contact_vs_rhp": hitter_contact_split_score(vs_right or {}),
+        "power_vs_lhp": hitter_power_split_score(vs_left or {}),
+        "power_vs_rhp": hitter_power_split_score(vs_right or {}),
+    }
+
+
 def derive_hitter_situational_metrics(splits: Mapping[str, Mapping[str, float]]) -> dict[str, float | None]:
     first_pitch_score = hitter_split_score(splits.get("c00", {}))
     risp_score = hitter_split_score(splits.get("risp", {}))

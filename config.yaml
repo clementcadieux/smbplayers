@@ -114,6 +114,8 @@
     "minimum_weighted_pa": 225.0,
     "contact": {
       "eligibility_gap": 20.0,
+      "weak_side_percentile": 40.0,
+      "strong_side_percentile": 60.0,
       "split_imbalance_weight": 0.35,
       "light_gap": 8.0,
       "moderate_gap": 14.0,
@@ -125,6 +127,8 @@
     },
     "power": {
       "eligibility_gap": 20.0,
+      "weak_side_percentile": 40.0,
+      "strong_side_percentile": 60.0,
       "split_imbalance_weight": 0.35,
       "light_gap": 10.0,
       "moderate_gap": 18.0,

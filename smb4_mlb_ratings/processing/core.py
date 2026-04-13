@@ -65,9 +65,19 @@ HITTER_PLATOON_TRAIT_TO_SPEC = {
     "POW vs LHP": "power",
     "POW vs RHP": "power",
 }
+HITTER_PLATOON_TRAIT_TO_SIDE = {
+    "CON vs LHP": "lhp",
+    "CON vs RHP": "rhp",
+    "POW vs LHP": "lhp",
+    "POW vs RHP": "rhp",
+}
 HITTER_PLATOON_SPEC_TO_TRAITS = {
     "contact": frozenset({"CON vs LHP", "CON vs RHP"}),
     "power": frozenset({"POW vs LHP", "POW vs RHP"}),
+}
+HITTER_PLATOON_SIDE_METRICS = {
+    "contact": {"lhp": "contact_vs_lhp", "rhp": "contact_vs_rhp"},
+    "power": {"lhp": "power_vs_lhp", "rhp": "power_vs_rhp"},
 }
 
 
@@ -196,6 +206,8 @@ def refresh_runtime_tuning() -> None:
         "minimum_weighted_pa": 225.0,
         "contact": {
             "eligibility_gap": 20.0,
+            "weak_side_percentile": 40.0,
+            "strong_side_percentile": 60.0,
             "split_imbalance_weight": 0.35,
             "light_gap": 8.0,
             "moderate_gap": 14.0,
@@ -207,6 +219,8 @@ def refresh_runtime_tuning() -> None:
         },
         "power": {
             "eligibility_gap": 20.0,
+            "weak_side_percentile": 40.0,
+            "strong_side_percentile": 60.0,
             "split_imbalance_weight": 0.35,
             "light_gap": 10.0,
             "moderate_gap": 18.0,
@@ -416,6 +430,7 @@ class PlayerState:
     ratings: dict[str, int]
     percentiles: dict[str, float]
     component_percentiles: dict[str, dict[str, float]]
+    split_percentiles: dict[str, float]
     review_flags: list[str]
     secondary_positions: list[str]
 
@@ -826,19 +841,82 @@ def platoon_eligibility_gap(spec_name: str) -> float:
         return 0.0
 
 
-def hitter_platoon_trait_eligible(player: PlayerInput, trait_name: str) -> bool:
+def platoon_percentile_threshold(spec_name: str, key: str, default: float) -> float:
+    raw_rating_config = PLATOON_ADJUSTMENT_CONFIG.get(spec_name, {})
+    if not isinstance(raw_rating_config, Mapping):
+        return default
+    try:
+        return clamp(float(raw_rating_config.get(key, default)), 0.0, 100.0)
+    except (TypeError, ValueError):
+        return default
+
+
+def platoon_side_metric_name(spec_name: str, side: str) -> str | None:
+    side_metrics = HITTER_PLATOON_SIDE_METRICS.get(spec_name)
+    if not isinstance(side_metrics, Mapping):
+        return None
+    metric_name = side_metrics.get(side)
+    return metric_name if isinstance(metric_name, str) else None
+
+
+def opposite_platoon_side(side: str) -> str:
+    return "rhp" if side == "lhp" else "lhp"
+
+
+def hitter_platoon_trait_profile_matches(
+    spec_name: str,
+    trait_name: str,
+    split_percentiles: Mapping[str, float] | None,
+) -> bool:
+    if not isinstance(split_percentiles, Mapping):
+        return False
+    favored_side = HITTER_PLATOON_TRAIT_TO_SIDE.get(trait_name)
+    if favored_side is None:
+        return False
+    strong_metric_name = platoon_side_metric_name(spec_name, favored_side)
+    weak_metric_name = platoon_side_metric_name(spec_name, opposite_platoon_side(favored_side))
+    if strong_metric_name is None or weak_metric_name is None:
+        return False
+    strong_percentile = split_percentiles.get(strong_metric_name)
+    weak_percentile = split_percentiles.get(weak_metric_name)
+    if strong_percentile is None or weak_percentile is None:
+        return False
+    return (
+        strong_percentile >= platoon_percentile_threshold(spec_name, "strong_side_percentile", 60.0)
+        and weak_percentile <= platoon_percentile_threshold(spec_name, "weak_side_percentile", 40.0)
+    )
+
+
+def hitter_platoon_trait_eligible(state: PlayerState, trait_name: str) -> bool:
     spec_name = HITTER_PLATOON_TRAIT_TO_SPEC.get(trait_name)
     if spec_name is None:
         return True
     metric_name = "contact_vs_lhp_minus_rhp" if spec_name == "contact" else "power_vs_lhp_minus_rhp"
-    gap_value = player_trait_metric(player, metric_name)
+    gap_value = player_trait_metric(state.player, metric_name)
     if not isinstance(gap_value, (int, float)):
         return False
-    return abs(float(gap_value)) >= platoon_eligibility_gap(spec_name)
+    if abs(float(gap_value)) < platoon_eligibility_gap(spec_name):
+        return False
+    return hitter_platoon_trait_profile_matches(spec_name, trait_name, state.split_percentiles)
 
 
-def platoon_penalty_percentile(spec_name: str, player: PlayerInput, sample: float | None = None) -> float:
+def platoon_penalty_percentile(
+    spec_name: str,
+    player: PlayerInput,
+    sample: float | None = None,
+    *,
+    split_percentiles: Mapping[str, float] | None = None,
+    trait_names: set[str] | None = None,
+) -> float:
     if spec_name not in {"contact", "power"}:
+        return 0.0
+    candidate_traits = trait_names if trait_names is not None else HITTER_PLATOON_SPEC_TO_TRAITS.get(spec_name, set())
+    if not candidate_traits:
+        return 0.0
+    if not any(
+        hitter_platoon_trait_profile_matches(spec_name, trait_name, split_percentiles)
+        for trait_name in candidate_traits
+    ):
         return 0.0
     raw_minimum_sample = PLATOON_ADJUSTMENT_CONFIG.get("minimum_weighted_pa", 0.0)
     try:
@@ -905,6 +983,32 @@ def assigned_platoon_trait_names(output: RatingOutput, spec_name: str) -> set[st
         for trait in output.assigned_traits
         if trait.name in spec_traits
     }
+
+
+def cache_hitter_platoon_split_percentiles(states: list[PlayerState]) -> None:
+    hitter_states = [state for state in states if state.player.role in {"hitter", "two_way"}]
+    if not hitter_states:
+        return
+
+    for side_metrics in HITTER_PLATOON_SIDE_METRICS.values():
+        for side, metric_name in side_metrics.items():
+            if side not in {"lhp", "rhp"}:
+                continue
+            peer_values = [
+                metric_value
+                for state in hitter_states
+                if (metric_value := player_trait_metric(state.player, metric_name)) is not None
+            ]
+            if not peer_values:
+                continue
+            for state in hitter_states:
+                metric_value = player_trait_metric(state.player, metric_name)
+                if metric_value is None:
+                    continue
+                state.split_percentiles[metric_name] = round(
+                    percentile_rank(metric_value, peer_values, higher_is_better=True),
+                    2,
+                )
 
 
 def interpolate_rating(percentile: float) -> int:
@@ -1002,6 +1106,7 @@ def state_from_player(player: PlayerInput) -> PlayerState:
         ratings={},
         percentiles={},
         component_percentiles={},
+        split_percentiles={},
         review_flags=[],
         secondary_positions=derive_secondary_positions(player),
     )
@@ -1463,7 +1568,7 @@ def apply_configured_trait_criteria(
             matched_rules.append(summary)
         if total_score < minimum_value:
             continue
-        if role_scope == "non_pitcher" and not hitter_platoon_trait_eligible(state.player, trait_name):
+        if role_scope == "non_pitcher" and not hitter_platoon_trait_eligible(state, trait_name):
             continue
         reason = payload.get("description")
         if not isinstance(reason, str) or not reason:
@@ -2018,6 +2123,8 @@ def _rate_players_core(
     player_objects = [player for player in player_objects if player.active]
     players_by_identity = {_player_identity_key(player): player for player in player_objects}
     states = [state_from_player(player) for player in player_objects]
+    states_by_identity = {_player_identity_key(state.player): state for state in states}
+    cache_hitter_platoon_split_percentiles(states)
     peer_state_index = build_peer_state_index(states)
     weighted_metric_cache: dict[tuple[int, str, str | None, float, bool], float | None] = {}
 
@@ -2188,12 +2295,20 @@ def _rate_players_core(
             output.assigned_traits = all_player_traits(output, player)
 
         weighted_pa_sample = weighted_value(player.samples.get("weighted_pa")) or 0.0
+        state = states_by_identity.get(_output_identity_key(output))
         for spec_name in ("contact", "power"):
             if spec_name not in output.percentiles:
                 continue
-            if not assigned_platoon_trait_names(output, spec_name):
+            assigned_trait_names = assigned_platoon_trait_names(output, spec_name)
+            if not assigned_trait_names or state is None:
                 continue
-            penalty = platoon_penalty_percentile(spec_name, player, weighted_pa_sample)
+            penalty = platoon_penalty_percentile(
+                spec_name,
+                player,
+                weighted_pa_sample,
+                split_percentiles=state.split_percentiles,
+                trait_names=assigned_trait_names,
+            )
             if penalty <= 0.0:
                 continue
             penalized_percentile = clamp(output.percentiles[spec_name] - penalty, 0.0, 100.0)

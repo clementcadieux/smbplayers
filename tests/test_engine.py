@@ -1630,18 +1630,30 @@ class SurfaceBlendTests(unittest.TestCase):
                     weighted_pa=520,
                     contact_gap=24.0,
                     power_gap=30.0,
+                    contact_vs_lhp=72.0,
+                    contact_vs_rhp=24.0,
+                    power_vs_lhp=78.0,
+                    power_vs_rhp=26.0,
                 ),
                 self._platoon_hitter(
                     "Balanced Peer",
                     weighted_pa=520,
                     contact_gap=0.0,
                     power_gap=0.0,
+                    contact_vs_lhp=50.0,
+                    contact_vs_rhp=50.0,
+                    power_vs_lhp=50.0,
+                    power_vs_rhp=50.0,
                 ),
                 self._platoon_hitter(
                     "Strong Peer",
                     weighted_pa=540,
                     contact_gap=0.0,
                     power_gap=0.0,
+                    contact_vs_lhp=66.0,
+                    contact_vs_rhp=64.0,
+                    power_vs_lhp=68.0,
+                    power_vs_rhp=67.0,
                     batting_average=0.301,
                     adjusted_obp=0.372,
                     slugging=0.510,
@@ -1655,6 +1667,10 @@ class SurfaceBlendTests(unittest.TestCase):
                     weighted_pa=510,
                     contact_gap=0.0,
                     power_gap=0.0,
+                    contact_vs_lhp=32.0,
+                    contact_vs_rhp=31.0,
+                    power_vs_lhp=34.0,
+                    power_vs_rhp=33.0,
                     batting_average=0.246,
                     adjusted_obp=0.314,
                     slugging=0.401,
@@ -1681,13 +1697,30 @@ class SurfaceBlendTests(unittest.TestCase):
                     weighted_pa=540,
                     contact_gap=24.0,
                     power_gap=30.0,
+                    contact_vs_lhp=72.0,
+                    contact_vs_rhp=24.0,
+                    power_vs_lhp=78.0,
+                    power_vs_rhp=26.0,
                 ),
-                self._platoon_hitter("Peer A", weighted_pa=520, contact_gap=0.0, power_gap=0.0),
+                self._platoon_hitter(
+                    "Peer A",
+                    weighted_pa=520,
+                    contact_gap=0.0,
+                    power_gap=0.0,
+                    contact_vs_lhp=50.0,
+                    contact_vs_rhp=50.0,
+                    power_vs_lhp=50.0,
+                    power_vs_rhp=50.0,
+                ),
                 self._platoon_hitter(
                     "Peer B",
                     weighted_pa=515,
                     contact_gap=0.0,
                     power_gap=0.0,
+                    contact_vs_lhp=34.0,
+                    contact_vs_rhp=35.0,
+                    power_vs_lhp=36.0,
+                    power_vs_rhp=37.0,
                     batting_average=0.250,
                     adjusted_obp=0.320,
                     slugging=0.410,
@@ -1713,18 +1746,30 @@ class SurfaceBlendTests(unittest.TestCase):
                     weighted_pa=540,
                     contact_gap=19.0,
                     power_gap=19.0,
+                    contact_vs_lhp=72.0,
+                    contact_vs_rhp=24.0,
+                    power_vs_lhp=78.0,
+                    power_vs_rhp=26.0,
                 ),
                 self._platoon_hitter(
                     "No Split Baseline",
                     weighted_pa=540,
                     contact_gap=0.0,
                     power_gap=0.0,
+                    contact_vs_lhp=50.0,
+                    contact_vs_rhp=50.0,
+                    power_vs_lhp=50.0,
+                    power_vs_rhp=50.0,
                 ),
                 self._platoon_hitter(
                     "Peer C",
                     weighted_pa=520,
                     contact_gap=0.0,
                     power_gap=0.0,
+                    contact_vs_lhp=34.0,
+                    contact_vs_rhp=35.0,
+                    power_vs_lhp=36.0,
+                    power_vs_rhp=37.0,
                     batting_average=0.252,
                     adjusted_obp=0.324,
                     slugging=0.412,
@@ -1755,9 +1800,13 @@ class SurfaceBlendTests(unittest.TestCase):
                     weighted_pa=540,
                     contact_gap=19.0,
                     power_gap=0.0,
+                    contact_vs_lhp=72.0,
+                    contact_vs_rhp=24.0,
+                    power_vs_lhp=50.0,
+                    power_vs_rhp=50.0,
                 ),
-                self._platoon_hitter("Peer 1", weighted_pa=520, contact_gap=0.0, power_gap=0.0),
-                self._platoon_hitter("Peer 2", weighted_pa=515, contact_gap=0.0, power_gap=0.0),
+                self._platoon_hitter("Peer 1", weighted_pa=520, contact_gap=0.0, power_gap=0.0, contact_vs_lhp=50.0, contact_vs_rhp=50.0, power_vs_lhp=50.0, power_vs_rhp=50.0),
+                self._platoon_hitter("Peer 2", weighted_pa=515, contact_gap=0.0, power_gap=0.0, contact_vs_lhp=34.0, contact_vs_rhp=35.0, power_vs_lhp=36.0, power_vs_rhp=37.0),
             ],
             trim_final_traits=False,
         )
@@ -1768,9 +1817,13 @@ class SurfaceBlendTests(unittest.TestCase):
                     weighted_pa=540,
                     contact_gap=21.0,
                     power_gap=0.0,
+                    contact_vs_lhp=72.0,
+                    contact_vs_rhp=24.0,
+                    power_vs_lhp=50.0,
+                    power_vs_rhp=50.0,
                 ),
-                self._platoon_hitter("Peer A", weighted_pa=520, contact_gap=0.0, power_gap=0.0),
-                self._platoon_hitter("Peer B", weighted_pa=515, contact_gap=0.0, power_gap=0.0),
+                self._platoon_hitter("Peer A", weighted_pa=520, contact_gap=0.0, power_gap=0.0, contact_vs_lhp=50.0, contact_vs_rhp=50.0, power_vs_lhp=50.0, power_vs_rhp=50.0),
+                self._platoon_hitter("Peer B", weighted_pa=515, contact_gap=0.0, power_gap=0.0, contact_vs_lhp=34.0, contact_vs_rhp=35.0, power_vs_lhp=36.0, power_vs_rhp=37.0),
             ],
             trim_final_traits=False,
         )
@@ -1781,9 +1834,13 @@ class SurfaceBlendTests(unittest.TestCase):
                     weighted_pa=540,
                     contact_gap=0.0,
                     power_gap=21.0,
+                    contact_vs_lhp=50.0,
+                    contact_vs_rhp=50.0,
+                    power_vs_lhp=78.0,
+                    power_vs_rhp=26.0,
                 ),
-                self._platoon_hitter("Peer X", weighted_pa=520, contact_gap=0.0, power_gap=0.0),
-                self._platoon_hitter("Peer Y", weighted_pa=515, contact_gap=0.0, power_gap=0.0),
+                self._platoon_hitter("Peer X", weighted_pa=520, contact_gap=0.0, power_gap=0.0, contact_vs_lhp=50.0, contact_vs_rhp=50.0, power_vs_lhp=50.0, power_vs_rhp=50.0),
+                self._platoon_hitter("Peer Y", weighted_pa=515, contact_gap=0.0, power_gap=0.0, contact_vs_lhp=34.0, contact_vs_rhp=35.0, power_vs_lhp=36.0, power_vs_rhp=37.0),
             ],
             trim_final_traits=False,
         )
@@ -1796,7 +1853,11 @@ class SurfaceBlendTests(unittest.TestCase):
                 "primary_position": "CF",
                 "samples": {"weighted_pa": 540},
                 "trait_metrics": {
+                    "contact_vs_lhp": 72.0,
+                    "contact_vs_rhp": 24.0,
                     "contact_vs_lhp_minus_rhp": 19.0,
+                    "power_vs_lhp": 50.0,
+                    "power_vs_rhp": 50.0,
                     "power_vs_lhp_minus_rhp": 0.0,
                 },
             }
@@ -1809,7 +1870,11 @@ class SurfaceBlendTests(unittest.TestCase):
                 "primary_position": "CF",
                 "samples": {"weighted_pa": 540},
                 "trait_metrics": {
+                    "contact_vs_lhp": 72.0,
+                    "contact_vs_rhp": 24.0,
                     "contact_vs_lhp_minus_rhp": 21.0,
+                    "power_vs_lhp": 50.0,
+                    "power_vs_rhp": 50.0,
                     "power_vs_lhp_minus_rhp": 0.0,
                 },
             }
@@ -1825,11 +1890,78 @@ class SurfaceBlendTests(unittest.TestCase):
             trait.name for trait in next(output for output in power_outputs if output.name == "Power Above").assigned_traits
         }
 
-        self.assertEqual(processing_core_module.platoon_penalty_percentile("contact", contact_below_player, 540), 0.0)
-        self.assertGreater(processing_core_module.platoon_penalty_percentile("contact", contact_above_player, 540), 0.0)
+        contact_split_percentiles = {
+            "contact_vs_lhp": 83.33,
+            "contact_vs_rhp": 16.67,
+        }
+        self.assertEqual(
+            processing_core_module.platoon_penalty_percentile(
+                "contact",
+                contact_below_player,
+                540,
+                split_percentiles=contact_split_percentiles,
+                trait_names={"CON vs LHP"},
+            ),
+            0.0,
+        )
+        self.assertGreater(
+            processing_core_module.platoon_penalty_percentile(
+                "contact",
+                contact_above_player,
+                540,
+                split_percentiles=contact_split_percentiles,
+                trait_names={"CON vs LHP"},
+            ),
+            0.0,
+        )
         self.assertNotIn("CON vs LHP", below_traits)
         self.assertIn("CON vs LHP", above_traits)
         self.assertIn("POW vs LHP", power_traits)
+
+    def test_platoon_gap_without_weak_side_profile_has_no_trait_or_penalty(self) -> None:
+        outputs = rate_players(
+            [
+                self._platoon_hitter(
+                    "Strong Both Sides",
+                    weighted_pa=540,
+                    contact_gap=24.0,
+                    power_gap=30.0,
+                    contact_vs_lhp=76.0,
+                    contact_vs_rhp=66.0,
+                    power_vs_lhp=82.0,
+                    power_vs_rhp=70.0,
+                ),
+                self._platoon_hitter(
+                    "Average Peer",
+                    weighted_pa=520,
+                    contact_gap=0.0,
+                    power_gap=0.0,
+                    contact_vs_lhp=50.0,
+                    contact_vs_rhp=50.0,
+                    power_vs_lhp=50.0,
+                    power_vs_rhp=50.0,
+                ),
+                self._platoon_hitter(
+                    "Weak Peer",
+                    weighted_pa=515,
+                    contact_gap=0.0,
+                    power_gap=0.0,
+                    contact_vs_lhp=32.0,
+                    contact_vs_rhp=33.0,
+                    power_vs_lhp=34.0,
+                    power_vs_rhp=35.0,
+                ),
+            ],
+            trim_final_traits=False,
+        )
+
+        strong_both = next(output for output in outputs if output.name == "Strong Both Sides")
+        assigned_traits = {trait.name for trait in strong_both.assigned_traits}
+
+        self.assertNotIn("CON vs LHP", assigned_traits)
+        self.assertNotIn("CON vs RHP", assigned_traits)
+        self.assertNotIn("POW vs LHP", assigned_traits)
+        self.assertNotIn("POW vs RHP", assigned_traits)
 
     def test_platoon_penalty_requires_minimum_weighted_pa(self) -> None:
         low_sample_player = PlayerInput.from_dict(
@@ -1859,10 +1991,52 @@ class SurfaceBlendTests(unittest.TestCase):
             }
         )
 
-        self.assertEqual(processing_core_module.platoon_penalty_percentile("contact", low_sample_player, 180), 0.0)
-        self.assertEqual(processing_core_module.platoon_penalty_percentile("power", low_sample_player, 180), 0.0)
-        self.assertGreater(processing_core_module.platoon_penalty_percentile("contact", full_sample_player, 520), 0.0)
-        self.assertGreater(processing_core_module.platoon_penalty_percentile("power", full_sample_player, 520), 0.0)
+        split_percentiles = {
+            "contact_vs_lhp": 80.0,
+            "contact_vs_rhp": 20.0,
+            "power_vs_lhp": 80.0,
+            "power_vs_rhp": 20.0,
+        }
+        self.assertEqual(
+            processing_core_module.platoon_penalty_percentile(
+                "contact",
+                low_sample_player,
+                180,
+                split_percentiles=split_percentiles,
+                trait_names={"CON vs LHP"},
+            ),
+            0.0,
+        )
+        self.assertEqual(
+            processing_core_module.platoon_penalty_percentile(
+                "power",
+                low_sample_player,
+                180,
+                split_percentiles=split_percentiles,
+                trait_names={"POW vs LHP"},
+            ),
+            0.0,
+        )
+        self.assertGreater(
+            processing_core_module.platoon_penalty_percentile(
+                "contact",
+                full_sample_player,
+                520,
+                split_percentiles=split_percentiles,
+                trait_names={"CON vs LHP"},
+            ),
+            0.0,
+        )
+        self.assertGreater(
+            processing_core_module.platoon_penalty_percentile(
+                "power",
+                full_sample_player,
+                520,
+                split_percentiles=split_percentiles,
+                trait_names={"POW vs LHP"},
+            ),
+            0.0,
+        )
 
     def test_platoon_penalty_increases_with_split_pa_imbalance(self) -> None:
         balanced_split_player = PlayerInput.from_dict(
@@ -1896,10 +2070,40 @@ class SurfaceBlendTests(unittest.TestCase):
             }
         )
 
-        balanced_contact_penalty = processing_core_module.platoon_penalty_percentile("contact", balanced_split_player, 520)
-        imbalanced_contact_penalty = processing_core_module.platoon_penalty_percentile("contact", imbalanced_split_player, 520)
-        balanced_power_penalty = processing_core_module.platoon_penalty_percentile("power", balanced_split_player, 520)
-        imbalanced_power_penalty = processing_core_module.platoon_penalty_percentile("power", imbalanced_split_player, 520)
+        split_percentiles = {
+            "contact_vs_lhp": 80.0,
+            "contact_vs_rhp": 20.0,
+            "power_vs_lhp": 80.0,
+            "power_vs_rhp": 20.0,
+        }
+        balanced_contact_penalty = processing_core_module.platoon_penalty_percentile(
+            "contact",
+            balanced_split_player,
+            520,
+            split_percentiles=split_percentiles,
+            trait_names={"CON vs LHP"},
+        )
+        imbalanced_contact_penalty = processing_core_module.platoon_penalty_percentile(
+            "contact",
+            imbalanced_split_player,
+            520,
+            split_percentiles=split_percentiles,
+            trait_names={"CON vs LHP"},
+        )
+        balanced_power_penalty = processing_core_module.platoon_penalty_percentile(
+            "power",
+            balanced_split_player,
+            520,
+            split_percentiles=split_percentiles,
+            trait_names={"POW vs LHP"},
+        )
+        imbalanced_power_penalty = processing_core_module.platoon_penalty_percentile(
+            "power",
+            imbalanced_split_player,
+            520,
+            split_percentiles=split_percentiles,
+            trait_names={"POW vs LHP"},
+        )
 
         self.assertGreater(imbalanced_contact_penalty, balanced_contact_penalty)
         self.assertGreater(imbalanced_power_penalty, balanced_power_penalty)
@@ -1914,8 +2118,26 @@ class SurfaceBlendTests(unittest.TestCase):
             )
         )
 
-        penalty_contact = processing_core_module.platoon_penalty_percentile("contact", player, 540)
-        penalty_power = processing_core_module.platoon_penalty_percentile("power", player, 540)
+        split_percentiles = {
+            "contact_vs_lhp": 80.0,
+            "contact_vs_rhp": 20.0,
+            "power_vs_lhp": 80.0,
+            "power_vs_rhp": 20.0,
+        }
+        penalty_contact = processing_core_module.platoon_penalty_percentile(
+            "contact",
+            player,
+            540,
+            split_percentiles=split_percentiles,
+            trait_names={"CON vs LHP"},
+        )
+        penalty_power = processing_core_module.platoon_penalty_percentile(
+            "power",
+            player,
+            540,
+            split_percentiles=split_percentiles,
+            trait_names={"POW vs LHP"},
+        )
 
         no_platoon_output = RatingOutput.from_dict(
             {
@@ -2367,6 +2589,10 @@ class SurfaceBlendTests(unittest.TestCase):
         weighted_pa: float,
         contact_gap: float,
         power_gap: float,
+        contact_vs_lhp: float | None = None,
+        contact_vs_rhp: float | None = None,
+        power_vs_lhp: float | None = None,
+        power_vs_rhp: float | None = None,
         pa_vs_lhp: float | None = None,
         pa_vs_rhp: float | None = None,
         batting_average: float = 0.272,
@@ -2395,7 +2621,11 @@ class SurfaceBlendTests(unittest.TestCase):
             },
             "samples": {"weighted_pa": weighted_pa},
             "trait_metrics": {
+                "contact_vs_lhp": contact_vs_lhp,
+                "contact_vs_rhp": contact_vs_rhp,
                 "contact_vs_lhp_minus_rhp": contact_gap,
+                "power_vs_lhp": power_vs_lhp,
+                "power_vs_rhp": power_vs_rhp,
                 "power_vs_lhp_minus_rhp": power_gap,
                 "pa_vs_lhp": pa_vs_lhp,
                 "pa_vs_rhp": pa_vs_rhp,

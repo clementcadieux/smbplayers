@@ -17,6 +17,7 @@ from .live_metrics import (
     derive_pitcher_situational_metrics,
     game_log_days_on_roster,
     hitter_contact_platoon_delta,
+    hitter_platoon_side_metrics,
     hitter_power_platoon_delta,
     hitter_split_volume_metrics,
     pitcher_handedness_gap,
@@ -183,6 +184,7 @@ def build_baseball_reference_hitter_rows(
         if (_as_int(player.get("plate_appearances")) or 0) <= 0:
             continue
         hitting_splits = player.get("hitting_handedness_splits") if isinstance(player.get("hitting_handedness_splits"), Mapping) else {}
+        split_side_metrics = hitter_platoon_side_metrics(hitting_splits)
         split_volume_metrics = hitter_split_volume_metrics(hitting_splits)
         rows.append(
             {
@@ -205,6 +207,10 @@ def build_baseball_reference_hitter_rows(
                 "BA": player.get("avg"),
                 "OBP": player.get("obp"),
                 "SLG": player.get("slg"),
+                "Contact vs LHP": split_side_metrics.get("contact_vs_lhp"),
+                "Contact vs RHP": split_side_metrics.get("contact_vs_rhp"),
+                "Power vs LHP": split_side_metrics.get("power_vs_lhp"),
+                "Power vs RHP": split_side_metrics.get("power_vs_rhp"),
                 "Contact vs LHP Minus RHP": hitter_contact_platoon_delta(hitting_splits),
                 "Power vs LHP Minus RHP": hitter_power_platoon_delta(hitting_splits),
                 "PA vs LHP": split_volume_metrics.get("pa_vs_lhp"),
@@ -229,6 +235,7 @@ def build_savant_hitter_rows(
             continue
         advanced = player.get("advanced_hitting") if isinstance(player.get("advanced_hitting"), Mapping) else {}
         hitting_splits = player.get("hitting_handedness_splits") if isinstance(player.get("hitting_handedness_splits"), Mapping) else {}
+        split_side_metrics = hitter_platoon_side_metrics(hitting_splits)
         split_volume_metrics = hitter_split_volume_metrics(hitting_splits)
         savant_hitting_summary = player.get("savant_hitting_summary") if isinstance(player.get("savant_hitting_summary"), Mapping) else {}
         situational_hitting_metrics = player.get("situational_hitting_metrics") if isinstance(player.get("situational_hitting_metrics"), Mapping) else {}
@@ -277,6 +284,10 @@ def build_savant_hitter_rows(
                 "BB": player.get("walks"),
                 "HBP": player.get("hit_by_pitch"),
                 "H": player.get("hits"),
+                "Contact vs LHP": split_side_metrics.get("contact_vs_lhp"),
+                "Contact vs RHP": split_side_metrics.get("contact_vs_rhp"),
+                "Power vs LHP": split_side_metrics.get("power_vs_lhp"),
+                "Power vs RHP": split_side_metrics.get("power_vs_rhp"),
                 "Contact vs LHP Minus RHP": hitter_contact_platoon_delta(hitting_splits),
                 "Power vs LHP Minus RHP": hitter_power_platoon_delta(hitting_splits),
                 "PA vs LHP": split_volume_metrics.get("pa_vs_lhp"),
