@@ -310,3 +310,51 @@
 
 5. **Capture in changelog or release notes:**
    - Add a brief entry noting the alignment change so it is visible in project history.
+
+---
+
+## Issue #89 – Refactor the Process into 4 Layers
+
+**Problem:** The current codebase mixes ingestion, aggregation, processing, and generation concerns together, making the system harder to test, maintain, and modify. A clear 4-layer architecture will allow each layer to be run independently, reducing runtime during development and isolating changes.
+
+### Layers
+
+- **Ingestion** – Collects raw data from MLB API, Baseball Savant, and Baseball Reference; outputs raw CSV files.
+- **Aggregation** – Converts raw CSV data into the normalised fields and values used for ratings calculations; outputs an intermediate structured format.
+- **Processing** – Converts aggregated fields into actual player ratings, traits, and personality suggestions; outputs `PlayerOutput` records.
+- **Generation** – Produces readable, formatted per-player breakdowns (may be left partially incomplete for now).
+
+### Steps
+
+1. **Audit the existing code boundaries:**
+   - Map the current flow from `cli.py` → `ingest/savant.py` / `ingest/baseball_reference.py` → `engine.py` → output.
+   - Identify which code belongs to each of the four layers and note any blending of concerns.
+
+2. **Define layer interfaces:**
+   - Decide on the intermediate data format between each layer (e.g. raw CSV files after Ingestion; a structured dict or Pydantic model after Aggregation).
+   - Document the expected inputs and outputs for each layer as clear Python function or class contracts.
+
+3. **Refactor Ingestion layer:**
+   - Isolate all raw-data-fetching code into a dedicated module (or confirm `ingest/savant.py` and `ingest/baseball_reference.py` already cover this).
+   - Ensure this layer's output is a set of raw CSV files only; no normalisation or rating logic should live here.
+
+4. **Refactor Aggregation layer:**
+   - Extract the code that converts raw CSV columns into the composite fields and values used by the engine into a dedicated `aggregation.py` (or equivalent) module.
+   - By the end of this layer, all values needed by the Processing layer should be available in a clean intermediate structure.
+
+5. **Refactor Processing layer:**
+   - Ensure `engine.py` (or a refactored equivalent) only consumes the aggregated intermediate structure and outputs `PlayerOutput` records.
+   - Remove any raw-data parsing or formatting logic that remains in `engine.py`.
+
+6. **Implement/stub Generation layer:**
+   - Create a `generation.py` module (stub is acceptable) that accepts `PlayerOutput` records and produces human-readable formatted output.
+   - Wire it into the CLI but leave full implementation for a later issue if needed.
+
+7. **Expose layer-level CLI entry points:**
+   - Add CLI sub-commands (e.g. `ingest`, `aggregate`, `process`, `generate`) so each layer can be triggered independently.
+   - Ensure the existing `rate` and `ingest-rate` commands continue to work end-to-end by chaining all layers.
+
+8. **Update tests:**
+   - Add or update unit tests for each layer in isolation.
+   - Ensure the existing end-to-end tests still pass after the refactor.
+   - Add integration tests that run adjacent layer pairs to verify the intermediate format contract.
