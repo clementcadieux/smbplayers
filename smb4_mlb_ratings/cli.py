@@ -8,7 +8,6 @@ import sys
 from pathlib import Path
 
 from .aggregation import aggregate_from_manifest
-from .engine import rate_players
 from .generation import generate_output
 from .ingest import load_manifest
 from .ingest.live_team_data import (
@@ -23,6 +22,7 @@ from .ingest.live_team_data import (
 )
 from .models import RatingOutput
 from .output import write_structured_output
+from .processing import process_players
 from .roster_selector import build_rank_output, load_ratings
 
 
@@ -83,7 +83,7 @@ def _filter_players_by_team(players: list[dict], team: str | None, *, active_onl
 def run_rate(input_path: Path, output_path: Path, team: str | None = None) -> int:
     players = load_players(input_path)
     players = _filter_players_by_team(players, team, active_only=True)
-    outputs = rate_players(players)
+    outputs = process_players(players)
     write_json(output_path, [output.to_dict() for output in outputs])
     return 0
 
@@ -127,7 +127,7 @@ def run_ingest_rate(
     players = _filter_players_by_team(players, team, active_only=True)
     if normalized_output_path is not None:
         write_json(normalized_output_path, {"players": players})
-    outputs = rate_players(players)
+    outputs = process_players(players)
     if output_path is not None:
         write_json(output_path, [output.to_dict() for output in outputs])
     if structured_output_path is not None:
