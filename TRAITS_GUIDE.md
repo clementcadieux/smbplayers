@@ -141,20 +141,21 @@ threshold = 150.0 (IP)
 Thresholds are read from `config.yaml` → `season_weighting.full_season_pa_threshold` (default 500) and
 `full_season_ip_threshold` (default 150).
 
-### Workhorse / Winded  (`trait_metrics.workhorse`)
+### Workhorse  (`trait_metrics.workhorse`)
 
 Pitchers only.  Derived from `resolved_projected_ip()`.
 
 ```
-workhorse = projected_ip / 200.0 * 100   # clipped [0, 100]
+workhorse = projected_ip / workhorse_benchmark_ip * 100   # clipped [0, 100]
 ```
 
 | workhorse | Trait assigned |
 |----------|----------------|
-| ≥ 65     | Workhorse      |
-| ≤ 35     | Winded         |
+| ≥ 80     | Workhorse      |
 
-Constant: `_WORKHORSE_BENCHMARK_IP = 200.0`
+Thresholds are tunable in `config.yaml`:
+- `season_weighting.workhorse_benchmark_ip` (default 250)
+- `trait_criteria.traits.Workhorse.criteria[0].value` (set to 80 for a 200+ IP target)
 
 ### Stimulated  (`trait_metrics.late_game_hitting` / `trait_metrics.late_game_pitching`)
 

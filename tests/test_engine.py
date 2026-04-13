@@ -3081,9 +3081,76 @@ class MissingFieldConsumptionTests(unittest.TestCase):
         trait_names = {t.name for t in candidate.assigned_traits}
         self.assertIn("Mind Gamer", trait_names)
 
+    def test_mind_gamer_assigns_from_walk_rate_fallback_when_bb_pct_absent(self) -> None:
+        """Mind Gamer should still derive when ingest provides walk_rate but not bb_pct."""
+        outputs = rate_players(
+            [
+                {
+                    "name": "Walk Rate Hitter",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "1B",
+                    "metrics": {
+                        "walk_rate": 0.155,
+                        "iso": 0.180,
+                        "hr_per_pa": 0.033,
+                        "barrel_rate": 0.085,
+                        "slugging": 0.450,
+                        "avg_exit_velocity": 89.5,
+                        "strikeout_rate": 0.185,
+                        "contact_rate": 0.775,
+                        "batting_average": 0.268,
+                        "adjusted_obp": 0.370,
+                    },
+                    "samples": {"weighted_pa": 530},
+                },
+                {
+                    "name": "Peer 1",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "CF",
+                    "metrics": {
+                        "iso": 0.220,
+                        "hr_per_pa": 0.045,
+                        "barrel_rate": 0.110,
+                        "slugging": 0.500,
+                        "avg_exit_velocity": 91.0,
+                        "strikeout_rate": 0.200,
+                        "contact_rate": 0.760,
+                        "batting_average": 0.270,
+                        "adjusted_obp": 0.340,
+                    },
+                    "samples": {"weighted_pa": 425},
+                },
+                {
+                    "name": "Peer 2",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "RF",
+                    "metrics": {
+                        "iso": 0.120,
+                        "hr_per_pa": 0.025,
+                        "barrel_rate": 0.060,
+                        "slugging": 0.360,
+                        "avg_exit_velocity": 87.5,
+                        "strikeout_rate": 0.230,
+                        "contact_rate": 0.720,
+                        "batting_average": 0.245,
+                        "adjusted_obp": 0.305,
+                    },
+                    "samples": {"weighted_pa": 425},
+                },
+            ],
+            trim_final_traits=False,
+        )
+
+        candidate = next(o for o in outputs if o.name == "Walk Rate Hitter")
+        trait_names = {t.name for t in candidate.assigned_traits}
+        self.assertIn("Mind Gamer", trait_names)
+
     def test_workhorse_assigns_from_projected_ip_without_explicit_trait_metric(self) -> None:
-        """A pitcher with projected_ip = 175 derives workhorse = 87.5 and should get the Workhorse trait."""
-        # workhorse = 175 / 200 * 100 = 87.5 → ≥ 65 → Workhorse
+        """A pitcher with projected_ip = 200 derives workhorse = 80.0 and should get the Workhorse trait."""
+        # workhorse = 200 / 250 * 100 = 80.0 → ≥ 80 → Workhorse
         outputs = rate_players(
             [
                 {
@@ -3091,7 +3158,7 @@ class MissingFieldConsumptionTests(unittest.TestCase):
                     "role": "pitcher",
                     "team": "NYM",
                     "primary_position": "P",
-                    "projected_ip": 175.0,
+                    "projected_ip": 200.0,
                     "metrics": {
                         "era": 3.50,
                         "whip": 1.18,

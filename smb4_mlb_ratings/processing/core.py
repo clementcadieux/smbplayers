@@ -143,7 +143,7 @@ def refresh_runtime_tuning() -> None:
             if not isinstance(rating_name, str):
                 continue
             try:
-                parsed_surface_weight_caps[rating_name] = clamp(float(raw_value), 0.0, 1.0)
+                parsed_surface_weight_caps[rating_name] = max(0.0, min(1.0, float(raw_value)))
             except (TypeError, ValueError):
                 continue
     SURFACE_WEIGHT_CAPS = parsed_surface_weight_caps
@@ -291,7 +291,14 @@ _MIND_GAMES_BB_PCT_LOW = 4.0    # ~4% BB rate → low mind_games (Easy Target te
 _MIND_GAMES_BB_PCT_HIGH = 20.0  # ~20% BB rate → high mind_games (Mind Gamer territory)
 _DIVE_RECOVERY_RANGE_LOW = -5.0  # below-average range metric (OAA/DRS/UZR average)
 _DIVE_RECOVERY_RANGE_HIGH = 20.0  # elite range metric value
-_WORKHORSE_BENCHMARK_IP = 200.0  # full-season workload benchmark for Workhorse derivation
+
+
+def _workhorse_benchmark_ip() -> float:
+    try:
+        benchmark = float(SEASON_WEIGHTING_CONFIG.get("workhorse_benchmark_ip", 250.0))
+    except (TypeError, ValueError):
+        benchmark = 250.0
+    return benchmark if benchmark > 0 else 250.0
 
 
 @dataclass(frozen=True)
@@ -1781,6 +1788,11 @@ def _derive_missing_trait_metrics(player: PlayerInput) -> None:
             raw_rate = weighted_value(player.metrics.get("bb_pct"))
             if raw_rate is not None:
                 bb_pct = raw_rate * 100.0
+        if bb_pct is None:
+            # Ingest currently stores hitter walk rate as metrics.walk_rate.
+            raw_rate = weighted_value(player.metrics.get("walk_rate"))
+            if raw_rate is not None:
+                bb_pct = raw_rate * 100.0
         if bb_pct is not None:
             span = _MIND_GAMES_BB_PCT_HIGH - _MIND_GAMES_BB_PCT_LOW
             derived = (float(bb_pct) - _MIND_GAMES_BB_PCT_LOW) / span * 100.0
@@ -1823,7 +1835,7 @@ def _derive_missing_trait_metrics(player: PlayerInput) -> None:
     if player_trait_metric(player, "workhorse") is None and player.role in {"pitcher", "two_way"}:
         projected_ip = resolved_projected_ip(player)
         if projected_ip is not None:
-            derived = projected_ip / _WORKHORSE_BENCHMARK_IP * 100.0
+            derived = projected_ip / _workhorse_benchmark_ip() * 100.0
             player.trait_metrics["workhorse"] = {"current": round(max(0.0, min(100.0, derived)), 1)}
 
     # late_game_hitting fallback — use pressure_hitting as proxy when late_game data is absent

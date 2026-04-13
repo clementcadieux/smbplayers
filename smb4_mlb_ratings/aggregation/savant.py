@@ -995,6 +995,12 @@ def _apply_hitter_row(player: PlayerAccumulator, season_key: str, row: dict[str,
         singles = hits - (doubles or 0) - (triples or 0) - (home_runs or 0)
         singles = max(singles, 0)
 
+    walk_rate = _pick_number(row, "walk_rate", "bb_pct", "bb_percent", "walk_pct", rate=True)
+    walk_rate_estimated = False
+    if walk_rate is None:
+        walk_rate = _safe_divide(walks, plate_appearances)
+        walk_rate_estimated = walk_rate is not None
+
     strikeout_rate = _pick_number(row, "k_pct", "k_percent", "strikeout_rate", "strikeout_pct", rate=True)
     contact_rate = _pick_number(row, "contact_rate", "contact_pct", "contact_percent", rate=True)
     if contact_rate is None:
@@ -1022,6 +1028,8 @@ def _apply_hitter_row(player: PlayerAccumulator, season_key: str, row: dict[str,
         "barrel_rate": (_pick_number(row, "barrel_rate", "barrel_pct", "barrel_percent", "barrels_per_bbe", "brl_percent", "barrel", rate=True), False),
         "slugging": (_pick_number(row, "slg", "slugging", "slugging_pct"), False),
         "avg_exit_velocity": (_pick_number(row, "avg_exit_velocity", "avg_hit_speed", "ev", "exit_velocity_avg", "avg_ev", "exit_velocity"), False),
+        "bb_pct": (walk_rate, walk_rate_estimated),
+        "walk_rate": (walk_rate, walk_rate_estimated),
         "strikeout_rate": (strikeout_rate, False),
         "contact_rate": (contact_rate, contact_rate is not None and _pick_first(row, "contact_rate", "contact_pct", "contact_percent") is None),
         "batting_average": (_pick_number(row, "batting_average", "avg", "ba"), False),
