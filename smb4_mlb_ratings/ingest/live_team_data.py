@@ -4,6 +4,7 @@ import csv
 import io
 import json
 import re
+import sys
 from ssl import SSLContext
 from typing import Any, Callable, Iterable, Mapping
 from urllib.request import Request, urlopen
@@ -122,9 +123,12 @@ def fetch_team_players(
 
     players: list[dict[str, Any]] = []
     seasons = (primary_stat_season, fallback_stat_season)
+    # roster_entry refs for players that had HTTP failures, used in the retry pass
+    failed_entries: list[tuple[Mapping[str, Any], dict[str, Any]]] = []
     for roster_entry in roster_entries:
         if not isinstance(roster_entry, dict):
             continue
+        player_failures: list[dict[str, Any]] = []
         player = _fetch_roster_player(
             roster_entry,
             team_abbreviation=team_abbreviation,
@@ -132,9 +136,44 @@ def fetch_team_players(
             ssl_context=ssl_context,
             mlb_stats_api=mlb_stats_api,
             baseball_savant=baseball_savant,
+            http_failures=player_failures,
         )
         if player is not None:
+            if player_failures:
+                for failure in player_failures:
+                    failure["player_id"] = player.get("player_id")
+                    failure["player_name"] = player.get("name")
+                player["http_failures"] = player_failures
+                failed_entries.append((roster_entry, player))
             players.append(player)
+
+    # Single retry pass: re-attempt players who had HTTP failures during optional Savant fetches
+    for roster_entry, original_player in failed_entries:
+        retry_player = _fetch_roster_player(
+            roster_entry,
+            team_abbreviation=team_abbreviation,
+            seasons=seasons,
+            ssl_context=ssl_context,
+            mlb_stats_api=mlb_stats_api,
+            baseball_savant=baseball_savant,
+        )
+        if retry_player is not None and "http_failures" not in retry_player:
+            # Retry succeeded — replace partial data with full result
+            idx = players.index(original_player)
+            players[idx] = retry_player
+        # else: keep original with http_failures intact
+
+    # Report persistent HTTP failures to stderr so users can diagnose partial runs
+    for player in players:
+        failures = player.get("http_failures")
+        if not isinstance(failures, list) or not failures:
+            continue
+        stages = sorted({str(f.get("stage", "unknown")) for f in failures})
+        print(
+            f"Warning: HTTP failures for {player.get('name', 'unknown')} "
+            f"(id={player.get('player_id')}): {', '.join(stages)}",
+            file=sys.stderr,
+        )
 
     _apply_savant_arm_strength(
         players,
@@ -1063,6 +1102,7 @@ def _fetch_roster_player(
     ssl_context: SSLContext | None,
     mlb_stats_api: str,
     baseball_savant: str,
+    http_failures: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any] | None:
     person_summary = roster_entry.get("person", {})
     if not isinstance(person_summary, Mapping):
@@ -1156,11 +1196,13 @@ def _fetch_roster_player(
             season=seasons[0],
             ssl_context=ssl_context,
             baseball_savant=baseball_savant,
+            http_failures=http_failures,
         )
         savant_hitter_pitch_details = _fetch_savant_hitter_pitch_details(
             player_id,
             ssl_context=ssl_context,
             baseball_savant=baseball_savant,
+            http_failures=http_failures,
         )
         situational_hitting_splits = _fetch_situation_splits(
             player_id,
@@ -1271,6 +1313,7 @@ def _fetch_roster_player(
                 player_id,
                 ssl_context=ssl_context,
                 baseball_savant=baseball_savant,
+                http_failures=http_failures,
             ),
             "pitch_arsenal": pitch_arsenal,
         }
@@ -1294,10 +1337,13 @@ def _fetch_optional_text(
     *,
     ssl_context: SSLContext | None,
     headers: dict[str, str] | None = None,
+    failure_tracker: Callable[[str, Exception], None] | None = None,
 ) -> str | None:
     try:
         return _fetch_text(url, ssl_context=ssl_context, headers=headers)
-    except (HTTPError, URLError, TimeoutError, OSError):
+    except (HTTPError, URLError, TimeoutError, OSError) as exc:
+        if failure_tracker is not None:
+            failure_tracker(url, exc)
         return None
 
 
@@ -1378,7 +1424,12 @@ def _fetch_savant_pitch_details(
     *,
     ssl_context: SSLContext | None,
     baseball_savant: str,
+    http_failures: list[dict[str, Any]] | None = None,
 ) -> dict[str, dict[str, float]]:
+    def _track(url: str, exc: Exception) -> None:
+        if http_failures is not None:
+            http_failures.append({"url": url, "error": type(exc).__name__, "stage": "savant_pitch_details"})
+
     payload = _fetch_optional_text(
         f"{baseball_savant}/player-services/statcast-pitches-breakdown?playerId={player_id}&position=1&pitchBreakdown=pitches",
         ssl_context=ssl_context,
@@ -1388,6 +1439,7 @@ def _fetch_savant_pitch_details(
             "Accept": "application/json,text/plain,*/*",
             "X-Requested-With": "XMLHttpRequest",
         },
+        failure_tracker=_track if http_failures is not None else None,
     )
     if not payload:
         return {}
@@ -1399,7 +1451,12 @@ def _fetch_savant_hitter_pitch_details(
     *,
     ssl_context: SSLContext | None,
     baseball_savant: str,
+    http_failures: list[dict[str, Any]] | None = None,
 ) -> dict[str, dict[str, float]]:
+    def _track(url: str, exc: Exception) -> None:
+        if http_failures is not None:
+            http_failures.append({"url": url, "error": type(exc).__name__, "stage": "savant_hitter_pitch_details"})
+
     payload = _fetch_optional_text(
         f"{baseball_savant}/player-services/statcast-pitches-breakdown?playerId={player_id}&position=0&pitchBreakdown=pitches",
         ssl_context=ssl_context,
@@ -1409,6 +1466,7 @@ def _fetch_savant_hitter_pitch_details(
             "Accept": "application/json,text/plain,*/*",
             "X-Requested-With": "XMLHttpRequest",
         },
+        failure_tracker=_track if http_failures is not None else None,
     )
     if not payload:
         return {}
@@ -1514,11 +1572,17 @@ def _fetch_savant_hitter_summary(
     season: int,
     ssl_context: SSLContext | None,
     baseball_savant: str,
+    http_failures: list[dict[str, Any]] | None = None,
 ) -> dict[str, float]:
+    def _track(url: str, exc: Exception) -> None:
+        if http_failures is not None:
+            http_failures.append({"url": url, "error": type(exc).__name__, "stage": "savant_hitter_summary"})
+
     payload = _fetch_optional_text(
         f"{baseball_savant}/savant-player/player-{player_id}?stats=statcast-r-hitting-mlb",
         ssl_context=ssl_context,
         headers={"User-Agent": "Mozilla/5.0"},
+        failure_tracker=_track if http_failures is not None else None,
     )
     if not payload:
         return {}

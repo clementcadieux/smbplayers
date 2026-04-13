@@ -284,6 +284,15 @@ TRAIT_CRITERIA_CONFIG = load_trait_criteria_config()
 TRAIT_LIMIT_CONFIG = load_trait_limit_config()
 SECONDARY_POSITION_CONFIG = load_secondary_position_config()
 
+# Normalization bounds used when deriving absent trait metrics from raw stats.
+# These express the typical per-season range of each underlying statistic rather
+# than game-specific thresholds (which stay in smb4_player_reference.json).
+_MIND_GAMES_BB_PCT_LOW = 4.0    # ~4% BB rate → low mind_games (Easy Target territory)
+_MIND_GAMES_BB_PCT_HIGH = 20.0  # ~20% BB rate → high mind_games (Mind Gamer territory)
+_DIVE_RECOVERY_RANGE_LOW = -5.0  # below-average range metric (OAA/DRS/UZR average)
+_DIVE_RECOVERY_RANGE_HIGH = 20.0  # elite range metric value
+_WORKHORSE_BENCHMARK_IP = 200.0  # full-season workload benchmark for Workhorse derivation
+
 
 @dataclass(frozen=True)
 class ComponentSpec:
@@ -1756,11 +1765,87 @@ def hinted_catalog_traits(player: PlayerInput) -> list[TraitSuggestion]:
     return trait_layer.hinted_catalog_traits(player)
 
 
+def _derive_missing_trait_metrics(player: PlayerInput) -> None:
+    """Populate trait_metrics entries that can be inferred from raw metrics/samples when absent.
+
+    Only fills keys that are genuinely missing; explicit values from ingestion always win.
+    """
+    if not isinstance(player.trait_metrics, dict):
+        player.trait_metrics = {}
+
+    # mind_games — derived from walk rate (BB%)
+    if player_trait_metric(player, "mind_games") is None and player.role in {"hitter", "two_way"}:
+        # trait_metrics["bb_pct"] stores percentage points (e.g. 10.5); metrics["bb_pct"] stores rate (0.105)
+        bb_pct = player_trait_metric(player, "bb_pct")
+        if bb_pct is None:
+            raw_rate = weighted_value(player.metrics.get("bb_pct"))
+            if raw_rate is not None:
+                bb_pct = raw_rate * 100.0
+        if bb_pct is not None:
+            span = _MIND_GAMES_BB_PCT_HIGH - _MIND_GAMES_BB_PCT_LOW
+            derived = (float(bb_pct) - _MIND_GAMES_BB_PCT_LOW) / span * 100.0
+            player.trait_metrics["mind_games"] = {"current": round(max(0.0, min(100.0, derived)), 1)}
+
+    # dive_recovery — averaged OAA / DRS / UZR range metrics, normalized to 0-100
+    if player_trait_metric(player, "dive_recovery") is None and player.role in {"hitter", "two_way"}:
+        range_values = [
+            v for v in (
+                weighted_value(player.metrics.get("oaa")),
+                weighted_value(player.metrics.get("drs")),
+                weighted_value(player.metrics.get("uzr")),
+            )
+            if v is not None
+        ]
+        if range_values:
+            avg_range = sum(range_values) / len(range_values)
+            span = _DIVE_RECOVERY_RANGE_HIGH - _DIVE_RECOVERY_RANGE_LOW
+            derived = (avg_range - _DIVE_RECOVERY_RANGE_LOW) / span * 100.0
+            player.trait_metrics["dive_recovery"] = {"current": round(max(0.0, min(100.0, derived)), 1)}
+
+    # durability — fraction of known seasons that met the full-season volume threshold, scaled 0-100
+    if player_trait_metric(player, "durability") is None:
+        full_pa = float(SEASON_WEIGHTING_CONFIG.get("full_season_pa_threshold", 500.0))
+        full_ip = float(SEASON_WEIGHTING_CONFIG.get("full_season_ip_threshold", 150.0))
+        if player.role in {"hitter", "two_way"}:
+            volume_seasons = season_dict(player.samples.get("weighted_pa"))
+            threshold = full_pa
+        else:
+            volume_seasons = season_dict(player.samples.get("defensive_innings"))
+            if volume_seasons is None:
+                bf = season_dict(player.samples.get("weighted_bf"))
+                volume_seasons = {k: round(v / 4.25, 2) for k, v in bf.items()} if bf else None
+            threshold = full_ip
+        if volume_seasons:
+            full_count = sum(1 for v in volume_seasons.values() if v >= threshold)
+            player.trait_metrics["durability"] = {"current": round(full_count / len(volume_seasons) * 100.0, 1)}
+
+    # workhorse — projected IP scaled against a full-season benchmark (pitchers only)
+    if player_trait_metric(player, "workhorse") is None and player.role in {"pitcher", "two_way"}:
+        projected_ip = resolved_projected_ip(player)
+        if projected_ip is not None:
+            derived = projected_ip / _WORKHORSE_BENCHMARK_IP * 100.0
+            player.trait_metrics["workhorse"] = {"current": round(max(0.0, min(100.0, derived)), 1)}
+
+    # late_game_hitting fallback — use pressure_hitting as proxy when late_game data is absent
+    if player_trait_metric(player, "late_game_hitting") is None and player.role in {"hitter", "two_way"}:
+        pressure = player_trait_metric(player, "pressure_hitting")
+        if pressure is not None:
+            player.trait_metrics["late_game_hitting"] = {"current": round(float(pressure), 1)}
+
+    # late_game_pitching fallback — use pressure_pitching as proxy when late_game data is absent
+    if player_trait_metric(player, "late_game_pitching") is None and player.role in {"pitcher", "two_way"}:
+        pressure = player_trait_metric(player, "pressure_pitching")
+        if pressure is not None:
+            player.trait_metrics["late_game_pitching"] = {"current": round(float(pressure), 1)}
+
+
 def apply_hitter_metadata_traits(state: PlayerState, suggestions: dict[str, TraitSuggestion]) -> None:
+    _derive_missing_trait_metrics(state.player)
     apply_configured_trait_criteria(state, suggestions, role_scope="non_pitcher")
 
 
 def apply_pitcher_metadata_traits(state: PlayerState, suggestions: dict[str, TraitSuggestion]) -> None:
+    _derive_missing_trait_metrics(state.player)
     apply_configured_trait_criteria(state, suggestions, role_scope="pitcher")
     two_way_positions = set(player_trait_list(state.player, "secondary_field_positions"))
     two_way_positions.update(player_trait_list(state.player, "two_way_positions"))
