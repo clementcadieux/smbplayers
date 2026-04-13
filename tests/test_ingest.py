@@ -942,6 +942,97 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertFalse(inactive_player["active"])
         self.assertEqual(inactive_player["team"], "PHI")
 
+    def test_ingest_keeps_il_player_active_without_current_stat_rows(self) -> None:
+        roster_path = self.root / "rehab_roster_2026.csv"
+        previous_hitters_path = self.root / "rehab_hitters_2025.csv"
+        manifest_path = self.root / "rehab_manifest.json"
+        normalized_path = self.root / "rehab_normalized.json"
+        ratings_path = self.root / "rehab_ratings.json"
+
+        self._write_csv(
+            roster_path,
+            [
+                {
+                    "player_id": 720,
+                    "player_name": "Rehab Hitter",
+                    "team": "NYM",
+                    "status": "Rehab Assignment",
+                    "status_code": "RL",
+                    "age": 29,
+                    "position": "LF",
+                    "bats": "L",
+                    "throws": "R",
+                }
+            ],
+        )
+        self._write_csv(
+            previous_hitters_path,
+            [
+                {
+                    "player_id": 720,
+                    "player_name": "Rehab Hitter",
+                    "team": "NYM",
+                    "position": "LF",
+                    "PA": 440,
+                    "ISO": 0.176,
+                    "HR": 19,
+                    "Barrel %": 8.7,
+                    "SLG": 0.434,
+                    "AVG": 0.262,
+                    "OBP": 0.327,
+                    "K %": 21.6,
+                    "Contact %": 77.1,
+                    "Two Strike Contact %": 61.2,
+                    "Avg Exit Velocity": 88.8,
+                    "2B": 23,
+                    "3B": 1,
+                    "SB": 5,
+                    "CS": 2,
+                    "BB": 31,
+                    "HBP": 2,
+                    "H": 108,
+                    "Sprint Speed": 27.2,
+                }
+            ],
+        )
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "source": "baseball_savant",
+                    "roster_filter": {"team": "NYM", "year": 2026},
+                    "seasons": {
+                        "current": {
+                            "year": 2026,
+                            "files": {
+                                "roster": "rehab_roster_2026.csv",
+                            },
+                        },
+                        "previous": {
+                            "year": 2025,
+                            "files": {
+                                "hitters": "rehab_hitters_2025.csv",
+                            },
+                        },
+                    },
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        players = ingest_from_manifest(load_manifest(manifest_path))
+        self.assertEqual(len(players), 1)
+        player = players[0]
+        self.assertTrue(player["active"])
+        self.assertTrue(player["metadata"]["on_il"])
+
+        normalized_path.write_text(json.dumps({"players": players}, indent=2), encoding="utf-8")
+        result = main(["rate", str(normalized_path), str(ratings_path), "--team", "NYM"])
+
+        self.assertEqual(result, 0)
+        ratings = json.loads(ratings_path.read_text(encoding="utf-8"))
+        self.assertEqual([item["name"] for item in ratings], ["Rehab Hitter"])
+
     def test_cli_rate_team_filter_excludes_other_teams(self) -> None:
         normalized_path = self.root / "filtered_players.json"
         ratings_path = self.root / "filtered_ratings.json"
@@ -1097,6 +1188,7 @@ class IngestFrameworkTests(unittest.TestCase):
         players = ingest_from_manifest(load_manifest(manifest_path))
 
         player = players[0]
+        self.assertTrue(player["active"])
         self.assertEqual(player["metadata"]["status"], "Injured 10-Day")
         self.assertEqual(player["metadata"]["status_code"], "D10")
         self.assertTrue(player["metadata"]["on_il"])
