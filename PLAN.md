@@ -74,6 +74,36 @@
 
 ---
 
+## Issue #75 – Improve Test Performance
+
+**Problem:** The test suite currently takes close to 10 minutes to run. The run time must be reduced, either by improving the tests themselves or by improving the performance of the underlying production code.
+
+### Steps
+
+1. **Profile the existing test suite:**
+   - Run `python -m pytest tests/ --durations=20` to identify the slowest tests and where the most time is being spent.
+   - Distinguish between tests that are slow due to heavy computation in `engine.py` and those that are slow due to poor test design (e.g. redundant fixtures, over-broad end-to-end tests).
+
+2. **Optimise the production code hot paths:**
+   - Identify any repeated lookups or re-parses of `smb4_player_reference.json` that could be cached at module load time.
+   - Look for O(n²) loops or other algorithmic inefficiencies in `engine.py` and `roster_selector.py` that are exercised repeatedly across many test cases.
+   - Cache expensive constant computations (normalisation bounds, trait criteria) so they are not rebuilt per player.
+
+3. **Refactor slow tests:**
+   - Replace full end-to-end test scenarios with focused unit tests where the full pipeline is not needed.
+   - Use smaller synthetic data payloads (fewer players, fewer seasons) in integration tests without sacrificing meaningful coverage.
+   - Share expensive fixture setup across tests using `pytest` fixtures with appropriate scoping (`session` or `module` scope).
+
+4. **Parallelise test execution if appropriate:**
+   - Evaluate `pytest-xdist` for parallel test execution if the test suite is CPU-bound and tests are independent.
+   - Only adopt additional dependencies with explicit user approval.
+
+5. **Verify correctness is preserved:**
+   - After any optimisation, confirm all previously passing tests still pass.
+   - Measure the new total run time and confirm it is meaningfully below the previous benchmark.
+
+---
+
 ## Issue #72 – Players on Rehab Stints in the Minors Aren't Included
 
 **Problem:** The roster filter currently uses the 26-man active roster as its base. Players on the 10-day or 60-day injured list who are on rehab assignments in the minors are excluded even though they remain on the 40-man roster and should be eligible for the SMB4 team.
