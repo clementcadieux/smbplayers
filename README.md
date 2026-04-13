@@ -32,6 +32,7 @@ Final trait assignment uses priority and conflict rules so the engine can keep a
 
 - [smb4_player_reference.json](smb4_player_reference.json): SMB4 reference schema and trait catalog
 - [smb4_mlb_ratings/engine.py](smb4_mlb_ratings/engine.py): rating engine and framework rules
+- [config.yaml](config.yaml): editable runtime tuning for season weighting, rating curve, trait limits, and role weights
 - [smb4_mlb_ratings/models.py](smb4_mlb_ratings/models.py): input and output models
 - [smb4_mlb_ratings/cli.py](smb4_mlb_ratings/cli.py): command-line entry point
 - [smb4_mlb_ratings/output.py](smb4_mlb_ratings/output.py): structured team-by-team ratings output
@@ -167,10 +168,12 @@ New subcommands are also available:
 
 ```powershell
 python -m smb4_mlb_ratings.cli rate players.json ratings_output.json
+python -m smb4_mlb_ratings.cli rate players.json ratings_output.json --config-path config.yaml
 python -m smb4_mlb_ratings.cli rate players.json ratings_output.json --team TOR
 python -m smb4_mlb_ratings.cli ingest savant_manifest.json normalized_players.json
 python -m smb4_mlb_ratings.cli rank ratings_output.json roster_output.json
 python -m smb4_mlb_ratings.cli ingest-rate savant_manifest.json ratings_output.json --normalized-output normalized_players.json
+python -m smb4_mlb_ratings.cli ingest-rate savant_manifest.json ratings_output.json --config-path config.yaml
 python -m smb4_mlb_ratings.cli ingest-rate savant_manifest.json --structured-output team_ratings
 python -m smb4_mlb_ratings.cli ingest-rate savant_manifest.json ratings_output.json --team TOR --structured-output team_ratings
 python -m smb4_mlb_ratings.cli refresh-bluejays-example

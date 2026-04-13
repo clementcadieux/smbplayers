@@ -9,12 +9,14 @@ from ..models import PersonalityRecommendation, PlayerInput, RatingOutput, Seaso
 from ..pitch_selector import select_pitch_mix
 from ..reference import (
     SEASON_KEYS,
+    load_processing_tuning_config,
     load_secondary_position_config,
     load_season_weighting_config,
     load_trait_catalog,
     load_trait_criteria_config,
     load_trait_limit_config,
     load_volume_projection_config,
+    set_runtime_config_path,
 )
 from .. import traits as trait_layer
 
@@ -33,75 +35,116 @@ POSITION_GROUPS = {
 }
 
 
-GRADE_BREAKPOINTS = [
-    (97, "S"),
-    (93, "A+"),
-    (89, "A"),
-    (85, "A-"),
-    (79, "B+"),
-    (73, "B"),
-    (67, "B-"),
-    (60, "C+"),
-    (53, "C"),
-    (46, "C-"),
-    (38, "D+"),
-    (30, "D"),
-    (0, "D-"),
-]
-
-
-PERCENTILE_TO_RATING = [
-    (0.0, 5),
-    (5.0, 20),
-    (15.0, 32),
-    (35.0, 47),
-    (55.0, 62),
-    (75.0, 75),
-    (88.0, 85),
-    (93.0, 90),
-    (96.0, 94),
-    (98.0, 96),
-    (99.5, 98),
-    (100.0, 99),
-]
-
-
-CONFIDENCE_WEIGHTS = {
-    "high": 1.0,
-    "medium": 0.7,
-    "low": 0.4,
-}
-
-
+GRADE_BREAKPOINTS: list[tuple[int, str]] = []
+PERCENTILE_TO_RATING: list[tuple[float, int]] = []
+CONFIDENCE_WEIGHTS: dict[str, float] = {}
 PERSONALITY_PERSONAL_WEIGHT = 0.70
 PERSONALITY_TEAM_WEIGHT = 0.30
 DEFAULT_FINAL_TRAIT_LIMIT = 2
 DEFAULT_MAX_ELITE_PITCH_TRAITS = 1
+TRAIT_CONFLICT_GROUPS: tuple[frozenset[str], ...] = ()
+ROLE_OVERALL_WEIGHTS: dict[str, dict[str, float]] = {}
 
 
-TRAIT_CONFLICT_GROUPS = (
-    frozenset({"First Pitch Slayer", "First Pitch Prayer"}),
-    frozenset({"CON vs LHP", "CON vs RHP"}),
-    frozenset({"POW vs LHP", "POW vs RHP"}),
-    frozenset({"RBI Hero", "RBI Zero"}),
-    frozenset({"Consistent", "Volatile"}),
-    frozenset({"Durable", "Injury Prone"}),
-    frozenset({"Clutch", "Choker"}),
-    frozenset({"Mind Gamer", "Easy Target"}),
-    frozenset({"Sprinter", "Slow Poke"}),
-    frozenset({"Base Rounder", "Base Jogger"}),
-    frozenset({"Cannon Arm", "Noodle Arm"}),
-    frozenset({"Magic Hands", "Butter Fingers"}),
-    frozenset({"K Collector", "K Neglecter"}),
-    frozenset({"Composed", "BB Prone"}),
-    frozenset({"Gets Ahead", "Falls Behind"}),
-    frozenset({"Rally Stopper", "Surrounded"}),
-    frozenset({"Pick Officer", "Easy Jumps"}),
-    frozenset({"Reverse Splits", "Specialist"}),
-    frozenset({"Big Hack", "Little Hack"}),
-    frozenset({"Tough Out", "Whiffer"}),
-    frozenset({"Two Way (C)", "Two Way (IF)", "Two Way (OF)"}),
-)
+def refresh_runtime_tuning() -> None:
+    global GRADE_BREAKPOINTS
+    global PERCENTILE_TO_RATING
+    global CONFIDENCE_WEIGHTS
+    global PERSONALITY_PERSONAL_WEIGHT
+    global PERSONALITY_TEAM_WEIGHT
+    global TRAIT_CONFLICT_GROUPS
+    global ROLE_OVERALL_WEIGHTS
+
+    tuning = load_processing_tuning_config()
+    rating_curve = tuning.get("rating_curve", {})
+
+    raw_percentile_to_rating = rating_curve.get("percentile_to_rating", []) if isinstance(rating_curve, Mapping) else []
+    parsed_percentile_to_rating: list[tuple[float, int]] = []
+    if isinstance(raw_percentile_to_rating, list):
+        for row in raw_percentile_to_rating:
+            if not isinstance(row, list) or len(row) != 2:
+                continue
+            try:
+                parsed_percentile_to_rating.append((float(row[0]), int(row[1])))
+            except (TypeError, ValueError):
+                continue
+    if not parsed_percentile_to_rating:
+        parsed_percentile_to_rating = [(0.0, 5), (100.0, 99)]
+    PERCENTILE_TO_RATING = sorted(parsed_percentile_to_rating, key=lambda entry: entry[0])
+
+    raw_grade_breakpoints = rating_curve.get("grade_breakpoints", []) if isinstance(rating_curve, Mapping) else []
+    parsed_grade_breakpoints: list[tuple[int, str]] = []
+    if isinstance(raw_grade_breakpoints, list):
+        for row in raw_grade_breakpoints:
+            if not isinstance(row, list) or len(row) != 2:
+                continue
+            try:
+                parsed_grade_breakpoints.append((int(row[0]), str(row[1])))
+            except (TypeError, ValueError):
+                continue
+    if not parsed_grade_breakpoints:
+        parsed_grade_breakpoints = [(97, "S"), (0, "D-")]
+    GRADE_BREAKPOINTS = sorted(parsed_grade_breakpoints, key=lambda entry: entry[0], reverse=True)
+
+    raw_confidence_weights = tuning.get("confidence_weights", {})
+    parsed_confidence_weights: dict[str, float] = {"high": 1.0, "medium": 0.7, "low": 0.4}
+    if isinstance(raw_confidence_weights, Mapping):
+        for key in ("high", "medium", "low"):
+            try:
+                parsed_confidence_weights[key] = float(raw_confidence_weights.get(key, parsed_confidence_weights[key]))
+            except (TypeError, ValueError):
+                continue
+    CONFIDENCE_WEIGHTS = parsed_confidence_weights
+
+    raw_personality_weights = tuning.get("personality_weights", {})
+    if isinstance(raw_personality_weights, Mapping):
+        try:
+            PERSONALITY_PERSONAL_WEIGHT = float(raw_personality_weights.get("personal", 0.70))
+        except (TypeError, ValueError):
+            PERSONALITY_PERSONAL_WEIGHT = 0.70
+        try:
+            PERSONALITY_TEAM_WEIGHT = float(raw_personality_weights.get("team", 0.30))
+        except (TypeError, ValueError):
+            PERSONALITY_TEAM_WEIGHT = 0.30
+    else:
+        PERSONALITY_PERSONAL_WEIGHT = 0.70
+        PERSONALITY_TEAM_WEIGHT = 0.30
+
+    raw_trait_conflicts = tuning.get("trait_conflict_groups", [])
+    parsed_trait_conflicts: list[frozenset[str]] = []
+    if isinstance(raw_trait_conflicts, list):
+        for raw_group in raw_trait_conflicts:
+            if not isinstance(raw_group, list):
+                continue
+            group_values = {
+                str(item)
+                for item in raw_group
+                if isinstance(item, str) and str(item).strip()
+            }
+            if group_values:
+                parsed_trait_conflicts.append(frozenset(group_values))
+    TRAIT_CONFLICT_GROUPS = tuple(parsed_trait_conflicts)
+
+    raw_role_weights = tuning.get("role_overall_weights", {})
+    parsed_role_weights: dict[str, dict[str, float]] = {}
+    if isinstance(raw_role_weights, Mapping):
+        for role_name, raw_weights in raw_role_weights.items():
+            if not isinstance(role_name, str) or not isinstance(raw_weights, Mapping):
+                continue
+            parsed: dict[str, float] = {}
+            for rating_name, raw_value in raw_weights.items():
+                if not isinstance(rating_name, str):
+                    continue
+                try:
+                    parsed[rating_name] = float(raw_value)
+                except (TypeError, ValueError):
+                    continue
+            if parsed:
+                parsed_role_weights[role_name] = parsed
+    ROLE_OVERALL_WEIGHTS = parsed_role_weights
+
+
+refresh_runtime_tuning()
 
 
 CHEMISTRY_TYPES, TRAIT_CATALOG = load_trait_catalog()
@@ -684,32 +727,6 @@ def overall_grade(value: int | None) -> str | None:
         if value >= minimum:
             return grade
     return None
-
-
-ROLE_OVERALL_WEIGHTS: dict[str, dict[str, float]] = {
-    "hitter": {
-        "power": 0.30,
-        "contact": 0.30,
-        "speed": 0.20,
-        "fielding": 0.12,
-        "arm": 0.08,
-    },
-    "pitcher": {
-        "velocity": 0.38,
-        "junk": 0.37,
-        "accuracy": 0.25,
-    },
-    "two_way": {
-        "power": 0.14,
-        "contact": 0.14,
-        "speed": 0.10,
-        "fielding": 0.07,
-        "arm": 0.05,
-        "velocity": 0.18,
-        "junk": 0.18,
-        "accuracy": 0.14,
-    },
-}
 
 
 def role_weighted_overall_numeric(role: str, ratings: Mapping[str, int]) -> int | None:
@@ -1748,7 +1765,14 @@ def apply_review_flags(state: PlayerState, spec: RatingSpec, available_weight: f
         state.review_flags.append(f"{spec.name}: low component coverage ({available_weight:.2f})")
 
 
-def _rate_players_core(players: list[PlayerInput | dict], trim_final_traits: bool = True) -> list[RatingOutput]:
+def _rate_players_core(
+    players: list[PlayerInput | dict],
+    trim_final_traits: bool = True,
+    config_path: str | None = None,
+) -> list[RatingOutput]:
+    set_runtime_config_path(config_path)
+    refresh_runtime_tuning()
+    trait_layer.refresh_runtime_tuning()
     player_objects = [player if isinstance(player, PlayerInput) else PlayerInput.from_dict(player) for player in players]
     player_objects = [player for player in player_objects if player.active]
     players_by_identity = {_player_identity_key(player): player for player in player_objects}
@@ -1922,6 +1946,10 @@ def _rate_players_core(players: list[PlayerInput | dict], trim_final_traits: boo
     return outputs
 
 
-def rate_players(players: list[PlayerInput | dict], trim_final_traits: bool = True) -> list[RatingOutput]:
+def rate_players(
+    players: list[PlayerInput | dict],
+    trim_final_traits: bool = True,
+    config_path: str | None = None,
+) -> list[RatingOutput]:
     # Compatibility wrapper: the processing layer is the preferred public entrypoint.
-    return _rate_players_core(players, trim_final_traits=trim_final_traits)
+    return _rate_players_core(players, trim_final_traits=trim_final_traits, config_path=config_path)
