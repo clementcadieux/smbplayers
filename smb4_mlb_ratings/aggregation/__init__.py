@@ -3,9 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ..ingest.baseball_reference import ingest_from_manifest as aggregate_from_baseball_reference_manifest
-from ..ingest.fangraphs import ingest_from_manifest as aggregate_from_fangraphs_manifest
-from ..ingest.savant import IngestManifest, ingest_from_manifest as aggregate_from_savant_manifest, load_manifest
+from .baseball_reference import ingest_from_manifest as aggregate_from_baseball_reference_manifest
+from .fangraphs import ingest_from_manifest as aggregate_from_fangraphs_manifest
+from .savant import IngestManifest, ingest_from_manifest as aggregate_from_savant_manifest, load_manifest
 
 
 SAVANT_TOOL_METRICS = frozenset(

@@ -7,6 +7,7 @@ from dataclasses import fields
 from pathlib import Path
 
 from smb4_mlb_ratings import engine as engine_module
+from smb4_mlb_ratings.processing import core as processing_core_module
 from smb4_mlb_ratings.engine import (
     blend_component_percentiles,
     interpolate_rating,
@@ -1186,7 +1187,8 @@ class SurfaceBlendTests(unittest.TestCase):
         }
 
         engine_source = Path(engine_module.__file__).read_text(encoding="utf-8")
-        heuristic_traits = set(re.findall(r'name="([^"]+)"', engine_source))
+        processing_source = Path(processing_core_module.__file__).read_text(encoding="utf-8")
+        heuristic_traits = set(re.findall(r'name="([^"]+)"', engine_source + "\n" + processing_source))
 
         # Two-way assignment happens in a loop and does not appear as name="..." literals.
         heuristic_traits.update({"Two Way (C)", "Two Way (IF)", "Two Way (OF)"})

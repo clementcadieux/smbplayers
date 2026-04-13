@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ..engine import _rate_players_core
+from .core import _rate_players_core
 from ..models import PlayerInput, RatingOutput
 
 
