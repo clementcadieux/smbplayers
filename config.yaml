@@ -23,6 +23,16 @@
       [99.5, 98],
       [100.0, 99]
     ],
+    "surface_weight_caps": {
+      "power": 0.58,
+      "contact": 0.72,
+      "speed": 0.50,
+      "fielding": 0.50,
+      "arm": 0.50,
+      "velocity": 0.50,
+      "junk": 0.50,
+      "accuracy": 0.50
+    ],
     "grade_breakpoints": [
       [97, "S"],
       [93, "A+"],
