@@ -1,5 +1,27 @@
 #!/usr/bin/env python3
-"""Regenerate TOR/DET combined report with updated roster."""
+"""Regenerate TOR/DET combined report with updated roster.
+
+Phases
+------
+1. ingest     – Fetch live roster/stats from Baseball Savant and Baseball Reference and
+                write raw CSV exports to examples/exports/.
+2. aggregate  – Read the CSVs via the manifest, merge all sources, and write a
+                normalized player JSON for each team.
+3. process    – Rate each team's normalized JSON and write a rated player JSON.
+4. generate   – Merge both rated JSONs into a single combined report.
+
+Usage
+-----
+Run all phases (default):
+    python regenerate_tor_det_report.py
+
+Skip ingestion (reuse existing CSVs):
+    python regenerate_tor_det_report.py --skip-ingest
+
+Skip ingestion and aggregation (reuse existing normalized JSON):
+    python regenerate_tor_det_report.py --skip-aggregate
+"""
+import argparse
 import json
 import subprocess
 import sys
@@ -72,60 +94,92 @@ def refresh_team_live_exports(*, team_id: int, team_abbreviation: str, file_pref
     write_csv(EXPORT_ROOT / f"{file_prefix}_live_bref_hitters_2025.csv", build_baseball_reference_hitter_rows(previous_players, team_abbreviation=team_abbreviation))
     write_csv(EXPORT_ROOT / f"{file_prefix}_live_bref_pitchers_2025.csv", build_baseball_reference_pitcher_rows(previous_players, team_abbreviation=team_abbreviation))
 
-# Refresh live export inputs first so current reports reflect the latest roster and fallback logic.
-print("Refreshing Blue Jays live exports...")
-refresh_team_live_exports(team_id=141, team_abbreviation="TOR", file_prefix="bluejays")
-print("✓ Blue Jays live exports refreshed")
+def _cli(*args: str) -> None:
+    """Run a smb4_mlb_ratings CLI command and exit on failure."""
+    cmd = [sys.executable, "-m", "smb4_mlb_ratings.cli", *args]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"Command failed: {' '.join(args)}\n{result.stderr}", file=sys.stderr)
+        sys.exit(1)
 
-print("Refreshing Tigers live exports...")
-refresh_team_live_exports(team_id=116, team_abbreviation="DET", file_prefix="tigers")
-print("✓ Tigers live exports refreshed")
 
-# Run ingest-rate for Blue Jays
-print("Ingesting Blue Jays data...")
-result = subprocess.run([
-    sys.executable, "-m", "smb4_mlb_ratings.cli",
-    "ingest-rate",
-    "examples/exports/bluejays_live_manifest.json",
-    "examples/exports/bluejays_live_ratings_new.json"
-], capture_output=True, text=True)
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    skip_group = parser.add_mutually_exclusive_group()
+    skip_group.add_argument(
+        "--skip-ingest",
+        action="store_true",
+        help="Skip Phase 1: reuse the existing CSV exports and start from aggregation.",
+    )
+    skip_group.add_argument(
+        "--skip-aggregate",
+        action="store_true",
+        help="Skip Phases 1–2: reuse existing normalized JSON and start from processing.",
+    )
+    args = parser.parse_args()
 
-if result.returncode != 0:
-    print(f"Blue Jays ingest failed: {result.stderr}")
-    sys.exit(1)
-print("✓ Blue Jays ingest complete")
+    # ── Phase 1: Ingest ──────────────────────────────────────────────────────
+    if not args.skip_ingest and not args.skip_aggregate:
+        print("Phase 1 – Ingest: refreshing live CSV exports...")
+        refresh_team_live_exports(team_id=141, team_abbreviation="TOR", file_prefix="bluejays")
+        print("  ✓ Blue Jays CSV exports written")
+        refresh_team_live_exports(team_id=116, team_abbreviation="DET", file_prefix="tigers")
+        print("  ✓ Tigers CSV exports written")
+    else:
+        print("Phase 1 – Ingest: skipped (reusing existing CSV exports)")
 
-# Run ingest-rate for Tigers
-print("Ingesting Tigers data...")
-result = subprocess.run([
-    sys.executable, "-m", "smb4_mlb_ratings.cli",
-    "ingest-rate",
-    "examples/exports/tigers_live_manifest.json",
-    "examples/exports/tigers_live_ratings_new.json"
-], capture_output=True, text=True)
+    # ── Phase 2: Aggregate ───────────────────────────────────────────────────
+    if not args.skip_aggregate:
+        print("Phase 2 – Aggregate: normalizing source CSVs into player JSON...")
+        _cli(
+            "aggregate",
+            "examples/exports/bluejays_live_manifest.json",
+            "examples/exports/bluejays_live_normalized.json",
+        )
+        print("  ✓ bluejays_live_normalized.json written")
+        _cli(
+            "aggregate",
+            "examples/exports/tigers_live_manifest.json",
+            "examples/exports/tigers_live_normalized.json",
+        )
+        print("  ✓ tigers_live_normalized.json written")
+    else:
+        print("Phase 2 – Aggregate: skipped (reusing existing normalized JSON)")
 
-if result.returncode != 0:
-    print(f"Tigers ingest failed: {result.stderr}")
-    sys.exit(1)
-print("✓ Tigers ingest complete")
+    # ── Phase 3: Process ─────────────────────────────────────────────────────
+    print("Phase 3 – Process: rating normalized players...")
+    _cli(
+        "process",
+        "examples/exports/bluejays_live_normalized.json",
+        "examples/exports/bluejays_live_ratings_new.json",
+        "--team", "TOR",
+    )
+    print("  ✓ bluejays_live_ratings_new.json written")
+    _cli(
+        "process",
+        "examples/exports/tigers_live_normalized.json",
+        "examples/exports/tigers_live_ratings_new.json",
+        "--team", "DET",
+    )
+    print("  ✓ tigers_live_ratings_new.json written")
 
-# Load both rating files and combine
-with open("examples/exports/bluejays_live_ratings_new.json") as f:
-    tor_data = json.load(f)
+    # ── Phase 4: Generate ────────────────────────────────────────────────────
+    print("Phase 4 – Generate: merging into combined report...")
+    with open("examples/exports/bluejays_live_ratings_new.json") as f:
+        tor_data = json.load(f)
+    with open("examples/exports/tigers_live_ratings_new.json") as f:
+        det_data = json.load(f)
 
-with open("examples/exports/tigers_live_ratings_new.json") as f:
-    det_data = json.load(f)
+    tor_players = tor_data if isinstance(tor_data, list) else tor_data.get("players", [])
+    det_players = det_data if isinstance(det_data, list) else det_data.get("players", [])
+    combined = tor_players + det_players
 
-# Merge players - data is a list directly
-tor_players = tor_data if isinstance(tor_data, list) else tor_data.get("players", [])
-det_players = det_data if isinstance(det_data, list) else det_data.get("players", [])
+    with open("examples/exports/tor_det_combined_report.json", "w") as f:
+        json.dump(combined, f, indent=2)
 
-combined = tor_players + det_players
+    print(f"  ✓ tor_det_combined_report.json written")
+    print(f"\nDone. {len(combined)} total players (Blue Jays: {len(tor_players)}, Tigers: {len(det_players)})")
 
-# Write combined report
-with open("examples/exports/tor_det_combined_report.json", "w") as f:
-    json.dump(combined, f, indent=2)
 
-print(f"✓ Combined report written: {len(combined)} total players")
-print(f"  - Blue Jays: {len(tor_players)}")
-print(f"  - Tigers: {len(det_players)}")
+if __name__ == "__main__":
+    main()
