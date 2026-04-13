@@ -75,6 +75,10 @@ HITTER_PLATOON_SPEC_TO_TRAITS = {
     "contact": frozenset({"CON vs LHP", "CON vs RHP"}),
     "power": frozenset({"POW vs LHP", "POW vs RHP"}),
 }
+HITTER_PLATOON_SPEC_SIDE_TO_TRAIT = {
+    "contact": {"lhp": "CON vs LHP", "rhp": "CON vs RHP"},
+    "power": {"lhp": "POW vs LHP", "rhp": "POW vs RHP"},
+}
 HITTER_PLATOON_SIDE_METRICS = {
     "contact": {"lhp": "contact_vs_lhp", "rhp": "contact_vs_rhp"},
     "power": {"lhp": "power_vs_lhp", "rhp": "power_vs_rhp"},
@@ -204,6 +208,10 @@ def refresh_runtime_tuning() -> None:
     raw_platoon_adjustment = tuning.get("platoon_adjustment", {})
     parsed_platoon_adjustment: dict[str, object] = {
         "minimum_weighted_pa": 225.0,
+        "extreme_usage_threshold": 0.85,
+        "extreme_usage_min_weighted_pa": 225.0,
+        "extreme_usage_min_split_pa": 40.0,
+        "extreme_usage_force_traits": True,
         "contact": {
             "eligibility_gap": 20.0,
             "weak_side_percentile": 40.0,
@@ -216,6 +224,7 @@ def refresh_runtime_tuning() -> None:
             "moderate_penalty_percentile": 7.0,
             "heavy_penalty_percentile": 12.0,
             "max_penalty_percentile": 16.0,
+            "extreme_usage_penalty_percentile": 10.0,
         },
         "power": {
             "eligibility_gap": 20.0,
@@ -229,15 +238,25 @@ def refresh_runtime_tuning() -> None:
             "moderate_penalty_percentile": 7.0,
             "heavy_penalty_percentile": 12.0,
             "max_penalty_percentile": 16.0,
+            "extreme_usage_penalty_percentile": 10.0,
         },
     }
     if isinstance(raw_platoon_adjustment, Mapping):
-        minimum_weighted_pa = raw_platoon_adjustment.get("minimum_weighted_pa")
-        try:
-            if minimum_weighted_pa is not None:
-                parsed_platoon_adjustment["minimum_weighted_pa"] = float(minimum_weighted_pa)
-        except (TypeError, ValueError):
-            pass
+        for top_level_key in (
+            "minimum_weighted_pa",
+            "extreme_usage_threshold",
+            "extreme_usage_min_weighted_pa",
+            "extreme_usage_min_split_pa",
+        ):
+            raw_value = raw_platoon_adjustment.get(top_level_key)
+            try:
+                if raw_value is not None:
+                    parsed_platoon_adjustment[top_level_key] = float(raw_value)
+            except (TypeError, ValueError):
+                continue
+        raw_force_traits = raw_platoon_adjustment.get("extreme_usage_force_traits")
+        if isinstance(raw_force_traits, bool):
+            parsed_platoon_adjustment["extreme_usage_force_traits"] = raw_force_traits
         for rating_name in ("contact", "power"):
             raw_rating_config = raw_platoon_adjustment.get(rating_name)
             default_rating_config = parsed_platoon_adjustment[rating_name]
@@ -503,6 +522,13 @@ def season_dict(value: SeasonValue) -> dict[str, float] | None:
 
 def season_recency_weights() -> dict[str, float]:
     return dict(SEASON_WEIGHTING_CONFIG["season_recency_weights"])
+
+
+def effective_sample_volume(sample_value: SeasonValue) -> float:
+    season_values = season_dict(sample_value)
+    if season_values is None:
+        return 0.0
+    return sum(volume for volume in season_values.values() if volume > 0)
 
 
 def _player_metadata(player: PlayerInput | None) -> Mapping[str, object]:
@@ -841,6 +867,23 @@ def platoon_eligibility_gap(spec_name: str) -> float:
         return 0.0
 
 
+def platoon_adjustment_value(key: str, default: float) -> float:
+    raw_value = PLATOON_ADJUSTMENT_CONFIG.get(key)
+    try:
+        if raw_value is not None:
+            return float(raw_value)
+    except (TypeError, ValueError):
+        pass
+    return default
+
+
+def platoon_adjustment_flag(key: str, default: bool) -> bool:
+    raw_value = PLATOON_ADJUSTMENT_CONFIG.get(key)
+    if isinstance(raw_value, bool):
+        return raw_value
+    return default
+
+
 def platoon_percentile_threshold(spec_name: str, key: str, default: float) -> float:
     raw_rating_config = PLATOON_ADJUSTMENT_CONFIG.get(spec_name, {})
     if not isinstance(raw_rating_config, Mapping):
@@ -861,6 +904,63 @@ def platoon_side_metric_name(spec_name: str, side: str) -> str | None:
 
 def opposite_platoon_side(side: str) -> str:
     return "rhp" if side == "lhp" else "lhp"
+
+
+def platoon_trait_name(spec_name: str, side: str) -> str | None:
+    trait_names = HITTER_PLATOON_SPEC_SIDE_TO_TRAIT.get(spec_name)
+    if not isinstance(trait_names, Mapping):
+        return None
+    trait_name = trait_names.get(side)
+    return trait_name if isinstance(trait_name, str) else None
+
+
+def hitter_extreme_usage_side(player: PlayerInput, sample: float | None = None) -> str | None:
+    effective_sample = float(sample) if sample is not None else effective_sample_volume(player.samples.get("weighted_pa"))
+    minimum_sample = platoon_adjustment_value(
+        "extreme_usage_min_weighted_pa",
+        platoon_adjustment_value("minimum_weighted_pa", 0.0),
+    )
+    if effective_sample < minimum_sample:
+        return None
+
+    pa_vs_lhp = player_trait_metric(player, "pa_vs_lhp")
+    pa_vs_rhp = player_trait_metric(player, "pa_vs_rhp")
+    if not isinstance(pa_vs_lhp, (int, float)) or not isinstance(pa_vs_rhp, (int, float)):
+        return None
+
+    split_pa_total = float(pa_vs_lhp) + float(pa_vs_rhp)
+    if split_pa_total <= 0:
+        return None
+    if split_pa_total < platoon_adjustment_value("extreme_usage_min_split_pa", 0.0):
+        return None
+
+    dominant_share = max(float(pa_vs_lhp), float(pa_vs_rhp)) / split_pa_total
+    if dominant_share < platoon_adjustment_value("extreme_usage_threshold", 1.0):
+        return None
+    if float(pa_vs_lhp) == float(pa_vs_rhp):
+        return None
+    return "lhp" if float(pa_vs_lhp) > float(pa_vs_rhp) else "rhp"
+
+
+def apply_extreme_usage_platoon_traits(state: PlayerState, suggestions: dict[str, TraitSuggestion]) -> None:
+    if not platoon_adjustment_flag("extreme_usage_force_traits", True):
+        return
+    dominant_side = hitter_extreme_usage_side(state.player)
+    if dominant_side is None:
+        return
+
+    side_label = dominant_side.upper()
+    for spec_name in ("contact", "power"):
+        trait_name = platoon_trait_name(spec_name, dominant_side)
+        if trait_name is None:
+            continue
+        suggestions[trait_name] = TraitSuggestion(
+            name=trait_name,
+            chemistry_type=trait_chemistry_type(trait_name),
+            polarity=catalog_trait_polarity(trait_name),
+            confidence="high",
+            reason=f"Extreme usage override: hitter overwhelmingly faces {side_label} pitching, so {trait_name} is forced by deployment pattern.",
+        )
 
 
 def hitter_platoon_trait_profile_matches(
@@ -891,6 +991,9 @@ def hitter_platoon_trait_eligible(state: PlayerState, trait_name: str) -> bool:
     spec_name = HITTER_PLATOON_TRAIT_TO_SPEC.get(trait_name)
     if spec_name is None:
         return True
+    override_side = hitter_extreme_usage_side(state.player)
+    if override_side is not None and platoon_adjustment_flag("extreme_usage_force_traits", True):
+        return HITTER_PLATOON_TRAIT_TO_SIDE.get(trait_name) == override_side
     metric_name = "contact_vs_lhp_minus_rhp" if spec_name == "contact" else "power_vs_lhp_minus_rhp"
     gap_value = player_trait_metric(state.player, metric_name)
     if not isinstance(gap_value, (int, float)):
@@ -913,65 +1016,79 @@ def platoon_penalty_percentile(
     candidate_traits = trait_names if trait_names is not None else HITTER_PLATOON_SPEC_TO_TRAITS.get(spec_name, set())
     if not candidate_traits:
         return 0.0
-    if not any(
-        hitter_platoon_trait_profile_matches(spec_name, trait_name, split_percentiles)
-        for trait_name in candidate_traits
-    ):
-        return 0.0
     raw_minimum_sample = PLATOON_ADJUSTMENT_CONFIG.get("minimum_weighted_pa", 0.0)
     try:
         minimum_sample = float(raw_minimum_sample)
     except (TypeError, ValueError):
         minimum_sample = 0.0
-    effective_sample = float(sample) if sample is not None else float(weighted_value(player.samples.get("weighted_pa")) or 0.0)
+    effective_sample = float(sample) if sample is not None else effective_sample_volume(player.samples.get("weighted_pa"))
     if effective_sample < minimum_sample:
         return 0.0
 
-    metric_name = "contact_vs_lhp_minus_rhp" if spec_name == "contact" else "power_vs_lhp_minus_rhp"
-    gap_value = player_trait_metric(player, metric_name)
-    if gap_value is None:
-        return 0.0
-    severity = abs(float(gap_value))
+    standard_penalty = 0.0
+    if any(
+        hitter_platoon_trait_profile_matches(spec_name, trait_name, split_percentiles)
+        for trait_name in candidate_traits
+    ):
+        metric_name = "contact_vs_lhp_minus_rhp" if spec_name == "contact" else "power_vs_lhp_minus_rhp"
+        gap_value = player_trait_metric(player, metric_name)
+        if gap_value is not None:
+            severity = abs(float(gap_value))
 
-    pa_vs_lhp = player_trait_metric(player, "pa_vs_lhp")
-    pa_vs_rhp = player_trait_metric(player, "pa_vs_rhp")
-    if isinstance(pa_vs_lhp, (int, float)) and isinstance(pa_vs_rhp, (int, float)):
-        total_split_pa = float(pa_vs_lhp) + float(pa_vs_rhp)
-        if total_split_pa > 0:
-            split_imbalance = abs(float(pa_vs_lhp) - float(pa_vs_rhp)) / total_split_pa
+            pa_vs_lhp = player_trait_metric(player, "pa_vs_lhp")
+            pa_vs_rhp = player_trait_metric(player, "pa_vs_rhp")
+            if isinstance(pa_vs_lhp, (int, float)) and isinstance(pa_vs_rhp, (int, float)):
+                total_split_pa = float(pa_vs_lhp) + float(pa_vs_rhp)
+                if total_split_pa > 0:
+                    split_imbalance = abs(float(pa_vs_lhp) - float(pa_vs_rhp)) / total_split_pa
+                    raw_rating_config = PLATOON_ADJUSTMENT_CONFIG.get(spec_name, {})
+                    if isinstance(raw_rating_config, Mapping):
+                        try:
+                            imbalance_weight = max(0.0, float(raw_rating_config.get("split_imbalance_weight", 0.0)))
+                        except (TypeError, ValueError):
+                            imbalance_weight = 0.0
+                        severity *= 1.0 + (clamp(split_imbalance, 0.0, 1.0) * imbalance_weight)
+
+            if severity >= platoon_eligibility_gap(spec_name):
+                raw_rating_config = PLATOON_ADJUSTMENT_CONFIG.get(spec_name, {})
+                if isinstance(raw_rating_config, Mapping):
+                    try:
+                        light_gap = float(raw_rating_config.get("light_gap", 0.0))
+                        moderate_gap = float(raw_rating_config.get("moderate_gap", light_gap))
+                        heavy_gap = float(raw_rating_config.get("heavy_gap", moderate_gap))
+                        light_penalty = float(raw_rating_config.get("light_penalty_percentile", 0.0))
+                        moderate_penalty = float(raw_rating_config.get("moderate_penalty_percentile", light_penalty))
+                        heavy_penalty = float(raw_rating_config.get("heavy_penalty_percentile", moderate_penalty))
+                        max_penalty = float(raw_rating_config.get("max_penalty_percentile", heavy_penalty))
+                    except (TypeError, ValueError):
+                        light_gap = moderate_gap = heavy_gap = light_penalty = moderate_penalty = heavy_penalty = max_penalty = 0.0
+
+                    if severity >= light_gap:
+                        if severity < moderate_gap:
+                            standard_penalty = linear_scale(severity, light_gap, moderate_gap, light_penalty, moderate_penalty)
+                        elif severity < heavy_gap:
+                            standard_penalty = linear_scale(severity, moderate_gap, heavy_gap, moderate_penalty, heavy_penalty)
+                        else:
+                            overflow_gap = max(heavy_gap * 1.5, heavy_gap + 1.0)
+                            standard_penalty = linear_scale(severity, heavy_gap, overflow_gap, heavy_penalty, max_penalty)
+
+    override_penalty = 0.0
+    override_side = hitter_extreme_usage_side(player, effective_sample)
+    if override_side is not None:
+        assigned_sides = {
+            HITTER_PLATOON_TRAIT_TO_SIDE.get(trait_name)
+            for trait_name in candidate_traits
+            if isinstance(trait_name, str)
+        }
+        if override_side in assigned_sides:
             raw_rating_config = PLATOON_ADJUSTMENT_CONFIG.get(spec_name, {})
             if isinstance(raw_rating_config, Mapping):
                 try:
-                    imbalance_weight = max(0.0, float(raw_rating_config.get("split_imbalance_weight", 0.0)))
+                    override_penalty = max(0.0, float(raw_rating_config.get("extreme_usage_penalty_percentile", 0.0)))
                 except (TypeError, ValueError):
-                    imbalance_weight = 0.0
-                severity *= 1.0 + (clamp(split_imbalance, 0.0, 1.0) * imbalance_weight)
+                    override_penalty = 0.0
 
-    if severity < platoon_eligibility_gap(spec_name):
-        return 0.0
-
-    raw_rating_config = PLATOON_ADJUSTMENT_CONFIG.get(spec_name, {})
-    if not isinstance(raw_rating_config, Mapping):
-        return 0.0
-    try:
-        light_gap = float(raw_rating_config.get("light_gap", 0.0))
-        moderate_gap = float(raw_rating_config.get("moderate_gap", light_gap))
-        heavy_gap = float(raw_rating_config.get("heavy_gap", moderate_gap))
-        light_penalty = float(raw_rating_config.get("light_penalty_percentile", 0.0))
-        moderate_penalty = float(raw_rating_config.get("moderate_penalty_percentile", light_penalty))
-        heavy_penalty = float(raw_rating_config.get("heavy_penalty_percentile", moderate_penalty))
-        max_penalty = float(raw_rating_config.get("max_penalty_percentile", heavy_penalty))
-    except (TypeError, ValueError):
-        return 0.0
-
-    if severity < light_gap:
-        return 0.0
-    if severity < moderate_gap:
-        return linear_scale(severity, light_gap, moderate_gap, light_penalty, moderate_penalty)
-    if severity < heavy_gap:
-        return linear_scale(severity, moderate_gap, heavy_gap, moderate_penalty, heavy_penalty)
-    overflow_gap = max(heavy_gap * 1.5, heavy_gap + 1.0)
-    return linear_scale(severity, heavy_gap, overflow_gap, heavy_penalty, max_penalty)
+    return max(standard_penalty, override_penalty)
 
 
 def assigned_platoon_trait_names(output: RatingOutput, spec_name: str) -> set[str]:
@@ -2008,6 +2125,7 @@ def suggest_traits(state: PlayerState) -> list[TraitSuggestion]:
 
     if state.player.role in {"hitter", "two_way"}:
         apply_hitter_metadata_traits(state, suggestions)
+        apply_extreme_usage_platoon_traits(state, suggestions)
     if state.player.role in {"pitcher", "two_way"}:
         apply_pitcher_metadata_traits(state, suggestions)
     for trait in hinted_catalog_traits(state.player):
@@ -2294,7 +2412,7 @@ def _rate_players_core(
         else:
             output.assigned_traits = all_player_traits(output, player)
 
-        weighted_pa_sample = weighted_value(player.samples.get("weighted_pa")) or 0.0
+        weighted_pa_sample = effective_sample_volume(player.samples.get("weighted_pa"))
         state = states_by_identity.get(_output_identity_key(output))
         for spec_name in ("contact", "power"):
             if spec_name not in output.percentiles:

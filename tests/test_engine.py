@@ -2176,6 +2176,286 @@ class SurfaceBlendTests(unittest.TestCase):
         self.assertEqual(effective_contact_penalty, 0.0)
         self.assertEqual(effective_power_penalty, 0.0)
 
+    def test_extreme_rhp_usage_forces_rhp_platoon_traits_and_penalty(self) -> None:
+        outputs = rate_players(
+            [
+                self._platoon_hitter(
+                    "Sheltered RHP",
+                    weighted_pa=540,
+                    contact_gap=4.0,
+                    power_gap=5.0,
+                    contact_vs_lhp=18.0,
+                    contact_vs_rhp=62.0,
+                    power_vs_lhp=22.0,
+                    power_vs_rhp=70.0,
+                    pa_vs_lhp=24.0,
+                    pa_vs_rhp=516.0,
+                    batting_average=0.286,
+                    adjusted_obp=0.353,
+                    slugging=0.474,
+                    iso=0.188,
+                    hr_per_pa=0.032,
+                    barrel_rate=0.086,
+                    avg_exit_velocity=89.8,
+                ),
+                self._platoon_hitter(
+                    "Balanced Baseline",
+                    weighted_pa=540,
+                    contact_gap=0.0,
+                    power_gap=0.0,
+                    contact_vs_lhp=50.0,
+                    contact_vs_rhp=50.0,
+                    power_vs_lhp=50.0,
+                    power_vs_rhp=50.0,
+                    pa_vs_lhp=270.0,
+                    pa_vs_rhp=270.0,
+                    batting_average=0.286,
+                    adjusted_obp=0.353,
+                    slugging=0.474,
+                    iso=0.188,
+                    hr_per_pa=0.032,
+                    barrel_rate=0.086,
+                    avg_exit_velocity=89.8,
+                ),
+                self._platoon_hitter(
+                    "Peer A",
+                    weighted_pa=520,
+                    contact_gap=0.0,
+                    power_gap=0.0,
+                    contact_vs_lhp=50.0,
+                    contact_vs_rhp=50.0,
+                    power_vs_lhp=50.0,
+                    power_vs_rhp=50.0,
+                ),
+                self._platoon_hitter(
+                    "Peer B",
+                    weighted_pa=515,
+                    contact_gap=0.0,
+                    power_gap=0.0,
+                    contact_vs_lhp=34.0,
+                    contact_vs_rhp=35.0,
+                    power_vs_lhp=36.0,
+                    power_vs_rhp=37.0,
+                ),
+            ]
+        )
+
+        sheltered = next(output for output in outputs if output.name == "Sheltered RHP")
+        baseline = next(output for output in outputs if output.name == "Balanced Baseline")
+        assigned_traits = {trait.name for trait in sheltered.assigned_traits}
+
+        self.assertIn("CON vs RHP", assigned_traits)
+        self.assertIn("POW vs RHP", assigned_traits)
+        self.assertNotIn("CON vs LHP", assigned_traits)
+        self.assertNotIn("POW vs LHP", assigned_traits)
+        self.assertLess(sheltered.percentiles["contact"], baseline.percentiles["contact"])
+        self.assertLess(sheltered.percentiles["power"], baseline.percentiles["power"])
+
+    def test_extreme_lhp_usage_forces_usage_side_even_when_gap_points_other_way(self) -> None:
+        outputs = rate_players(
+            [
+                self._platoon_hitter(
+                    "Sheltered LHP",
+                    weighted_pa=530,
+                    contact_gap=-8.0,
+                    power_gap=-10.0,
+                    contact_vs_lhp=42.0,
+                    contact_vs_rhp=68.0,
+                    power_vs_lhp=40.0,
+                    power_vs_rhp=72.0,
+                    pa_vs_lhp=500.0,
+                    pa_vs_rhp=30.0,
+                ),
+                self._platoon_hitter(
+                    "Peer A",
+                    weighted_pa=520,
+                    contact_gap=0.0,
+                    power_gap=0.0,
+                    contact_vs_lhp=50.0,
+                    contact_vs_rhp=50.0,
+                    power_vs_lhp=50.0,
+                    power_vs_rhp=50.0,
+                ),
+                self._platoon_hitter(
+                    "Peer B",
+                    weighted_pa=515,
+                    contact_gap=0.0,
+                    power_gap=0.0,
+                    contact_vs_lhp=34.0,
+                    contact_vs_rhp=35.0,
+                    power_vs_lhp=36.0,
+                    power_vs_rhp=37.0,
+                ),
+            ]
+        )
+
+        sheltered = next(output for output in outputs if output.name == "Sheltered LHP")
+        assigned_traits = {trait.name for trait in sheltered.assigned_traits}
+
+        self.assertIn("CON vs LHP", assigned_traits)
+        self.assertIn("POW vs LHP", assigned_traits)
+        self.assertNotIn("CON vs RHP", assigned_traits)
+        self.assertNotIn("POW vs RHP", assigned_traits)
+
+    def test_extreme_usage_override_respects_split_pa_floor(self) -> None:
+        outputs = rate_players(
+            [
+                self._platoon_hitter(
+                    "Tiny Split Sample",
+                    weighted_pa=520,
+                    contact_gap=0.0,
+                    power_gap=0.0,
+                    contact_vs_lhp=18.0,
+                    contact_vs_rhp=62.0,
+                    power_vs_lhp=22.0,
+                    power_vs_rhp=70.0,
+                    pa_vs_lhp=18.0,
+                    pa_vs_rhp=2.0,
+                ),
+                self._platoon_hitter(
+                    "Balanced Baseline",
+                    weighted_pa=520,
+                    contact_gap=0.0,
+                    power_gap=0.0,
+                    contact_vs_lhp=50.0,
+                    contact_vs_rhp=50.0,
+                    power_vs_lhp=50.0,
+                    power_vs_rhp=50.0,
+                    pa_vs_lhp=260.0,
+                    pa_vs_rhp=260.0,
+                ),
+                self._platoon_hitter(
+                    "Peer",
+                    weighted_pa=515,
+                    contact_gap=0.0,
+                    power_gap=0.0,
+                    contact_vs_lhp=34.0,
+                    contact_vs_rhp=35.0,
+                    power_vs_lhp=36.0,
+                    power_vs_rhp=37.0,
+                ),
+            ]
+        )
+
+        tiny_sample = next(output for output in outputs if output.name == "Tiny Split Sample")
+        baseline = next(output for output in outputs if output.name == "Balanced Baseline")
+        assigned_traits = {trait.name for trait in tiny_sample.assigned_traits}
+
+        self.assertNotIn("CON vs RHP", assigned_traits)
+        self.assertNotIn("POW vs RHP", assigned_traits)
+        self.assertEqual(tiny_sample.percentiles["contact"], baseline.percentiles["contact"])
+        self.assertEqual(tiny_sample.percentiles["power"], baseline.percentiles["power"])
+
+    def test_extreme_usage_override_uses_total_multiseason_pa_for_sample_gate(self) -> None:
+        outputs = rate_players(
+            [
+                {
+                    "name": "Sheltered Multi Season",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "CF",
+                    "metrics": {
+                        "iso": {"current": 0.209, "previous": 0.245},
+                        "hr_per_pa": {"current": 0.052632, "previous": 0.056034},
+                        "barrel_rate": {"current": 0.143, "previous": 0.125},
+                        "slugging": {"current": 0.417, "previous": 0.497},
+                        "avg_exit_velocity": {"current": 93.3, "previous": 91.4},
+                        "strikeout_rate": {"current": 0.368421, "previous": 0.228448},
+                        "contact_rate": {"current": 0.631579, "previous": 0.771552},
+                        "batting_average": {"current": 0.208, "previous": 0.252},
+                        "adjusted_obp": {"current": 0.316, "previous": 0.291},
+                        "sprint_speed": {"current": 26.3, "previous": 27.1},
+                        "baserunning_value": {"current": 0.0, "previous": -0.5},
+                        "sb_attempt_rate": {"current": 0.0, "previous": 0.023529},
+                        "triple_double_rate": {"current": 0.017544, "previous": 0.049569},
+                    },
+                    "samples": {
+                        "weighted_pa": {"current": 57.0, "previous": 464.0},
+                        "baserunning_opportunities": {"current": 14.0, "previous": 85.0},
+                        "defensive_innings": {"current": 9.0, "previous": 188.0},
+                    },
+                    "trait_metrics": {
+                        "contact_vs_lhp": {"current": 99.0, "previous": 19.905},
+                        "contact_vs_rhp": {"current": 0.0, "previous": 50.862},
+                        "contact_vs_lhp_minus_rhp": {"current": 343.237, "previous": -39.986},
+                        "power_vs_lhp": {"current": 45.783, "previous": 51.867},
+                        "power_vs_rhp": {"current": 61.299, "previous": 78.839},
+                        "power_vs_lhp_minus_rhp": {"current": -217.391, "previous": -71.358},
+                        "pa_vs_lhp": {"current": 3.0, "previous": 63.0},
+                        "pa_vs_rhp": {"current": 54.0, "previous": 401.0},
+                        "pa_split_imbalance": {"current": 0.8947, "previous": 0.7284},
+                        "fastball_hitting": {"current": 99.0, "previous": 99.0},
+                        "first_pitch_hitting": {"current": 99.0, "previous": 82.976},
+                        "pressure_hitting": {"current": 0.0, "previous": 0.743},
+                    },
+                },
+                self._platoon_hitter(
+                    "Balanced Baseline",
+                    weighted_pa=540,
+                    contact_gap=0.0,
+                    power_gap=0.0,
+                    contact_vs_lhp=50.0,
+                    contact_vs_rhp=50.0,
+                    power_vs_lhp=50.0,
+                    power_vs_rhp=50.0,
+                    pa_vs_lhp=270.0,
+                    pa_vs_rhp=270.0,
+                    batting_average=0.286,
+                    adjusted_obp=0.353,
+                    slugging=0.474,
+                    iso=0.188,
+                    hr_per_pa=0.032,
+                    barrel_rate=0.086,
+                    avg_exit_velocity=89.8,
+                ),
+                self._platoon_hitter(
+                    "Peer A",
+                    weighted_pa=520,
+                    contact_gap=0.0,
+                    power_gap=0.0,
+                    contact_vs_lhp=50.0,
+                    contact_vs_rhp=50.0,
+                    power_vs_lhp=50.0,
+                    power_vs_rhp=50.0,
+                ),
+                self._platoon_hitter(
+                    "Peer B",
+                    weighted_pa=515,
+                    contact_gap=0.0,
+                    power_gap=0.0,
+                    contact_vs_lhp=34.0,
+                    contact_vs_rhp=35.0,
+                    power_vs_lhp=36.0,
+                    power_vs_rhp=37.0,
+                ),
+            ]
+        )
+
+        sheltered = next(output for output in outputs if output.name == "Sheltered Multi Season")
+        assigned_traits = {trait.name for trait in sheltered.assigned_traits}
+
+        self.assertIn("CON vs RHP", assigned_traits)
+        self.assertIn("POW vs RHP", assigned_traits)
+        self.assertNotIn("CON vs LHP", assigned_traits)
+
+    def test_extreme_usage_threshold_uses_dominant_side_share(self) -> None:
+        player = PlayerInput.from_dict(
+            {
+                "name": "Dominant Share Hitter",
+                "role": "hitter",
+                "team": "NYM",
+                "primary_position": "CF",
+                "samples": {"weighted_pa": {"current": 57.0, "previous": 464.0}},
+                "trait_metrics": {
+                    "pa_vs_lhp": {"current": 3.0, "previous": 63.0},
+                    "pa_vs_rhp": {"current": 54.0, "previous": 401.0},
+                },
+            }
+        )
+
+        self.assertEqual(processing_core_module.effective_sample_volume(player.samples.get("weighted_pa")), 521.0)
+        self.assertEqual(processing_core_module.hitter_extreme_usage_side(player), "rhp")
+
     def test_pitcher_components_use_role_specific_peer_groups(self) -> None:
         players = [
             self._pitcher_peer(

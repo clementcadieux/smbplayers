@@ -1289,6 +1289,18 @@ def _fetch_text(url: str, *, ssl_context: SSLContext | None, headers: dict[str, 
         return response.read().decode("utf-8", errors="replace")
 
 
+def _fetch_optional_text(
+    url: str,
+    *,
+    ssl_context: SSLContext | None,
+    headers: dict[str, str] | None = None,
+) -> str | None:
+    try:
+        return _fetch_text(url, ssl_context=ssl_context, headers=headers)
+    except (HTTPError, URLError, TimeoutError, OSError):
+        return None
+
+
 def _fetch_stats(
     player_id: int,
     group: str,
@@ -1367,7 +1379,7 @@ def _fetch_savant_pitch_details(
     ssl_context: SSLContext | None,
     baseball_savant: str,
 ) -> dict[str, dict[str, float]]:
-    payload = _fetch_text(
+    payload = _fetch_optional_text(
         f"{baseball_savant}/player-services/statcast-pitches-breakdown?playerId={player_id}&position=1&pitchBreakdown=pitches",
         ssl_context=ssl_context,
         headers={
@@ -1377,6 +1389,8 @@ def _fetch_savant_pitch_details(
             "X-Requested-With": "XMLHttpRequest",
         },
     )
+    if not payload:
+        return {}
     return parse_savant_pitch_details(payload)
 
 
@@ -1386,7 +1400,7 @@ def _fetch_savant_hitter_pitch_details(
     ssl_context: SSLContext | None,
     baseball_savant: str,
 ) -> dict[str, dict[str, float]]:
-    payload = _fetch_text(
+    payload = _fetch_optional_text(
         f"{baseball_savant}/player-services/statcast-pitches-breakdown?playerId={player_id}&position=0&pitchBreakdown=pitches",
         ssl_context=ssl_context,
         headers={
@@ -1396,6 +1410,8 @@ def _fetch_savant_hitter_pitch_details(
             "X-Requested-With": "XMLHttpRequest",
         },
     )
+    if not payload:
+        return {}
     return parse_savant_pitch_details(payload)
 
 
@@ -1499,11 +1515,13 @@ def _fetch_savant_hitter_summary(
     ssl_context: SSLContext | None,
     baseball_savant: str,
 ) -> dict[str, float]:
-    payload = _fetch_text(
+    payload = _fetch_optional_text(
         f"{baseball_savant}/savant-player/player-{player_id}?stats=statcast-r-hitting-mlb",
         ssl_context=ssl_context,
         headers={"User-Agent": "Mozilla/5.0"},
     )
+    if not payload:
+        return {}
     return parse_savant_statcast_summary(payload, season=season)
 
 

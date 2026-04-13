@@ -72,3 +72,10 @@ Behavior:
 - At or above the eligibility gap, hitter platoon traits can be assigned if their configured criteria score threshold is met.
 - The same eligibility gate is used by platoon percentile penalties in rating computation, so small split differences trigger neither trait assignment nor rating suppression.
 - For players above the eligibility gate, rating penalties can be amplified by split-volume imbalance (`pa_vs_lhp` vs `pa_vs_rhp`) via `split_imbalance_weight`.
+- Extreme one-sided usage adds a second path: if a hitter overwhelmingly faces one handedness and clears the override sample floors, `CON` and `POW` platoon traits are forced toward the side he mostly faces, even if the ordinary split-gap path would not assign them.
+
+Additional config keys:
+- `platoon_adjustment.extreme_usage_threshold`
+- `platoon_adjustment.extreme_usage_min_weighted_pa`
+- `platoon_adjustment.extreme_usage_min_split_pa`
+- `platoon_adjustment.extreme_usage_force_traits`
