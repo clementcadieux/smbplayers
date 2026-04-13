@@ -72,6 +72,7 @@ class IngestFrameworkTests(unittest.TestCase):
                     "SLG": 0.512,
                     "AVG": 0.287,
                     "OBP": 0.361,
+                    "BB %": 8.7,
                     "K %": 21.4,
                     "Contact %": 77.8,
                     "Two Strike Contact %": 63.1,
@@ -398,6 +399,7 @@ class IngestFrameworkTests(unittest.TestCase):
                     "PA": 600,
                     "ISO": 0.190,
                     "OBP": 0.330,
+                    "BB %": 8.0,
                     "Barrel %": 14.4,
                     "Avg Exit Velocity": 92.8,
                     "Sprint Speed": 29.1,
@@ -581,6 +583,8 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertEqual(hitter["trait_metrics"]["pressure_hitting"]["current"], 77.0)
         self.assertEqual(hitter["trait_metrics"]["out_of_zone_contact_pct"]["current"], 71.0)
         self.assertEqual(hitter["trait_metrics"]["dive_recovery"]["current"], 72.0)
+        self.assertAlmostEqual(hitter["metrics"]["bb_pct"]["current"], 0.087)
+        self.assertAlmostEqual(hitter["metrics"]["walk_rate"]["current"], 0.087)
         self.assertAlmostEqual(hitter["metrics"]["pop_time"]["current"], 1.92)
         self.assertAlmostEqual(hitter["metrics"]["framing_runs"]["current"], 8.1)
         self.assertAlmostEqual(hitter["positional_games"]["CF"], 1115.0)
@@ -1392,6 +1396,8 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertAlmostEqual(hitter["metrics"]["adjusted_obp"]["current"], 0.347)
         self.assertAlmostEqual(hitter["metrics"]["barrel_rate"]["current"], 0.144)
         self.assertAlmostEqual(hitter["metrics"]["avg_exit_velocity"]["current"], 92.8)
+        self.assertAlmostEqual(hitter["metrics"]["bb_pct"]["current"], 0.08)
+        self.assertAlmostEqual(hitter["metrics"]["walk_rate"]["current"], 0.08)
         self.assertAlmostEqual(hitter["metrics"]["sprint_speed"]["current"], 29.1)
         self.assertAlmostEqual(hitter["metrics"]["drs"]["current"], 12.0)
         self.assertAlmostEqual(hitter["metrics"]["uzr"]["current"], 8.0)

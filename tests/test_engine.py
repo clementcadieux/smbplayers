@@ -3008,5 +3008,334 @@ class MissingFieldConsumptionTests(unittest.TestCase):
         )
 
 
+    # ------------------------------------------------------------------
+    # Issue 105 – derive missing trait metrics from raw stats
+    # ------------------------------------------------------------------
+
+    def test_mind_gamer_assigns_from_high_walk_rate_without_explicit_trait_metric(self) -> None:
+        """A high bb_pct in metrics should derive mind_games ≥ 65 and trigger Mind Gamer."""
+        # bb_pct = 0.155 → (15.5 - 4.0) / (20.0 - 4.0) * 100 ≈ 71.9 → ≥ 65 → Mind Gamer
+        outputs = rate_players(
+            [
+                {
+                    "name": "High Walk Hitter",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "1B",
+                    "metrics": {
+                        "bb_pct": 0.155,
+                        "iso": 0.180,
+                        "hr_per_pa": 0.033,
+                        "barrel_rate": 0.085,
+                        "slugging": 0.450,
+                        "avg_exit_velocity": 89.5,
+                        "strikeout_rate": 0.185,
+                        "contact_rate": 0.775,
+                        "batting_average": 0.268,
+                        "adjusted_obp": 0.370,
+                    },
+                    "samples": {"weighted_pa": 530},
+                    # No explicit trait_metrics.mind_games — must be derived
+                },
+                {
+                    "name": "Peer 1",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "CF",
+                    "metrics": {
+                        "iso": 0.220,
+                        "hr_per_pa": 0.045,
+                        "barrel_rate": 0.110,
+                        "slugging": 0.500,
+                        "avg_exit_velocity": 91.0,
+                        "strikeout_rate": 0.200,
+                        "contact_rate": 0.760,
+                        "batting_average": 0.270,
+                        "adjusted_obp": 0.340,
+                    },
+                    "samples": {"weighted_pa": 425},
+                },
+                {
+                    "name": "Peer 2",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "RF",
+                    "metrics": {
+                        "iso": 0.120,
+                        "hr_per_pa": 0.025,
+                        "barrel_rate": 0.060,
+                        "slugging": 0.360,
+                        "avg_exit_velocity": 87.5,
+                        "strikeout_rate": 0.230,
+                        "contact_rate": 0.720,
+                        "batting_average": 0.245,
+                        "adjusted_obp": 0.305,
+                    },
+                    "samples": {"weighted_pa": 425},
+                },
+            ],
+            trim_final_traits=False,
+        )
+
+        candidate = next(o for o in outputs if o.name == "High Walk Hitter")
+        trait_names = {t.name for t in candidate.assigned_traits}
+        self.assertIn("Mind Gamer", trait_names)
+
+    def test_mind_gamer_assigns_from_walk_rate_fallback_when_bb_pct_absent(self) -> None:
+        """Mind Gamer should still derive when ingest provides walk_rate but not bb_pct."""
+        outputs = rate_players(
+            [
+                {
+                    "name": "Walk Rate Hitter",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "1B",
+                    "metrics": {
+                        "walk_rate": 0.155,
+                        "iso": 0.180,
+                        "hr_per_pa": 0.033,
+                        "barrel_rate": 0.085,
+                        "slugging": 0.450,
+                        "avg_exit_velocity": 89.5,
+                        "strikeout_rate": 0.185,
+                        "contact_rate": 0.775,
+                        "batting_average": 0.268,
+                        "adjusted_obp": 0.370,
+                    },
+                    "samples": {"weighted_pa": 530},
+                },
+                {
+                    "name": "Peer 1",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "CF",
+                    "metrics": {
+                        "iso": 0.220,
+                        "hr_per_pa": 0.045,
+                        "barrel_rate": 0.110,
+                        "slugging": 0.500,
+                        "avg_exit_velocity": 91.0,
+                        "strikeout_rate": 0.200,
+                        "contact_rate": 0.760,
+                        "batting_average": 0.270,
+                        "adjusted_obp": 0.340,
+                    },
+                    "samples": {"weighted_pa": 425},
+                },
+                {
+                    "name": "Peer 2",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "RF",
+                    "metrics": {
+                        "iso": 0.120,
+                        "hr_per_pa": 0.025,
+                        "barrel_rate": 0.060,
+                        "slugging": 0.360,
+                        "avg_exit_velocity": 87.5,
+                        "strikeout_rate": 0.230,
+                        "contact_rate": 0.720,
+                        "batting_average": 0.245,
+                        "adjusted_obp": 0.305,
+                    },
+                    "samples": {"weighted_pa": 425},
+                },
+            ],
+            trim_final_traits=False,
+        )
+
+        candidate = next(o for o in outputs if o.name == "Walk Rate Hitter")
+        trait_names = {t.name for t in candidate.assigned_traits}
+        self.assertIn("Mind Gamer", trait_names)
+
+    def test_workhorse_assigns_from_projected_ip_without_explicit_trait_metric(self) -> None:
+        """A pitcher with projected_ip = 200 derives workhorse = 80.0 and should get the Workhorse trait."""
+        # workhorse = 200 / 250 * 100 = 80.0 → ≥ 80 → Workhorse
+        outputs = rate_players(
+            [
+                {
+                    "name": "Workhorse Pitcher",
+                    "role": "pitcher",
+                    "team": "NYM",
+                    "primary_position": "P",
+                    "projected_ip": 200.0,
+                    "metrics": {
+                        "era": 3.50,
+                        "whip": 1.18,
+                        "strikeout_rate": 0.230,
+                        "walk_rate": 0.075,
+                        "hr_per_9": 0.95,
+                        "fip": 3.65,
+                    },
+                    "samples": {"weighted_bf": {"current": 650}},
+                    # No explicit trait_metrics.workhorse — must be derived
+                },
+                {
+                    "name": "Peer Pitcher",
+                    "role": "pitcher",
+                    "team": "NYM",
+                    "primary_position": "P",
+                    "projected_ip": 165.0,
+                    "metrics": {
+                        "era": 4.20,
+                        "whip": 1.30,
+                        "strikeout_rate": 0.205,
+                        "walk_rate": 0.090,
+                        "hr_per_9": 1.10,
+                        "fip": 4.10,
+                    },
+                    "samples": {"weighted_bf": {"current": 580}},
+                },
+            ],
+            trim_final_traits=False,
+        )
+
+        candidate = next(o for o in outputs if o.name == "Workhorse Pitcher")
+        trait_names = {t.name for t in candidate.assigned_traits}
+        self.assertIn("Workhorse", trait_names)
+
+    def test_durable_assigns_from_multi_season_pa_volumes_without_explicit_trait_metric(self) -> None:
+        """A hitter with all seasons above 500 PA derives durability = 100 and should get Durable."""
+        # durability = 3/3 * 100 = 100 → ≥ 65 → Durable
+        outputs = rate_players(
+            [
+                {
+                    "name": "Iron Man Hitter",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "2B",
+                    "metrics": {
+                        "iso": 0.165,
+                        "hr_per_pa": 0.027,
+                        "barrel_rate": 0.070,
+                        "slugging": 0.415,
+                        "avg_exit_velocity": 88.0,
+                        "strikeout_rate": 0.200,
+                        "contact_rate": 0.768,
+                        "batting_average": 0.265,
+                        "adjusted_obp": 0.338,
+                    },
+                    "samples": {
+                        "weighted_pa": {"current": 555, "previous": 540, "two_years_ago": 510}
+                    },
+                    # No explicit trait_metrics.durability — must be derived
+                },
+                {
+                    "name": "Peer 1",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "CF",
+                    "metrics": {
+                        "iso": 0.220,
+                        "hr_per_pa": 0.045,
+                        "barrel_rate": 0.110,
+                        "slugging": 0.500,
+                        "avg_exit_velocity": 91.0,
+                        "strikeout_rate": 0.200,
+                        "contact_rate": 0.760,
+                        "batting_average": 0.270,
+                        "adjusted_obp": 0.340,
+                    },
+                    "samples": {"weighted_pa": 425},
+                },
+                {
+                    "name": "Peer 2",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "RF",
+                    "metrics": {
+                        "iso": 0.120,
+                        "hr_per_pa": 0.025,
+                        "barrel_rate": 0.060,
+                        "slugging": 0.360,
+                        "avg_exit_velocity": 87.5,
+                        "strikeout_rate": 0.230,
+                        "contact_rate": 0.720,
+                        "batting_average": 0.245,
+                        "adjusted_obp": 0.305,
+                    },
+                    "samples": {"weighted_pa": 425},
+                },
+            ],
+            trim_final_traits=False,
+        )
+
+        candidate = next(o for o in outputs if o.name == "Iron Man Hitter")
+        trait_names = {t.name for t in candidate.assigned_traits}
+        self.assertIn("Durable", trait_names)
+
+    def test_dive_wizard_derives_from_range_metrics_without_explicit_dive_recovery(self) -> None:
+        """Dive Wizard should trigger when oaa/drs/uzr imply a dive_recovery ≥ 65 with no explicit value."""
+        # avg(12, 10, 9) = 10.33 → (10.33 - (-5)) / (20 - (-5)) * 100 = 15.33/25 * 100 ≈ 61.3
+        # Let's use higher values: avg(15, 14, 13) = 14 → (14 + 5) / 25 * 100 = 76 → ≥ 65
+        outputs = rate_players(
+            [
+                {
+                    "name": "Range Wizard",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "CF",
+                    "metrics": {
+                        "iso": 0.175,
+                        "hr_per_pa": 0.030,
+                        "barrel_rate": 0.080,
+                        "slugging": 0.430,
+                        "avg_exit_velocity": 88.7,
+                        "strikeout_rate": 0.195,
+                        "contact_rate": 0.790,
+                        "batting_average": 0.278,
+                        "adjusted_obp": 0.345,
+                        "oaa": 15.0,
+                        "drs": 14.0,
+                        "uzr": 13.0,
+                    },
+                    "samples": {"weighted_pa": 540, "defensive_innings": 1100},
+                    # No explicit trait_metrics.dive_recovery — must be derived
+                },
+                {
+                    "name": "Peer 1",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "LF",
+                    "metrics": {
+                        "iso": 0.220,
+                        "hr_per_pa": 0.045,
+                        "barrel_rate": 0.110,
+                        "slugging": 0.500,
+                        "avg_exit_velocity": 91.0,
+                        "strikeout_rate": 0.200,
+                        "contact_rate": 0.760,
+                        "batting_average": 0.270,
+                        "adjusted_obp": 0.340,
+                    },
+                    "samples": {"weighted_pa": 425},
+                },
+                {
+                    "name": "Peer 2",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "RF",
+                    "metrics": {
+                        "iso": 0.120,
+                        "hr_per_pa": 0.025,
+                        "barrel_rate": 0.060,
+                        "slugging": 0.360,
+                        "avg_exit_velocity": 87.5,
+                        "strikeout_rate": 0.230,
+                        "contact_rate": 0.720,
+                        "batting_average": 0.245,
+                        "adjusted_obp": 0.305,
+                    },
+                    "samples": {"weighted_pa": 425},
+                },
+            ],
+            trim_final_traits=False,
+        )
+
+        candidate = next(o for o in outputs if o.name == "Range Wizard")
+        trait_names = {t.name for t in candidate.assigned_traits}
+        self.assertIn("Dive Wizard", trait_names)
+
+
 if __name__ == "__main__":
     unittest.main()

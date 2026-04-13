@@ -771,7 +771,7 @@
         "description": "Increased velocity and junk when pitching with a 2-strike count."
       },
       {
-        "name": "Workhouse",
+        "name": "Workhorse",
         "chemistry_type": "Competitive",
         "polarity": "positive",
         "role_scope": "pitcher",
@@ -1240,7 +1240,7 @@
           {"stat": "trait_metrics.zone_contact_pct", "operator": ">=", "value": 85, "weight": 0.4}
         ]
       },
-      "Workhouse": {
+      "Workhorse": {
         "description": "Award when workload and stamina indicators are clearly above average.",
         "sources": ["baseball_savant", "baseball_reference"],
         "criteria": [{"stat": "trait_metrics.workhorse", "operator": ">=", "value": 65, "weight": 1.0}]

@@ -26,6 +26,7 @@ DEFAULT_VOLUME_PROJECTION = {
 DEFAULT_SEASON_WEIGHTING = {
     "full_season_pa_threshold": 500.0,
     "full_season_ip_threshold": 150.0,
+    "workhorse_benchmark_ip": 250.0,
     "season_recency_weights": {
         "current": 2.0,
         "previous": 1.0,
@@ -72,6 +73,7 @@ DEFAULT_PROCESSING_TUNING = {
     "season_weighting": {
         "full_season_pa_threshold": 500.0,
         "full_season_ip_threshold": 150.0,
+        "workhorse_benchmark_ip": 250.0,
         "season_recency_weights": {
             "current": 2.0,
             "previous": 1.0,
@@ -212,9 +214,15 @@ def _parse_runtime_config_payload(raw_text: str) -> dict[str, object]:
 
         payload = yaml.safe_load(raw_text)
     except ModuleNotFoundError:
-        payload = json.loads(raw_text)
+        try:
+            payload = json.loads(raw_text)
+        except Exception:
+            return {}
     except Exception:
-        return {}
+        try:
+            payload = json.loads(raw_text)
+        except Exception:
+            return {}
 
     if not isinstance(payload, Mapping):
         return {}
@@ -325,10 +333,20 @@ def load_season_weighting_config() -> dict[str, object]:
             )
         except (TypeError, ValueError):
             full_season_ip_threshold = DEFAULT_SEASON_WEIGHTING["full_season_ip_threshold"]
+        try:
+            workhorse_benchmark_ip = float(
+                runtime_season_weighting.get(
+                    "workhorse_benchmark_ip",
+                    DEFAULT_SEASON_WEIGHTING["workhorse_benchmark_ip"],
+                )
+            )
+        except (TypeError, ValueError):
+            workhorse_benchmark_ip = DEFAULT_SEASON_WEIGHTING["workhorse_benchmark_ip"]
 
         return {
             "full_season_pa_threshold": full_season_pa_threshold,
             "full_season_ip_threshold": full_season_ip_threshold,
+            "workhorse_benchmark_ip": workhorse_benchmark_ip,
             "season_recency_weights": recency_weights,
         }
 
@@ -337,6 +355,7 @@ def load_season_weighting_config() -> dict[str, object]:
         return {
             "full_season_pa_threshold": DEFAULT_SEASON_WEIGHTING["full_season_pa_threshold"],
             "full_season_ip_threshold": DEFAULT_SEASON_WEIGHTING["full_season_ip_threshold"],
+            "workhorse_benchmark_ip": DEFAULT_SEASON_WEIGHTING["workhorse_benchmark_ip"],
             "season_recency_weights": dict(DEFAULT_SEASON_WEIGHTING["season_recency_weights"]),
         }
 
@@ -353,6 +372,12 @@ def load_season_weighting_config() -> dict[str, object]:
         )
     except (TypeError, ValueError):
         full_season_ip_threshold = DEFAULT_SEASON_WEIGHTING["full_season_ip_threshold"]
+    try:
+        workhorse_benchmark_ip = float(
+            payload.get("workhorse_benchmark_ip", DEFAULT_SEASON_WEIGHTING["workhorse_benchmark_ip"])
+        )
+    except (TypeError, ValueError):
+        workhorse_benchmark_ip = DEFAULT_SEASON_WEIGHTING["workhorse_benchmark_ip"]
 
     recency_payload = payload.get("season_recency_weights", DEFAULT_SEASON_WEIGHTING["season_recency_weights"])
     recency_weights = dict(DEFAULT_SEASON_WEIGHTING["season_recency_weights"])
@@ -372,6 +397,7 @@ def load_season_weighting_config() -> dict[str, object]:
     return {
         "full_season_pa_threshold": full_season_pa_threshold,
         "full_season_ip_threshold": full_season_ip_threshold,
+        "workhorse_benchmark_ip": workhorse_benchmark_ip,
         "season_recency_weights": recency_weights,
     }
 
@@ -391,9 +417,23 @@ def load_trait_criteria_config() -> dict[str, object]:
         parsed_minimum = float(minimum_score)
     except (TypeError, ValueError):
         parsed_minimum = 10.0
+    parsed_traits = traits if isinstance(traits, dict) else {}
+
+    runtime_config = load_processing_tuning_config()
+    runtime_trait_payload = runtime_config.get("trait_criteria", {})
+    if isinstance(runtime_trait_payload, Mapping):
+        raw_runtime_minimum = runtime_trait_payload.get("minimum_score", parsed_minimum)
+        try:
+            parsed_minimum = float(raw_runtime_minimum)
+        except (TypeError, ValueError):
+            pass
+        runtime_traits = runtime_trait_payload.get("traits", {})
+        if isinstance(runtime_traits, Mapping):
+            parsed_traits = _deep_merge(parsed_traits, runtime_traits)
+
     return {
         "minimum_score": parsed_minimum,
-        "traits": traits if isinstance(traits, dict) else {},
+        "traits": parsed_traits,
     }
 
 

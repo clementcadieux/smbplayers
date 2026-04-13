@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import io
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -7,6 +9,7 @@ from smb4_mlb_ratings.ingest import live_team_data as live_team_data_module
 
 from smb4_mlb_ratings.ingest.live_team_data import (
     build_baseball_reference_hitter_rows,
+        fetch_team_players,
     build_baseball_reference_pitcher_rows,
     build_fangraphs_fielding_rows,
     build_mixed_source_manifest,
@@ -408,6 +411,174 @@ class LiveTeamDataTests(unittest.TestCase):
         self.assertEqual(player["name"], "Summary Failure Hitter")
         self.assertEqual(player["plate_appearances"], 42)
         self.assertEqual(player["savant_hitting_summary"], {})
+
+    # ------------------------------------------------------------------
+    # Issue 104 – HTTP failure tracking in fetch_team_players
+    # ------------------------------------------------------------------
+
+    def test_fetch_team_players_tracks_http_failures(self) -> None:
+        """Players whose optional Savant fetches fail get an http_failures list attached."""
+        roster_payload = {
+            "roster": [
+                {
+                    "person": {"id": 99001, "fullName": "Failure Player"},
+                    "position": {"abbreviation": "CF", "type": "Outfielder"},
+                    "status": {"description": "Active", "code": "A"},
+                }
+            ]
+        }
+        base_player = {
+            "name": "Failure Player",
+            "player_id": 99001,
+            "type": "hitter",
+            "team": "TST",
+            "plate_appearances": 400,
+        }
+
+        def fake_fetch_roster_player(
+            entry, *, team_abbreviation, seasons, ssl_context, mlb_stats_api,
+            baseball_savant, http_failures=None
+        ):
+            if http_failures is not None:
+                # First call (initial pass): simulate a Savant HTTP failure
+                http_failures.append(
+                    {"url": "http://savant/x", "exc_type": "HTTPError", "stage": "savant_pitch_details"}
+                )
+                return dict(base_player)
+            # Second call (retry): still failing — return None so original is kept
+            return None
+
+        with (
+            patch.object(live_team_data_module, "_fetch_json", return_value=roster_payload),
+            patch.object(
+                live_team_data_module, "_fetch_roster_player", side_effect=fake_fetch_roster_player
+            ),
+            patch.object(live_team_data_module, "_apply_savant_arm_strength", return_value=None),
+            patch.object(live_team_data_module, "_apply_savant_catcher_defense", return_value=None),
+        ):
+            players = fetch_team_players(
+                143,
+                team_abbreviation="TST",
+                roster_season=2025,
+                primary_stat_season=2025,
+                fallback_stat_season=2024,
+                ssl_context=None,
+            )
+
+        self.assertEqual(len(players), 1)
+        failures = players[0].get("http_failures")
+        self.assertIsInstance(failures, list)
+        self.assertGreater(len(failures), 0)
+        self.assertEqual(failures[0]["player_id"], 99001)
+        self.assertEqual(failures[0]["player_name"], "Failure Player")
+        self.assertEqual(failures[0]["stage"], "savant_pitch_details")
+
+    def test_fetch_team_players_retries_and_clears_failures_on_success(self) -> None:
+        """When the retry pass succeeds the player in the output list has no http_failures."""
+        roster_payload = {
+            "roster": [
+                {
+                    "person": {"id": 99002, "fullName": "Retry Player"},
+                    "position": {"abbreviation": "SP", "type": "Pitcher"},
+                    "status": {"description": "Active", "code": "A"},
+                }
+            ]
+        }
+        call_count = {"n": 0}
+
+        def fake_fetch_roster_player(
+            entry, *, team_abbreviation, seasons, ssl_context, mlb_stats_api,
+            baseball_savant, http_failures=None
+        ):
+            call_count["n"] += 1
+            player = {
+                "name": "Retry Player",
+                "player_id": 99002,
+                "type": "pitcher",
+                "team": "TST",
+                "plate_appearances": 0,
+            }
+            if call_count["n"] == 1 and http_failures is not None:
+                http_failures.append(
+                    {"url": "http://savant/y", "exc_type": "TimeoutError", "stage": "savant_hitter_summary"}
+                )
+            return player
+
+        with (
+            patch.object(live_team_data_module, "_fetch_json", return_value=roster_payload),
+            patch.object(
+                live_team_data_module, "_fetch_roster_player", side_effect=fake_fetch_roster_player
+            ),
+            patch.object(live_team_data_module, "_apply_savant_arm_strength", return_value=None),
+            patch.object(live_team_data_module, "_apply_savant_catcher_defense", return_value=None),
+        ):
+            players = fetch_team_players(
+                143,
+                team_abbreviation="TST",
+                roster_season=2025,
+                primary_stat_season=2025,
+                fallback_stat_season=2024,
+                ssl_context=None,
+            )
+
+        self.assertEqual(len(players), 1)
+        self.assertNotIn("http_failures", players[0])
+        self.assertEqual(call_count["n"], 2)
+
+    def test_fetch_team_players_reports_persistent_http_failures_to_stderr(self) -> None:
+        """Players with unrecoverable HTTP failures produce a stderr warning."""
+        roster_payload = {
+            "roster": [
+                {
+                    "person": {"id": 99003, "fullName": "Persistent Failure"},
+                    "position": {"abbreviation": "LF", "type": "Outfielder"},
+                    "status": {"description": "Active", "code": "A"},
+                }
+            ]
+        }
+
+        def fake_fetch_roster_player(
+            entry, *, team_abbreviation, seasons, ssl_context, mlb_stats_api,
+            baseball_savant, http_failures=None
+        ):
+            if http_failures is not None:
+                # Initial pass: simulate a failure
+                http_failures.append(
+                    {"url": "http://savant/z", "exc_type": "HTTPError", "stage": "savant_pitch_details"}
+                )
+                return {
+                    "name": "Persistent Failure",
+                    "player_id": 99003,
+                    "type": "hitter",
+                    "team": "TST",
+                    "plate_appearances": 300,
+                }
+            # Retry: return None so the original (with http_failures) is kept and warning fires
+            return None
+
+        captured = io.StringIO()
+        with (
+            patch.object(live_team_data_module, "_fetch_json", return_value=roster_payload),
+            patch.object(
+                live_team_data_module, "_fetch_roster_player", side_effect=fake_fetch_roster_player
+            ),
+            patch.object(live_team_data_module, "_apply_savant_arm_strength", return_value=None),
+            patch.object(live_team_data_module, "_apply_savant_catcher_defense", return_value=None),
+            patch("sys.stderr", captured),
+        ):
+            fetch_team_players(
+                143,
+                team_abbreviation="TST",
+                roster_season=2025,
+                primary_stat_season=2025,
+                fallback_stat_season=2024,
+                ssl_context=None,
+            )
+
+        warning = captured.getvalue()
+        self.assertIn("Warning", warning)
+        self.assertIn("Persistent Failure", warning)
+        self.assertIn("savant_pitch_details", warning)
 
     def test_parse_savant_statcast_summary_extracts_contact_and_tool_fields(self) -> None:
         payload = """

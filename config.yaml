@@ -2,6 +2,7 @@
   "season_weighting": {
     "full_season_pa_threshold": 500.0,
     "full_season_ip_threshold": 150.0,
+    "workhorse_benchmark_ip": 250.0,
     "season_recency_weights": {
       "current": 2.0,
       "previous": 1.0,
@@ -32,7 +33,7 @@
       "velocity": 0.50,
       "junk": 0.50,
       "accuracy": 0.50
-    ],
+    },
     "grade_breakpoints": [
       [97, "S"],
       [93, "A+"],
@@ -62,6 +63,20 @@
     "max_traits_per_player": 2,
     "max_elite_pitch_traits": 1,
     "elite_pitch_traits": []
+  },
+  "trait_criteria": {
+    "traits": {
+      "Workhorse": {
+        "criteria": [
+          {
+            "stat": "trait_metrics.workhorse",
+            "operator": ">=",
+            "value": 80,
+            "weight": 1.0
+          }
+        ]
+      }
+    }
   },
   "trait_conflict_groups": [
     ["First Pitch Slayer", "First Pitch Prayer"],
