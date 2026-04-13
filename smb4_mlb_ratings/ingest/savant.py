@@ -73,6 +73,7 @@ from statistics import median
 from typing import Any
 
 from .pitch_quality import pitch_rv_per_100_score
+from ..reference import load_injury_threshold_config
 
 
 SEASON_KEYS = ("current", "previous", "two_years_ago")
@@ -161,8 +162,6 @@ PITCH_USAGE_COLUMNS = {
 }
 
 
-REFERENCE_PATH = Path(__file__).resolve().parents[2] / "smb4_player_reference.json"
-DEFAULT_INJURY_THRESHOLD = {"min_pa_fraction": 0.6, "min_ip_fraction": 0.6}
 ROSTER_DAY_COLUMNS = (
     "days_on_roster",
     "days_on_active_roster",
@@ -211,27 +210,6 @@ PITCH_NAME_TO_CODE = {
     "SWEEPER": "SV",
     "SCREWBALL": "SC",
 }
-
-def load_injury_threshold_config() -> dict[str, float]:
-    try:
-        payload = json.loads(REFERENCE_PATH.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return dict(DEFAULT_INJURY_THRESHOLD)
-
-    threshold_payload = payload.get("injury_threshold", {})
-    if not isinstance(threshold_payload, dict):
-        return dict(DEFAULT_INJURY_THRESHOLD)
-
-    min_pa_fraction = threshold_payload.get("min_pa_fraction", DEFAULT_INJURY_THRESHOLD["min_pa_fraction"])
-    min_ip_fraction = threshold_payload.get("min_ip_fraction", DEFAULT_INJURY_THRESHOLD["min_ip_fraction"])
-    try:
-        return {
-            "min_pa_fraction": float(min_pa_fraction),
-            "min_ip_fraction": float(min_ip_fraction),
-        }
-    except (TypeError, ValueError):
-        return dict(DEFAULT_INJURY_THRESHOLD)
-
 
 INJURY_THRESHOLD_CONFIG = load_injury_threshold_config()
 

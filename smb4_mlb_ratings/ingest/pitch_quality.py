@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 import re
-from pathlib import Path
 from typing import Any, Mapping
+
+from ..reference import load_pitch_rv_thresholds
 
 
 ELITE_PITCH_SPECS = {
@@ -74,37 +75,8 @@ ELITE_PITCH_SPECS = {
 }
 
 
-REFERENCE_PATH = Path(__file__).resolve().parents[2] / "smb4_player_reference.json"
-DEFAULT_PITCH_RV_THRESHOLDS = {
-    "elite": 2.0,
-    "exceptional": 6.0,
-}
-
-
 def _load_pitch_rv_thresholds() -> dict[str, float]:
-    try:
-        payload = json.loads(REFERENCE_PATH.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return dict(DEFAULT_PITCH_RV_THRESHOLDS)
-
-    elite_value = payload.get("pitch_rv_per_100_elite", DEFAULT_PITCH_RV_THRESHOLDS["elite"])
-    exceptional_value = payload.get("pitch_rv_per_100_exceptional", DEFAULT_PITCH_RV_THRESHOLDS["exceptional"])
-
-    try:
-        elite = float(elite_value)
-    except (TypeError, ValueError):
-        elite = DEFAULT_PITCH_RV_THRESHOLDS["elite"]
-    try:
-        exceptional = float(exceptional_value)
-    except (TypeError, ValueError):
-        exceptional = DEFAULT_PITCH_RV_THRESHOLDS["exceptional"]
-
-    if exceptional < elite:
-        elite, exceptional = exceptional, elite
-    return {
-        "elite": elite,
-        "exceptional": exceptional,
-    }
+    return load_pitch_rv_thresholds()
 
 
 PITCH_RV_THRESHOLDS = _load_pitch_rv_thresholds()
