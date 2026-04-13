@@ -11,6 +11,8 @@ SeasonValue = float | int | dict[str, float | int] | None
 class PlayerInput:
     name: str
     role: str
+    player_id: str | None = None
+    on_il: bool | None = None
     active: bool = True
     team: str | None = None
     age: int | None = None
@@ -49,6 +51,8 @@ class PlayerInput:
         return cls(
             name=data["name"],
             role=data["role"],
+            player_id=str(data["player_id"]) if data.get("player_id") is not None else None,
+            on_il=bool(data["on_il"]) if data.get("on_il") is not None else (bool(data.get("metadata", {}).get("on_il")) if isinstance(data.get("metadata"), dict) and data.get("metadata", {}).get("on_il") is not None else None),
             active=bool(data.get("active", True)),
             team=data.get("team"),
             age=data.get("age"),
@@ -146,12 +150,15 @@ class RatingOutput:
     projected_pa: float | None = None
     projected_ip: float | None = None
     recommended_pitches: list[str] = field(default_factory=list)
+    on_il: bool | None = None
+    player_id: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
             "role": self.role,
+            "player_id": self.player_id,
             "team": self.team,
             "primary_position": self.primary_position,
             "secondary_position": self.secondary_position,
@@ -160,6 +167,7 @@ class RatingOutput:
             "projected_pa": self.projected_pa,
             "projected_ip": self.projected_ip,
             "recommended_pitches": self.recommended_pitches,
+            "on_il": self.on_il,
             "ratings": self.ratings,
             "percentiles": self.percentiles,
             "overall_numeric": self.overall_numeric,
@@ -177,6 +185,7 @@ class RatingOutput:
         return cls(
             name=data["name"],
             role=data["role"],
+            player_id=str(data["player_id"]) if data.get("player_id") is not None else None,
             team=data.get("team"),
             primary_position=data.get("primary_position"),
             ratings={str(key): int(value) for key, value in data.get("ratings", {}).items()},
@@ -194,5 +203,6 @@ class RatingOutput:
             projected_pa=float(data["projected_pa"]) if data.get("projected_pa") is not None else None,
             projected_ip=float(data["projected_ip"]) if data.get("projected_ip") is not None else None,
             recommended_pitches=[str(item) for item in data.get("recommended_pitches", [])],
+            on_il=bool(data["on_il"]) if data.get("on_il") is not None else (bool(data.get("metadata", {}).get("on_il")) if isinstance(data.get("metadata"), dict) and data.get("metadata", {}).get("on_il") is not None else None),
             metadata=data.get("metadata", {}),
         )

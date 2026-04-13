@@ -33,6 +33,7 @@ from .pitch_quality import (
 DEFAULT_MLB_STATS_API = "https://statsapi.mlb.com/api/v1"
 DEFAULT_BASEBALL_SAVANT = "https://baseballsavant.mlb.com"
 DEFAULT_FANGRAPHS = "https://www.fangraphs.com"
+_INJURY_STATUS_CODES = frozenset({"D10", "D15", "D60", "IL10", "IL15", "IL60", "RL"})
 
 _POSITION_OUTS_COLUMN_MAP: dict[str, str] = {
     "outs_2": "C",
@@ -1068,7 +1069,14 @@ def _fetch_roster_player(
     if not isinstance(status_payload, Mapping):
         status_payload = {}
     status = _as_str(status_payload.get("description")) or "Active"
-    if status != "Active" and "injured" not in status.lower():
+    status_code = _as_str(status_payload.get("code")) or "A"
+    normalized_status = status.lower()
+    if (
+        status != "Active"
+        and "injured" not in normalized_status
+        and "rehab" not in normalized_status
+        and status_code.upper() not in _INJURY_STATUS_CODES
+    ):
         return None
 
     position = _as_str(roster_position.get("abbreviation")) or _as_str(primary_position.get("abbreviation"))
@@ -1087,7 +1095,7 @@ def _fetch_roster_player(
         "type": player_type,
         "position": position,
         "status": status,
-        "status_code": _as_str(status_payload.get("code")) or "A",
+        "status_code": status_code,
         "age": _as_int(person.get("currentAge")),
         "bats": _nested_str(person, "batSide", "code"),
         "throws": _nested_str(person, "pitchHand", "code"),

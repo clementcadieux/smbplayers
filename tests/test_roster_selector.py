@@ -43,6 +43,41 @@ class RosterSelectorTests(unittest.TestCase):
 
         self.assertEqual([player.name for player in ranked["OF"]], ["Healthy OF", "Injured OF"])
 
+    def test_rank_players_by_role_uses_all_secondary_positions(self) -> None:
+        utility = self._player(
+            "Multi Position Utility",
+            "hitter",
+            "1B",
+            secondary_positions=["RF", "CF", "3B"],
+            projected_pa=350,
+            age=26,
+            overall=74,
+        )
+
+        ranked = rank_players_by_role([utility])
+
+        self.assertEqual([player.name for player in ranked["IF"]], ["Multi Position Utility"])
+        self.assertEqual([player.name for player in ranked["OF"]], ["Multi Position Utility"])
+
+    def test_select_roster_assigns_multi_eligible_player_once(self) -> None:
+        players = self._team_players()
+        players.append(
+            self._player(
+                "Super Utility",
+                "hitter",
+                "SS",
+                secondary_positions=["2B", "3B", "LF", "CF"],
+                projected_pa=360,
+                age=24,
+                overall=90,
+            )
+        )
+
+        roster = select_roster(players)
+        selected_names = [slot.player.name for slot in roster]
+
+        self.assertEqual(selected_names.count("Super Utility"), 1)
+
     def test_cli_rank_writes_team_rosters(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             root = Path(tempdir)
@@ -93,6 +128,7 @@ class RosterSelectorTests(unittest.TestCase):
         overall: int = 75,
         metadata: dict[str, object] | None = None,
         team: str = "NYM",
+        secondary_positions: list[str] | None = None,
     ) -> RatingOutput:
         return RatingOutput(
             name=name,
@@ -109,6 +145,7 @@ class RosterSelectorTests(unittest.TestCase):
             assigned_traits=[],
             recommended_personalities=[],
             secondary_position=None,
+            secondary_positions=secondary_positions or [],
             age=age,
             projected_pa=projected_pa,
             projected_ip=projected_ip,

@@ -40,10 +40,21 @@ class RosterSlot:
 
 
 def _position_values(player: RatingOutput) -> list[str]:
-    return [position.upper() for position in (player.primary_position, player.secondary_position) if isinstance(position, str) and position]
+    positions: list[str] = []
+    for position in (player.primary_position, player.secondary_position):
+        if isinstance(position, str) and position:
+            positions.append(position.upper())
+    if isinstance(player.secondary_positions, list):
+        for position in player.secondary_positions:
+            if isinstance(position, str) and position:
+                positions.append(position.upper())
+    # Preserve insertion order while removing duplicates.
+    return list(dict.fromkeys(positions))
 
 
 def _injury_status_from_metadata(player: RatingOutput) -> bool:
+    if player.on_il is True:
+        return True
     metadata = player.metadata if isinstance(player.metadata, dict) else {}
     for key in ("injured_list", "injured", "on_il"):
         if metadata.get(key) is True:
@@ -181,10 +192,12 @@ def select_roster(
     roster.extend(_select_group_slots(ranked["OF"], 4, "OF", "of", selected_names, injured))
 
     flex_candidates: list[tuple[str, str, RatingOutput]] = []
+    flex_candidate_names: set[str] = set()
     for group_name, slot_type in (("C", "flex_c"), ("IF", "flex_if"), ("OF", "flex_of")):
         for player in ranked[group_name]:
-            if player.name in selected_names:
+            if player.name in selected_names or player.name in flex_candidate_names:
                 continue
+            flex_candidate_names.add(player.name)
             flex_candidates.append((group_name, slot_type, player))
             break
 

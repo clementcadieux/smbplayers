@@ -118,7 +118,7 @@ def run_ingest_rate(
     return 0
 
 
-def run_refresh_bluejays_example(example_root: Path | None = None) -> int:
+def run_refresh_bluejays_example(example_root: Path | None = None, *, insecure_ssl: bool = False) -> int:
     root = example_root if example_root is not None else PROJECT_ROOT / "examples"
     exports = root / "exports"
     structured_output_path = exports / "bluejays_structured_report"
@@ -128,7 +128,10 @@ def run_refresh_bluejays_example(example_root: Path | None = None) -> int:
     ratings_output_path = root / "bluejays_result_example.json"
 
     exports.mkdir(parents=True, exist_ok=True)
-    ssl_context = ssl._create_unverified_context()
+    ssl_context = None
+    if insecure_ssl:
+        print("Warning: using insecure SSL mode; certificate verification is disabled.", file=sys.stderr)
+        ssl_context = ssl._create_unverified_context()
     current_players = fetch_team_players(
         BLUE_JAYS_TEAM_ID,
         team_abbreviation=BLUE_JAYS_TEAM_ABBREVIATION,
@@ -288,6 +291,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional root directory for the Blue Jays example outputs (defaults to the workspace examples folder)",
     )
+    refresh_bluejays_parser.add_argument(
+        "--insecure",
+        action="store_true",
+        help="Disable SSL certificate verification for live fetches (not recommended)",
+    )
     return parser
 
 
@@ -315,7 +323,7 @@ def main(argv: list[str] | None = None) -> int:
             namespace.team,
         )
     if namespace.command == "refresh-bluejays-example":
-        return run_refresh_bluejays_example(namespace.example_root)
+        return run_refresh_bluejays_example(namespace.example_root, insecure_ssl=namespace.insecure)
 
     parser.print_help(sys.stderr)
     return 1

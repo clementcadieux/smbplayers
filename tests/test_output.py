@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import io
 import tempfile
 import unittest
 from pathlib import Path
@@ -105,7 +106,7 @@ class StructuredOutputTests(unittest.TestCase):
         self.assertEqual(index_payload["NL"]["West"][0]["team"], "LAD")
 
     def test_cli_refresh_bluejays_example_builds_local_live_example_outputs(self) -> None:
-        with patch("smb4_mlb_ratings.cli.fetch_team_players", return_value=self._live_bluejays_players()):
+        with patch("smb4_mlb_ratings.cli.fetch_team_players", return_value=self._live_bluejays_players()) as fetch_mock:
             result = main([
                 "refresh-bluejays-example",
                 "--example-root",
@@ -131,6 +132,10 @@ class StructuredOutputTests(unittest.TestCase):
         self.assertEqual(manifest_payload["seasons"]["current"]["year"], 2026)
         self.assertEqual(manifest_payload["seasons"]["previous"]["year"], 2025)
 
+        self.assertTrue(fetch_mock.call_count >= 2)
+        self.assertIsNone(fetch_mock.call_args_list[0].kwargs.get("ssl_context"))
+        self.assertIsNone(fetch_mock.call_args_list[1].kwargs.get("ssl_context"))
+
         normalized_payload = json.loads(normalized_path.read_text(encoding="utf-8"))
         hitter = next(player for player in normalized_payload["players"] if player["role"] == "hitter")
         self.assertAlmostEqual(hitter["metrics"]["barrel_rate"]["current"], 0.114)
@@ -143,6 +148,26 @@ class StructuredOutputTests(unittest.TestCase):
         self.assertTrue(all("avg_exit_velocity" not in flag for flag in review_flags))
         self.assertTrue(all("barrel_rate" not in flag for flag in review_flags))
         self.assertTrue(all("sprint_speed" not in flag for flag in review_flags))
+
+    def test_cli_refresh_bluejays_example_insecure_flag_uses_unverified_ssl_context(self) -> None:
+        stderr_buffer = io.StringIO()
+        with patch("smb4_mlb_ratings.cli.fetch_team_players", return_value=self._live_bluejays_players()) as fetch_mock, patch(
+            "sys.stderr", new=stderr_buffer
+        ), patch("smb4_mlb_ratings.cli.run_ingest_rate", return_value=0), patch(
+            "smb4_mlb_ratings.cli.run_rank", return_value=0
+        ):
+            result = main([
+                "refresh-bluejays-example",
+                "--example-root",
+                str(self.root),
+                "--insecure",
+            ])
+
+        self.assertEqual(result, 0)
+        self.assertIn("insecure SSL mode", stderr_buffer.getvalue())
+        self.assertTrue(fetch_mock.call_count >= 2)
+        self.assertIsNotNone(fetch_mock.call_args_list[0].kwargs.get("ssl_context"))
+        self.assertIsNotNone(fetch_mock.call_args_list[1].kwargs.get("ssl_context"))
 
     def _rating(self, name: str, team: str) -> RatingOutput:
         return RatingOutput(

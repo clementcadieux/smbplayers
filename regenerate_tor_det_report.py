@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Regenerate TOR/DET combined report with updated roster."""
 import json
-import ssl
 import subprocess
 import sys
 from pathlib import Path
@@ -41,7 +40,7 @@ def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
 
 
 def refresh_team_live_exports(*, team_id: int, team_abbreviation: str, file_prefix: str) -> None:
-    ssl_context = ssl._create_unverified_context()
+    ssl_context = None
     current_players = fetch_team_players(
         team_id,
         team_abbreviation=team_abbreviation,

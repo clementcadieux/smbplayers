@@ -18,6 +18,7 @@ from smb4_mlb_ratings.engine import (
     weighted_metric_value,
 )
 from smb4_mlb_ratings.models import PlayerInput
+from smb4_mlb_ratings.ingest.savant import HITTER_TRAIT_METRIC_COLUMNS, PITCHER_TRAIT_METRIC_COLUMNS
 
 
 class SurfaceBlendTests(unittest.TestCase):
@@ -1092,6 +1093,34 @@ class SurfaceBlendTests(unittest.TestCase):
             f"Unexpected uncovered catalog traits: {sorted(uncovered_traits)}",
         )
 
+    def test_trait_criteria_trait_metrics_are_supported_or_explicitly_annotated(self) -> None:
+        reference_path = Path(__file__).resolve().parents[1] / "smb4_player_reference.json"
+        payload = json.loads(reference_path.read_text(encoding="utf-8"))
+        criteria_payload = payload.get("trait_criteria", {})
+        traits = criteria_payload.get("traits", {}) if isinstance(criteria_payload, dict) else {}
+
+        supported_trait_metrics = set(HITTER_TRAIT_METRIC_COLUMNS) | set(PITCHER_TRAIT_METRIC_COLUMNS)
+        unsupported: list[str] = []
+        for trait_name, config in traits.items():
+            if not isinstance(config, dict):
+                continue
+            feasibility = str(config.get("feasibility", "")).strip().lower()
+            uses_proxy = bool(config.get("proxy", False))
+            for rule in config.get("criteria", []):
+                if not isinstance(rule, dict):
+                    continue
+                stat = str(rule.get("stat", ""))
+                if not stat.startswith("trait_metrics."):
+                    continue
+                metric_key = stat.split(".", 1)[1]
+                if metric_key in supported_trait_metrics:
+                    continue
+                if feasibility == "none" or uses_proxy:
+                    continue
+                unsupported.append(f"{trait_name}:{metric_key}")
+
+        self.assertEqual(unsupported, [], f"Trait criteria uses unsupported trait_metrics without feasibility/proxy annotation: {unsupported}")
+
     def test_base_rounder_assigns_from_speed_and_baserunning_signals(self) -> None:
         outputs = rate_players(
             [
@@ -1481,6 +1510,60 @@ class SurfaceBlendTests(unittest.TestCase):
         }
         weighted = role_weighted_overall_numeric("pitcher", ratings)
         self.assertGreaterEqual(weighted or 0, 95)
+
+    def test_duplicate_names_keep_identity_specific_traits(self) -> None:
+        base_metrics = {
+            "iso": 0.175,
+            "hr_per_pa": 0.030,
+            "barrel_rate": 0.082,
+            "slugging": 0.432,
+            "avg_exit_velocity": 88.9,
+            "strikeout_rate": 0.208,
+            "contact_rate": 0.772,
+            "batting_average": 0.268,
+            "adjusted_obp": 0.338,
+        }
+        outputs = rate_players(
+            [
+                {
+                    "name": "Chris Duplicate",
+                    "player_id": "1001",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "CF",
+                    "metrics": base_metrics,
+                    "samples": {"weighted_pa": 540},
+                    "metadata": {"manual_traits": ["Bad Ball Hitter"]},
+                },
+                {
+                    "name": "Chris Duplicate",
+                    "player_id": "2002",
+                    "role": "hitter",
+                    "team": "LAD",
+                    "primary_position": "RF",
+                    "metrics": {**base_metrics, "sprint_speed": 30.1},
+                    "samples": {"weighted_pa": 535},
+                    "metadata": {"manual_traits": ["Stealer"]},
+                },
+                {
+                    "name": "Peer Hitter",
+                    "player_id": "3003",
+                    "role": "hitter",
+                    "team": "ATL",
+                    "primary_position": "LF",
+                    "metrics": {**base_metrics, "iso": 0.190},
+                    "samples": {"weighted_pa": 520},
+                },
+            ]
+        )
+
+        nym_output = next(output for output in outputs if output.team == "NYM")
+        lad_output = next(output for output in outputs if output.team == "LAD")
+
+        self.assertEqual(nym_output.player_id, "1001")
+        self.assertEqual(lad_output.player_id, "2002")
+        self.assertIn("Bad Ball Hitter", {trait.name for trait in nym_output.assigned_traits})
+        self.assertIn("Stealer", {trait.name for trait in lad_output.assigned_traits})
 
     def _build_power_players(self, *, sample: float) -> list[dict[str, object]]:
         return [

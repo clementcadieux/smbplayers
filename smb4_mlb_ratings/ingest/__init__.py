@@ -73,6 +73,12 @@ def _normalized_name(value: str) -> str:
 	return " ".join(value.lower().split())
 
 
+def _normalized_field(value: Any) -> str:
+	if not isinstance(value, str):
+		return ""
+	return " ".join(value.lower().split())
+
+
 def _clone_manifest_for_source(manifest: IngestManifest, source_name: str) -> IngestManifest:
 	seasons: dict[str, SeasonInputs] = {}
 	for season_key, season_inputs in manifest.seasons.items():
@@ -94,10 +100,47 @@ def _player_merge_key(player: dict[str, Any]) -> tuple[str, str]:
 		source_id = metadata.get("source_player_id")
 		if isinstance(source_id, str) and source_id:
 			return ("id", source_id)
+	if isinstance(player.get("player_id"), str) and player.get("player_id"):
+		return ("id", str(player.get("player_id")))
 	name = player.get("name")
 	if not isinstance(name, str) or not name.strip():
 		raise ValueError("Merged player record is missing a valid name")
-	return ("name", _normalized_name(name))
+	team = _normalized_field(player.get("team"))
+	primary_position = _normalized_field(player.get("primary_position"))
+	role = _normalized_field(player.get("role"))
+	roster_season = ""
+	if isinstance(metadata, dict):
+		source_years = metadata.get("source_years")
+		if isinstance(source_years, dict):
+			current = source_years.get("current")
+			if current is not None:
+				roster_season = str(current)
+	composite = f"{_normalized_name(name)}|{team}|{primary_position}|{role}|{roster_season}"
+	return ("composite", composite)
+
+
+def _player_merge_warning_fields(player: dict[str, Any]) -> tuple[Any, Any, Any]:
+	return (player.get("age"), player.get("bats"), player.get("throws"))
+
+
+def _build_source_index(
+	players: list[dict[str, Any]],
+	*,
+	source_name: str,
+	warnings_by_key: dict[tuple[str, str], set[str]],
+) -> dict[tuple[str, str], dict[str, Any]]:
+	indexed: dict[tuple[str, str], dict[str, Any]] = {}
+	for player in players:
+		key = _player_merge_key(player)
+		existing = indexed.get(key)
+		if existing is None:
+			indexed[key] = player
+			continue
+		if _player_merge_warning_fields(existing) != _player_merge_warning_fields(player):
+			warnings_by_key.setdefault(key, set()).add(
+				f"Ambiguous {source_name} merge key '{key[0]}:{key[1]}' with conflicting age/bats/throws values."
+			)
+	return indexed
 
 
 def _union_season_values(*season_maps: dict[str, Any]) -> dict[str, Any]:
@@ -197,6 +240,7 @@ def _merge_player_records(
 	baseball_reference: dict[str, Any] | None,
 	savant: dict[str, Any] | None,
 	fangraphs: dict[str, Any] | None,
+	merge_warnings: list[str] | None = None,
 ) -> dict[str, Any]:
 	if baseball_reference is None and savant is None and fangraphs is None:
 		raise ValueError("Cannot merge missing player records")
@@ -317,6 +361,8 @@ def _merge_player_records(
 		metadata["mlb_trait_metric_percentiles"] = dict(sorted(merged_mlb_trait_metric_percentiles.items()))
 	if isinstance(merged_mlb_trait_metric_percentile_peer_counts, dict) and merged_mlb_trait_metric_percentile_peer_counts:
 		metadata["mlb_trait_metric_percentile_peer_counts"] = dict(sorted(merged_mlb_trait_metric_percentile_peer_counts.items()))
+	if merge_warnings:
+		metadata["merge_warnings"] = sorted({str(item) for item in merge_warnings if str(item)})
 	source_payloads = [payload for payload in (baseball_reference, savant, fangraphs) if payload]
 	active = any(bool(payload.get("active", True)) for payload in source_payloads) if source_payloads else True
 	days_on_roster = _union_season_values(
@@ -334,6 +380,7 @@ def _merge_player_records(
 	merged_player = {
 		"name": baseball_reference.get("name") or fangraphs.get("name") or savant.get("name"),
 		"role": role,
+		"player_id": merged_source_player_id,
 		"active": active,
 		"team": baseball_reference.get("team") or fangraphs.get("team") or savant.get("team"),
 		"age": baseball_reference.get("age") if baseball_reference.get("age") is not None else (fangraphs.get("age") if fangraphs.get("age") is not None else savant.get("age")),
@@ -366,11 +413,34 @@ def _ingest_from_mixed_manifest(manifest: IngestManifest) -> list[dict[str, Any]
 	savant_players = ingest_from_savant_manifest(savant_manifest)
 	fangraphs_players = ingest_from_fangraphs_manifest(fangraphs_manifest)
 
-	baseball_reference_by_key = {_player_merge_key(player): player for player in baseball_reference_players}
-	savant_by_key = {_player_merge_key(player): player for player in savant_players}
-	fangraphs_by_key = {_player_merge_key(player): player for player in fangraphs_players}
+	warnings_by_key: dict[tuple[str, str], set[str]] = {}
+	baseball_reference_by_key = _build_source_index(baseball_reference_players, source_name="baseball_reference", warnings_by_key=warnings_by_key)
+	savant_by_key = _build_source_index(savant_players, source_name="baseball_savant", warnings_by_key=warnings_by_key)
+	fangraphs_by_key = _build_source_index(fangraphs_players, source_name="fangraphs", warnings_by_key=warnings_by_key)
+	for key in sorted(set(baseball_reference_by_key) | set(savant_by_key) | set(fangraphs_by_key)):
+		records = [
+			payload
+			for payload in (
+				baseball_reference_by_key.get(key),
+				savant_by_key.get(key),
+				fangraphs_by_key.get(key),
+			)
+			if payload is not None
+		]
+		if len(records) <= 1:
+			continue
+		field_values = {_player_merge_warning_fields(record) for record in records}
+		if len(field_values) > 1:
+			warnings_by_key.setdefault(key, set()).add(
+				f"Ambiguous cross-source merge key '{key[0]}:{key[1]}' with conflicting age/bats/throws values."
+			)
 	merged_players = [
-		_merge_player_records(baseball_reference_by_key.get(key), savant_by_key.get(key), fangraphs_by_key.get(key))
+		_merge_player_records(
+			baseball_reference_by_key.get(key),
+			savant_by_key.get(key),
+			fangraphs_by_key.get(key),
+			merge_warnings=sorted(warnings_by_key.get(key, set())),
+		)
 		for key in sorted(set(baseball_reference_by_key) | set(savant_by_key) | set(fangraphs_by_key))
 	]
 	merged_players.sort(key=lambda item: (item["role"], item["name"]))

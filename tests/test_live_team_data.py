@@ -300,6 +300,41 @@ class LiveTeamDataTests(unittest.TestCase):
         self.assertEqual(player["status"], "Injured 60-Day")
         self.assertNotIn("batters_faced", player)
 
+    def test_fetch_roster_player_keeps_rehab_status_without_current_sample(self) -> None:
+        roster_entry = {
+            "person": {"id": 702057, "fullName": "Rehab Player"},
+            "position": {"abbreviation": "LF", "type": "Outfielder"},
+            "status": {"description": "Rehab Assignment", "code": "RL"},
+        }
+        person_payload = {
+            "people": [
+                {
+                    "fullName": "Rehab Player",
+                    "currentAge": 24,
+                    "primaryPosition": {"abbreviation": "LF"},
+                    "batSide": {"code": "L"},
+                    "pitchHand": {"code": "R"},
+                }
+            ]
+        }
+
+        with patch.object(live_team_data_module, "_fetch_json", return_value=person_payload), patch.object(
+            live_team_data_module, "_fetch_stats", return_value={"plateAppearances": 0}
+        ), patch.object(live_team_data_module, "_fetch_days_on_roster", return_value=None):
+            player = live_team_data_module._fetch_roster_player(
+                roster_entry,
+                team_abbreviation="TOR",
+                seasons=(2026, 2026),
+                ssl_context=None,
+                mlb_stats_api="https://statsapi.mlb.com/api/v1",
+                baseball_savant="https://baseballsavant.mlb.com",
+            )
+
+        self.assertIsNotNone(player)
+        assert player is not None
+        self.assertEqual(player["status"], "Rehab Assignment")
+        self.assertEqual(player["status_code"], "RL")
+
     def test_parse_savant_statcast_summary_extracts_contact_and_tool_fields(self) -> None:
         payload = """
         <script>
