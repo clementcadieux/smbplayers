@@ -1469,9 +1469,10 @@ def utility_covered_groups(player: PlayerInput, secondary_positions: list[str]) 
 
 
 def trait_confidence(score: float) -> str:
-    if score >= 30:
+    """Map directional percentile score to confidence level."""
+    if score >= 90:
         return "high"
-    if score >= 18:
+    if score >= 67:
         return "medium"
     return "low"
 
@@ -1581,6 +1582,44 @@ def player_trait_stat(player: PlayerInput, stat_name: str) -> float | list[str] 
     return metadata_list(player.metadata, stat_name) or None
 
 
+def build_all_trait_metrics_for_caching() -> dict[str, bool]:
+    """Extract all trait metrics from config for percentile caching.
+
+    Percentiles are cached in canonical form (higher_is_better=True) for all
+    metrics. Directionality for ``<=`` trait rules is handled at evaluation
+    time by inverting the confidence score.
+    """
+    metrics_directionality: dict[str, bool] = {}
+    traits = TRAIT_CRITERIA_CONFIG.get("traits", {})
+    if not isinstance(traits, Mapping):
+        return metrics_directionality
+    
+    for trait_name, payload in traits.items():
+        if not isinstance(payload, Mapping):
+            continue
+        criteria = payload.get("criteria")
+        if not isinstance(criteria, list):
+            continue
+        
+        for rule in criteria:
+            if not isinstance(rule, Mapping):
+                continue
+            stat_name = rule.get("stat")
+            operator = rule.get("operator")
+            if not isinstance(stat_name, str) or not isinstance(operator, str):
+                continue
+            
+            # Extract metric name from "trait_metrics.xxx" format
+            if not stat_name.startswith("trait_metrics."):
+                continue
+            metric_name = stat_name.removeprefix("trait_metrics.")
+            
+            if operator in {">=", "<=", "between"}:
+                metrics_directionality[metric_name] = True
+    
+    return metrics_directionality
+
+
 ELITE_PITCH_QUALITY_METRICS = frozenset(
     {
         "pitch_quality_4f",
@@ -1594,15 +1633,30 @@ ELITE_PITCH_QUALITY_METRICS = frozenset(
     }
 )
 ELITE_PITCH_PERCENTILE_MIN_PEERS = 8
+TRAIT_PERCENTILE_MIN_PEERS = 3
 ELITE_FASTBALL_TRAIT_NAMES = frozenset({"Elite 4F", "Elite 2F", "Elite CF"})
 
 
-def cache_elite_pitch_quality_percentiles(states: list[PlayerState]) -> None:
+def cache_trait_metric_percentiles(
+    states: list[PlayerState],
+    metrics: dict[str, bool],
+    role_scope: str | None = None,
+    min_peer_count: int = 1,
+) -> None:
+    """
+    Generic trait metric percentile caching function.
+    
+    Args:
+        states: List of PlayerState to process
+        metrics: Dict mapping metric_name to higher_is_better flag
+        role_scope: "pitcher", "non_pitcher", or None (all roles)
+        min_peer_count: Minimum peer count to compute local percentile (else use MLB fallback)
+    """
     peer_values_by_metric: dict[str, list[float]] = {}
-    for metric_name in ELITE_PITCH_QUALITY_METRICS:
+    for metric_name in metrics:
         peers: list[float] = []
         for state in states:
-            if state.player.role not in {"pitcher", "two_way"}:
+            if not trait_scope_matches_player(role_scope, state.player.role):
                 continue
             value = player_trait_metric(state.player, metric_name)
             if isinstance(value, (int, float)):
@@ -1610,7 +1664,7 @@ def cache_elite_pitch_quality_percentiles(states: list[PlayerState]) -> None:
         peer_values_by_metric[metric_name] = peers
 
     for state in states:
-        if state.player.role not in {"pitcher", "two_way"}:
+        if not trait_scope_matches_player(role_scope, state.player.role):
             continue
         percentile_values: dict[str, float] = {}
         peer_counts: dict[str, int] = {}
@@ -1620,7 +1674,9 @@ def cache_elite_pitch_quality_percentiles(states: list[PlayerState]) -> None:
             mlb_percentiles = metadata_lookup(state.player.metadata, "source_details.baseball_savant.mlb_trait_metric_percentiles")
         if not isinstance(mlb_peer_counts, Mapping):
             mlb_peer_counts = metadata_lookup(state.player.metadata, "source_details.baseball_savant.mlb_trait_metric_percentile_peer_counts")
-        for metric_name, peers in peer_values_by_metric.items():
+        
+        for metric_name, higher_is_better in metrics.items():
+            # Try MLB precomputed percentile first
             if isinstance(mlb_percentiles, Mapping) and isinstance(mlb_peer_counts, Mapping):
                 mlb_percentile = mlb_percentiles.get(metric_name)
                 mlb_peers = mlb_peer_counts.get(metric_name)
@@ -1628,16 +1684,37 @@ def cache_elite_pitch_quality_percentiles(states: list[PlayerState]) -> None:
                     percentile_values[metric_name] = round(float(mlb_percentile), 2)
                     peer_counts[metric_name] = int(mlb_peers)
                     continue
-            if not peers:
+            
+            # Compute from local peer group
+            peers = peer_values_by_metric.get(metric_name, [])
+            if len(peers) < min_peer_count:
                 continue
+            
             value = player_trait_metric(state.player, metric_name)
             if not isinstance(value, (int, float)):
                 continue
+            
             peer_counts[metric_name] = len(peers)
-            percentile_values[metric_name] = round(percentile_rank(float(value), peers, higher_is_better=True), 2)
+            percentile_values[metric_name] = round(
+                percentile_rank(float(value), peers, higher_is_better=higher_is_better),
+                2
+            )
+        
         if percentile_values:
             state.player.metadata.setdefault("trait_metric_percentiles", {}).update(percentile_values)
             state.player.metadata.setdefault("trait_metric_percentile_peer_counts", {}).update(peer_counts)
+
+
+def cache_elite_pitch_quality_percentiles(states: list[PlayerState]) -> None:
+    """Cache percentiles for elite pitch quality metrics (pitcher-scoped)."""
+    # Convert frozenset to dict with higher_is_better=True for all
+    elite_pitch_metrics = {metric: True for metric in ELITE_PITCH_QUALITY_METRICS}
+    cache_trait_metric_percentiles(
+        states,
+        elite_pitch_metrics,
+        role_scope="pitcher",
+        min_peer_count=ELITE_PITCH_PERCENTILE_MIN_PEERS,
+    )
 
 
 def trait_scope_matches_player(role_scope: str | None, player_role: str) -> bool:
@@ -1671,28 +1748,71 @@ def trait_rule_score(player: PlayerInput, rule: Mapping[str, object]) -> tuple[f
                 return None
             return score, f"{stat_name} contains {target}"
         return None
+    
+    # For trait_metrics, check if percentile data is available.
+    # Percentiles are cached in canonical direction (higher-is-better).
+    if stat_name.startswith("trait_metrics."):
+        metric_name = stat_name.removeprefix("trait_metrics.")
+        percentile_value = metadata_number(player.metadata, f"trait_metric_percentiles.{metric_name}")
+        percentile_peers = metadata_number(player.metadata, f"trait_metric_percentile_peer_counts.{metric_name}")
+        
+        # If percentile data is available, use percentile-based scoring.
+        # Elite pitch metrics require a larger peer pool before percentile mode.
+        uses_elite_pitch_metric = stat_name.startswith("trait_metrics.pitch_quality_")
+        min_peers_for_percentile = (
+            ELITE_PITCH_PERCENTILE_MIN_PEERS if uses_elite_pitch_metric else TRAIT_PERCENTILE_MIN_PEERS
+        )
+        if (
+            percentile_value is not None
+            and percentile_peers is not None
+            and percentile_peers >= min_peers_for_percentile
+        ):
+            target_value = rule.get("value")
+            if not isinstance(target_value, (int, float)):
+                return None
+            target_percentile = float(target_value)
+            
+            if operator == ">=":
+                if percentile_value <= target_percentile:
+                    return None
+                directional_percentile = percentile_value
+                score = directional_percentile * weight_value
+                if stat_name.startswith("trait_metrics.pitch_quality_"):
+                    # Elite pitch traits need to compete with high-confidence pitcher traits after final trimming.
+                    score += 20.0 * weight_value
+                return score, f"{metric_name} percentile {percentile_value:.2f} >= {target_percentile}"
+            if operator == "<=":
+                if percentile_value >= target_percentile:
+                    return None
+                # Invert for confidence tiering so lower raw percentile means higher confidence.
+                directional_percentile = 100.0 - percentile_value
+                score = directional_percentile * weight_value
+                return score, f"{metric_name} percentile {percentile_value:.2f} <= {target_percentile}"
+            elif operator == "between":
+                # For between operations with percentiles
+                if not isinstance(target_value, list) or len(target_value) != 2:
+                    return None
+                low_percentile = float(target_value[0])
+                high_percentile = float(target_value[1])
+                if percentile_value < low_percentile or percentile_value > high_percentile:
+                    return None
+                # Distance from boundaries; closer to center = higher score within the range
+                distance_from_boundaries = min(
+                    percentile_value - low_percentile,
+                    high_percentile - percentile_value
+                )
+                score = percentile_value + distance_from_boundaries * weight_value
+                return score, f"{low_percentile} <= {metric_name} percentile <= {high_percentile}"
+    
+    # Fallback to raw value scoring for non-trait_metrics or when percentile data is unavailable
     if not isinstance(stat_value, (int, float)):
         return None
     numeric_value = float(stat_value)
     target_value = rule.get("value")
     if operator == ">=":
-        if stat_name.startswith("trait_metrics.pitch_quality_"):
-            metric_name = stat_name.removeprefix("trait_metrics.")
-            percentile_value = metadata_number(player.metadata, f"trait_metric_percentiles.{metric_name}")
-            percentile_peers = metadata_number(player.metadata, f"trait_metric_percentile_peer_counts.{metric_name}")
-            if percentile_value is not None and percentile_peers is not None and percentile_peers >= ELITE_PITCH_PERCENTILE_MIN_PEERS:
-                if not isinstance(target_value, (int, float)) or percentile_value < float(target_value):
-                    return None
-                score = (percentile_value - float(target_value) + 10.0) * weight_value
-                # Elite pitch traits need to compete with high-confidence pitcher traits after final trimming.
-                score += 20.0 * weight_value
-                return score, f"{metric_name} percentile {percentile_value:.2f} >= {target_value}"
         if not isinstance(target_value, (int, float)) or numeric_value < float(target_value):
             return None
         score = (numeric_value - float(target_value) + 10.0) * weight_value
-        if stat_name.startswith("trait_metrics.pitch_quality_"):
-            # Elite pitch traits need to compete with high-confidence pitcher traits after final trimming.
-            score += 20.0 * weight_value
         return score, f"{stat_name} >= {target_value}"
     if operator == "<=":
         if not isinstance(target_value, (int, float)) or numeric_value > float(target_value):
@@ -1711,7 +1831,6 @@ def trait_rule_score(player: PlayerInput, rule: Mapping[str, object]) -> tuple[f
             return None
         score = (10.0 + min(numeric_value - low_value, high_value - numeric_value)) * weight_value
         return score, f"{low_value} <= {stat_name} <= {high_value}"
-    return None
 
 
 def apply_configured_trait_criteria(
@@ -2506,6 +2625,17 @@ def _rate_players_core(
                     for state in eligible_states:
                         if state.position_group == group:
                             state.review_flags.append(f"{spec.name}: peer group '{group}' is small ({count})")
+
+    # Derive fallback trait metrics before percentile caching so percentile-gated
+    # trait evaluation is deterministic across repeated runs with the same input.
+    for state in states:
+        _derive_missing_trait_metrics(state.player)
+
+    # Cache all trait metrics for percentile-based confidence evaluation.
+    # This enables percentile-based trait confidence thresholds across all roles.
+    all_trait_metrics = build_all_trait_metrics_for_caching()
+    if all_trait_metrics:
+        cache_trait_metric_percentiles(states, all_trait_metrics, role_scope=None, min_peer_count=1)
 
     # Elite pitch trait thresholds prefer MLB-wide percentile metadata when available,
     # then fall back to percentiles within the active pitcher pool.

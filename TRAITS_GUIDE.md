@@ -13,6 +13,13 @@ Trait candidates come from:
 
 Each trait candidate is scored with confidence weighting, polarity bias, and chemistry contribution.
 
+Trait confidence is percentile-based:
+- `high`: top 10% of peers
+- `medium`: top 33% of peers
+- `low`: top 50% of peers
+
+Anything below the top 50% gate does not receive the trait.
+
 Config keys:
 - `confidence_weights.high`
 - `confidence_weights.medium`
@@ -54,7 +61,7 @@ Config keys:
 
 ## 7. Practical Tuning Loop
 
-1. Edit trait thresholds in `config.yaml`.
+1. Edit trait thresholds in `smb4_player_reference.json` (`trait_criteria`).
 2. Run `rate` or `ingest-rate` with `--config-path`.
 3. Inspect `suggested_traits` and `assigned_traits` changes.
 4. Iterate until trait distribution matches your roster goals.
@@ -96,10 +103,10 @@ pct_points = bb_pct * 100          # e.g. 10.5
 mind_games = (pct_points - 4.0) / (20.0 - 4.0) * 100   # clipped [0, 100]
 ```
 
-| mind_games | Trait assigned |
-|-----------|----------------|
-| ≥ 65      | Mind Gamer     |
-| ≤ 35      | Easy Target    |
+| mind_games percentile gate | Trait assigned |
+|---------------------------|----------------|
+| top 50% (`>= 50`)         | Mind Gamer     |
+| bottom 50% (`<= 50`)      | Easy Target    |
 
 Constants: `_MIND_GAMES_BB_PCT_LOW = 4.0`, `_MIND_GAMES_BB_PCT_HIGH = 20.0`
 
@@ -112,10 +119,10 @@ avg_range = mean(oaa, drs, uzr)   # whichever are present
 dive_recovery = (avg_range - (-5.0)) / (20.0 - (-5.0)) * 100   # clipped [0, 100]
 ```
 
-| dive_recovery | Trait assigned   |
-|--------------|------------------|
-| ≥ 65         | Dive Wizard      |
-| ≤ 35         | Butter Fingers   |
+| dive_recovery percentile gate | Trait assigned   |
+|------------------------------|------------------|
+| top 50% (`>= 50`)            | Dive Wizard      |
+| bottom 50% (`<= 50`)         | Butter Fingers   |
 
 Constants: `_DIVE_RECOVERY_RANGE_LOW = -5.0`, `_DIVE_RECOVERY_RANGE_HIGH = 20.0`
 
@@ -133,10 +140,10 @@ durability = full / len(seasons) * 100
 threshold = 150.0 (IP)
 ```
 
-| durability | Trait assigned |
-|-----------|----------------|
-| ≥ 65      | Durable        |
-| ≤ 35      | Injury Prone   |
+| durability percentile gate | Trait assigned |
+|---------------------------|----------------|
+| top 50% (`>= 50`)         | Durable        |
+| bottom 50% (`<= 50`)      | Injury Prone   |
 
 Thresholds are read from `config.yaml` → `season_weighting.full_season_pa_threshold` (default 500) and
 `full_season_ip_threshold` (default 150).
@@ -149,13 +156,13 @@ Pitchers only.  Derived from `resolved_projected_ip()`.
 workhorse = projected_ip / workhorse_benchmark_ip * 100   # clipped [0, 100]
 ```
 
-| workhorse | Trait assigned |
-|----------|----------------|
-| ≥ 80     | Workhorse      |
+| workhorse percentile gate | Trait assigned |
+|--------------------------|----------------|
+| top 50% (`>= 50`)        | Workhorse      |
 
 Thresholds are tunable in `config.yaml`:
 - `season_weighting.workhorse_benchmark_ip` (default 250)
-- `trait_criteria.traits.Workhorse.criteria[0].value` (set to 80 for a 200+ IP target)
+- `smb4_player_reference.json` → `trait_criteria.traits.Workhorse.criteria[0].value`
 
 ### Stimulated  (`trait_metrics.late_game_hitting` / `trait_metrics.late_game_pitching`)
 
