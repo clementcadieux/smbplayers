@@ -49,28 +49,11 @@
 - **#105 – Additional Traits Not Being Produced** – Implemented *Mind Gamer* (high BB%), *Easy Target* (low BB%), *Workhorse* (high-volume starter), *Stimulated* (high-leverage performance), *Dive Wizard* (high range metrics), *Butter Finger* (low range metrics), *Durable* (high % of full-volume seasons), and *Injury Prone* (low % of full-volume seasons); defined thresholds in `smb4_player_reference.json`/`config.json`; added unit tests and updated `TRAITS_GUIDE.md`.
 - **#108 – Some Traits Are Too Common** – Replaced raw-value thresholds with percentile-based confidence classification (High: top 10 %, Medium: top 33 %, Low: top 50 %) for all trait-specific metrics; updated thresholds in `smb4_player_reference.json`/`config.json`; removed hard-coded raw cutoffs; added boundary tests; updated `TRAITS_GUIDE.md`.
 - **#109 – Catcher Framing Runs Are Missing** – Diagnosed the data gap; expanded CSV column aliases for `framing_runs` in `savant.py`; added a Baseball Reference fallback for catchers; validated normalisation bounds in `smb4_player_reference.json`; added regression tests for both primary and fallback parse paths.
+- **#113 – Build up Generation Code** – Defined hitter/pitcher CSV output schemas; implemented CSV writer in the Generation layer producing one file per team; wired into the `generate` CLI sub-command; added tests confirming column headers and required fields for synthetic records.
 
 ---
 
 ## Open Issues
-
-## Issue #113 – Build up Generation Code
-
-**Problem:** The Generation layer currently lacks a structured CSV output. Each team's players need to be exported in a well-defined format that can be directly consumed downstream.
-
-### Steps
-
-1. **Define output schema:**
-   - *Hitters:* Name, Throw Hand, Bat Hand, Primary Position, Secondary Positions, Contact, Power, Speed, Fielding, Arm, Trait 1, Trait 2.
-   - *Pitchers:* Name, Throw Hand, Bat Hand, Arsenal, Velocity, Junk, Accuracy, Trait 1, Trait 2, Contact, Power, Speed, Fielding, Arm.
-
-2. **Implement CSV writer** in the Generation layer (`smb4_mlb_ratings/generation/`) that produces one file per team, splitting hitters and pitchers into the correct column sets.
-
-3. **Wire into the `generate` CLI sub-command** so running `python -m smb4_mlb_ratings.cli generate <processed_data> <output_dir>` writes one CSV per team.
-
-4. **Add tests** confirming column headers match the schema and all required fields are populated for synthetic hitter and pitcher records.
-
----
 
 ## Issue #114 – Quick Layer-Specific Triggers
 
