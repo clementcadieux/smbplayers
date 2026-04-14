@@ -158,6 +158,36 @@ Samples:
 - `tracked_fastballs`
 - `tracked_pitches`
 
+## Quick Layer Triggers (Makefile)
+
+A `Makefile` is provided so each pipeline layer can be triggered with minimal typing.
+Default file paths are built in but every variable can be overridden on the command line.
+
+```bash
+# Normalise source CSVs into a player JSON file
+make ingest
+
+# Rate a normalised player JSON (optional --team filter)
+make process TEAM=TOR
+
+# Write per-team hitter/pitcher CSVs from a ratings file
+make generate
+
+# Rank players into a recommended 22-man roster
+make rank
+
+# Run the full ingest → process → generate → rank pipeline
+make run-all
+
+# Override any file path
+make run-all MANIFEST=my_manifest.json REPORTS_DIR=exports/reports
+
+# Show all targets and variable defaults
+make help
+```
+
+Run `make help` for the full list of configurable variables and their defaults.
+
 ## Running The Tool
 
 ```powershell

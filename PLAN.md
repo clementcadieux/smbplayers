@@ -56,48 +56,12 @@
 
 ## Open Issues
 
-## Issue #114 – Quick Layer-Specific Triggers
-
-**Problem:** Running individual pipeline layers requires memorising the full CLI invocation. A convenient shortcut mechanism is needed so each of the four layers (Ingest, Aggregate, Process, Generate) can be triggered independently with minimal typing.
-
-### Steps
-
-1. **Audit existing CLI sub-commands** (`ingest`, `aggregate`, `process`, `generate`) to confirm they are each independently invocable.
-
-2. **Create trigger scripts or a `Makefile`** (one target per layer plus a `run-all` target) that wraps the full CLI invocation with sensible defaults for input/output paths.
-
-3. **Document usage** in `README.md` (or a dedicated `RUNNING.md`) with one-line examples for each layer trigger.
-
-4. **Add a smoke test** that invokes each trigger script/target with a minimal synthetic fixture and asserts zero exit code.
+*(No open issues)*
 
 ---
 
-## Issue #116 – Elite Players Ratings Too Low
+## Completed Issues (continued)
 
-**Problem:** Elite players' overall ratings are still not extreme enough. Top-tier pitchers like Skubal should floor at A+ and very likely reach S; the current curve does not push truly elite stat lines into the highest rating bands.
-
-### Steps
-
-1. **Audit the percentile-to-rating curve** in `config.json` to identify where elite percentile scores are being capped below the S/A+ band.
-
-2. **Widen the upper tail** of the non-linear rating curve so that the top 5 % of performers map to 95–99 and the top 10 % map to at least 90; store updated curve parameters in `config.json`.
-
-3. **Add or update named-player regression tests** asserting that a Skubal-level stat line produces an overall SP rating ≥ 90 (A+) and almost certainly ≥ 95 (S).
-
-4. **Verify no general inflation** – confirm that average-tier players do not drift above their expected mid-range bands.
-
----
-
-## Issue #117 – Prioritize Positive Traits Over Negative Traits
-
-**Problem:** When a player qualifies for both positive and negative traits and the 2-trait cap forces a tie-break, negative traits are sometimes chosen over positive ones, which unfairly punishes players.
-
-### Steps
-
-1. **Classify all traits** in `smb4_player_reference.json` (or `config.json`) as `positive`, `negative`, or `neutral`.
-
-2. **Update trait selection logic** in `engine.py` so that, after scoring, positive traits are ranked above negative traits of equal confidence score before applying the 2-trait cap.
-
-3. **Preserve the elite-pitch priority rule** – elite-pitch traits (already boosted) should still outrank ordinary positive traits.
-
-4. **Add unit tests** for a player who qualifies for one positive and one negative trait at equal confidence, asserting only the positive trait is kept, and for a player with two positives and one negative, asserting both positives are kept.
+- **#114 – Quick Layer-Specific Triggers** – Created `Makefile` with one target per pipeline layer (`ingest`, `aggregate`, `process`, `generate`, `rank`) plus a `run-all` target using configurable default paths; added layer-trigger documentation section to `README.md`; added `test_layer_commands_each_exit_zero_with_minimal_fixture` smoke test in `test_ingest.py`.
+- **#116 – Elite Players Ratings Too Low** – Widened the upper tail of `percentile_to_rating` in `config.yaml` so the 90th percentile maps to ≥ 90 and the 95th percentile maps to ≥ 95; raised the Skubal-tier regression-test assertion from ≥ 93 to ≥ 95 (S tier); updated `test_interpolate_rating_expands_elite_percentile_band` to reflect the new curve knots.
+- **#117 – Prioritize Positive Traits Over Negative Traits** – Added polarity as a secondary sort key in `trim_traits_for_output` (`traits.py`) so that positive traits beat negative ones when priority scores tie; added two regression tests confirming positive traits are kept over negative traits of equal confidence when the 2-trait cap forces a choice.
