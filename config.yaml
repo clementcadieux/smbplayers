@@ -167,5 +167,8 @@
       "IF": ["1B", "2B", "3B", "SS"]
     },
     "utility_bonus_weight": 1.0
+  },
+  "pitcher_adjustments": {
+    "sp_overall_bonus": 4.0
   }
 }

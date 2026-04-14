@@ -50,6 +50,7 @@
 - **#108 – Some Traits Are Too Common** – Replaced raw-value thresholds with percentile-based confidence classification (High: top 10 %, Medium: top 33 %, Low: top 50 %) for all trait-specific metrics; updated thresholds in `smb4_player_reference.json`/`config.json`; removed hard-coded raw cutoffs; added boundary tests; updated `TRAITS_GUIDE.md`.
 - **#109 – Catcher Framing Runs Are Missing** – Diagnosed the data gap; expanded CSV column aliases for `framing_runs` in `savant.py`; added a Baseball Reference fallback for catchers; validated normalisation bounds in `smb4_player_reference.json`; added regression tests for both primary and fallback parse paths.
 - **#113 – Build up Generation Code** – Defined hitter/pitcher CSV output schemas; implemented CSV writer in the Generation layer producing one file per team; wired into the `generate` CLI sub-command; added tests confirming column headers and required fields for synthetic records.
+- **#119 – Starters Are Still Underrated** – Added a configurable `sp_overall_bonus` (default 4.0) in `config.yaml` under `pitcher_adjustments`; loaded it in `refresh_runtime_tuning()`; modified `role_weighted_overall_numeric` to accept an optional `pitcher_role` argument and apply the bonus for SP-classified pitchers; updated both overall-computation call sites to pass the pitcher role; added tests asserting an SP rates higher than an identical RP and that a Skubal-tier ace reaches A+ (≥ 93) overall.
 
 ---
 
