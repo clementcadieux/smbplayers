@@ -804,10 +804,8 @@ def _player_key(row: dict[str, str], *, season_year: int | None = None) -> tuple
         raise ValueError("CSV row is missing both player id and player name")
     normalized_name = _normalized_name(name)
     team = _normalized_team(_pick_first(row, "team", "team_abbr", "team_name", "last_team")) or ""
-    primary_position = _canonical_position(_pick_first(row, "primary_position", "position", "pos", "fielding_position", "mlb_pos")) or ""
-    role = "pitcher" if primary_position == "P" else "hitter"
     season_text = str(season_year) if season_year is not None else ""
-    return ("composite", f"{normalized_name}|{team}|{primary_position}|{role}|{season_text}")
+    return ("composite", f"{normalized_name}|{team}|{season_text}")
 
 
 def _ensure_player(
@@ -1175,6 +1173,10 @@ def _should_apply_pitcher_row(player: PlayerAccumulator, row: dict[str, str]) ->
     if row_position is not None and row_position != "P":
         return False
     if player.primary_position is not None and player.primary_position != "P" and "pitcher" not in player.roles:
+        # Permit explicit pitcher rows to merge onto existing hitter records for
+        # legitimate two-way players while still rejecting ambiguous rows.
+        if row_position == "P" and "hitter" in player.roles:
+            return True
         return False
     return True
 

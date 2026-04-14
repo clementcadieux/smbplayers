@@ -1481,6 +1481,99 @@ class IngestFrameworkTests(unittest.TestCase):
         )
         self.assertIn("baseball_reference:running", pitcher["metadata"]["ingest"]["missing_files"]["current"])
 
+    def test_two_way_rows_without_player_id_merge_by_name_team_and_season(self) -> None:
+        roster_path = self.root / "two_way_no_id_roster.csv"
+        hitters_path = self.root / "two_way_no_id_hitters.csv"
+        pitchers_path = self.root / "two_way_no_id_pitchers.csv"
+        manifest_path = self.root / "two_way_no_id_manifest.json"
+
+        self._write_csv(
+            roster_path,
+            [
+                {
+                    "player_name": "No ID Two Way",
+                    "team": "LAA",
+                    "age": 30,
+                    "position": "DH",
+                    "bats": "L",
+                    "throws": "R",
+                }
+            ],
+        )
+        self._write_csv(
+            hitters_path,
+            [
+                {
+                    "player_name": "No ID Two Way",
+                    "team": "LAA",
+                    "position": "DH",
+                    "PA": 505,
+                    "ISO": 0.235,
+                    "HR": 39,
+                    "SLG": 0.598,
+                    "AVG": 0.301,
+                    "OBP": 0.392,
+                    "K %": 22.8,
+                    "Contact %": 74.8,
+                    "Barrel %": 16.4,
+                    "Avg Exit Velocity": 93.7,
+                    "H": 155,
+                }
+            ],
+        )
+        self._write_csv(
+            pitchers_path,
+            [
+                {
+                    "player_name": "No ID Two Way",
+                    "team": "LAA",
+                    "position": "P",
+                    "BF": 715,
+                    "Pitches": 2810,
+                    "Avg Fastball Velocity": 97.0,
+                    "Peak Fastball Velocity": 99.2,
+                    "FF %": 51.0,
+                    "SwStr %": 14.8,
+                    "Chase %": 33.2,
+                    "BB %": 7.4,
+                    "Strike %": 66.0,
+                    "Zone %": 49.8,
+                    "First Pitch Strike %": 63.4,
+                }
+            ],
+        )
+
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "source": "baseball_savant",
+                    "seasons": {
+                        "current": {
+                            "year": 2025,
+                            "files": {
+                                "roster": roster_path.name,
+                                "hitters": hitters_path.name,
+                                "pitchers": pitchers_path.name,
+                            },
+                        }
+                    },
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        players = ingest_from_manifest(load_manifest(manifest_path))
+        self.assertEqual(len(players), 1)
+
+        player = players[0]
+        self.assertEqual(player["name"], "No ID Two Way")
+        self.assertEqual(player["role"], "two_way")
+        self.assertIn("iso", player["metrics"])
+        self.assertIn("avg_fastball_velocity", player["metrics"])
+        self.assertIn("weighted_pa", player["samples"])
+        self.assertIn("weighted_bf", player["samples"])
+
     def test_pitcher_metric_aliases_are_parsed_from_savant_csv(self) -> None:
         roster_path = self.root / "alias_pitcher_roster.csv"
         pitchers_path = self.root / "alias_pitcher_metrics.csv"
