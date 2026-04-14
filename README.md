@@ -206,6 +206,7 @@ python -m smb4_mlb_ratings.cli ingest savant_manifest.json normalized_players.js
 python -m smb4_mlb_ratings.cli generate ratings_output.json team_reports
 python -m smb4_mlb_ratings.cli rank ratings_output.json roster_output.json
 python -m smb4_mlb_ratings.cli build-roster-bridge export/league_roster.json team_reports export/league_bridge.json
+python -m smb4_mlb_ratings.cli build-codec-interface export/league_bridge.json export/codec_import.json
 python -m smb4_mlb_ratings.cli ingest-rate savant_manifest.json ratings_output.json --normalized-output normalized_players.json
 python -m smb4_mlb_ratings.cli ingest-rate savant_manifest.json ratings_output.json --config-path config.yaml
 python -m smb4_mlb_ratings.cli ingest-rate savant_manifest.json --structured-output team_ratings
@@ -220,6 +221,8 @@ The `generate` command writes per-team CSV files using role-specific schemas:
 The `rank` command writes a compact league roster payload intended for roster bookkeeping. It includes team roster slots and identifier-level player references (`player_key`, `player_id`, `name`, team/role/primary position), while detailed ratings remain in the per-team CSV exports.
 
 The `build-roster-bridge` command merges strict team membership from `export/league_roster.json` with player attributes from the `team_reports` CSV folder and emits a free-agent pool for any team-report player not present in the selected roster IDs. Team report CSVs must include a `player_id` column.
+
+The `build-codec-interface` command consumes `export/league_bridge.json` as the canonical import payload and writes a normalized record list for downstream SMB4 encoder/decoder integration. The output includes pool targeting (`team` vs `free_agent`), league folder, source metadata, and summary stats.
 
 The `ingest` manifest can now target `baseball_savant`, `baseball_reference`, or `mixed`.
 
