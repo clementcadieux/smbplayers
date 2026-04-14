@@ -87,6 +87,7 @@ Example:
         "arm_strength": 88.6,
         "pop_time": 1.92,
         "framing_runs": 8.4,
+        "blocking_runs": 2.1,
         "outfield_arm_runs": 3.1,
         "arm_position_baseline": 0.70
       },
@@ -127,6 +128,7 @@ Hitters:
 - `catcher_throw_value`
 - `pop_time`
 - `framing_runs`
+- `blocking_runs`
 - `outfield_arm_runs`
 - `arm_position_baseline`
 
@@ -322,7 +324,7 @@ Recommended `fielding` CSV exports by source:
 - Baseball Savant OAA leaderboard for `oaa` and innings
 - Baseball Savant Arm Strength leaderboard for `arm_strength`
 - Baseball Savant Pop Time leaderboard for `pop_time` and `catcher_throw_value`
-- Baseball Savant Catcher Framing leaderboard for `framing_runs`
+- Baseball Savant Catcher Framing leaderboard for `framing_runs` and `blocking_runs`
 - FanGraphs or Baseball Reference advanced fielding export for `drs` and `uzr`
 
 ### Output Behavior
@@ -392,7 +394,7 @@ The first Baseball Reference implementation focuses on actual-result inputs:
 
 - hitters: `iso`, `hr_per_pa`, `slugging`, `strikeout_rate`, `contact_rate`, `batting_average`, `adjusted_obp`, baserunning result metrics
 - pitchers: `stuff_metric`, `weak_contact_rate`, `walk_rate`, `strike_pct`, `command_error_rate`
-- fielding: `drs`, `uzr` when present, fielding percentage proxy, position difficulty, and arm-position baseline. Specialized Savant catcher and arm leaderboards can be paired with this through the shared `fielding` file type when you need `arm_strength`, `catcher_throw_value`, `pop_time`, `framing_runs`, or `outfield_arm_runs`.
+- fielding: `drs`, `uzr` when present, fielding percentage proxy, position difficulty, and arm-position baseline. Specialized Savant catcher and arm leaderboards can be paired with this through the shared `fielding` file type when you need `arm_strength`, `catcher_throw_value`, `pop_time`, `framing_runs`, `blocking_runs`, or `outfield_arm_runs`.
 
 If a Baseball Reference file does not provide a direct tool metric, the adapter either omits that metric or derives a conservative proxy and records that fact in `metadata.ingest.estimated_metrics`.
 

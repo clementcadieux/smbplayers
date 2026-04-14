@@ -2992,6 +2992,61 @@ class MissingFieldConsumptionTests(unittest.TestCase):
         self.assertGreater(elite_pct, average_pct)
         self.assertGreater(average_pct, poor_pct)
 
+    def test_blocking_runs_improves_catcher_fielding_percentile(self) -> None:
+        base_metrics = {
+            "iso": 0.160,
+            "hr_per_pa": 0.028,
+            "barrel_rate": 0.075,
+            "slugging": 0.420,
+            "avg_exit_velocity": 88.5,
+            "strikeout_rate": 0.215,
+            "contact_rate": 0.765,
+            "batting_average": 0.262,
+            "adjusted_obp": 0.330,
+            "oaa": 0.0,
+            "drs": 0.0,
+            "uzr": 0.0,
+            "fielding_pct_proxy": 0.990,
+            "position_difficulty": 0.98,
+            "framing_runs": 0.0,
+            "catcher_throw_value": 0.0,
+            "pop_time": 1.95,
+            "arm_strength": 83.0,
+            "arm_position_baseline": 0.95,
+        }
+        players = [
+            {
+                "name": "Elite Blocker",
+                "role": "hitter",
+                "team": "NYM",
+                "primary_position": "C",
+                "metrics": {**base_metrics, "blocking_runs": 6.0},
+                "samples": {"weighted_pa": 500, "defensive_innings": 900},
+            },
+            {
+                "name": "Poor Blocker",
+                "role": "hitter",
+                "team": "NYM",
+                "primary_position": "C",
+                "metrics": {**base_metrics, "blocking_runs": -4.0},
+                "samples": {"weighted_pa": 500, "defensive_innings": 900},
+            },
+            {
+                "name": "Catcher Peer",
+                "role": "hitter",
+                "team": "NYM",
+                "primary_position": "C",
+                "metrics": {**base_metrics, "blocking_runs": 0.0},
+                "samples": {"weighted_pa": 500, "defensive_innings": 900},
+            },
+        ]
+
+        outputs = rate_players(players)
+        by_name = {output.name: output for output in outputs}
+
+        self.assertGreater(by_name["Elite Blocker"].percentiles["fielding"], by_name["Catcher Peer"].percentiles["fielding"])
+        self.assertGreater(by_name["Catcher Peer"].percentiles["fielding"], by_name["Poor Blocker"].percentiles["fielding"])
+
     def test_two_strike_contact_rate_is_ignored_for_contact_rating(self) -> None:
         base_metrics = {
             "iso": 0.160,

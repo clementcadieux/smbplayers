@@ -386,7 +386,8 @@ RATING_SPECS = (
             ComponentSpec("uzr", 0.12),
             ComponentSpec("fielding_pct_proxy", 0.08),
             ComponentSpec("position_difficulty", 0.08),
-            ComponentSpec("framing_runs", 0.15, position_groups=frozenset({"catcher"})),
+            ComponentSpec("framing_runs", 0.12, position_groups=frozenset({"catcher"})),
+            ComponentSpec("blocking_runs", 0.08, position_groups=frozenset({"catcher"})),
         ),
     ),
     RatingSpec(

@@ -25,6 +25,7 @@ Higher current-season recency weight increases responsiveness to recent performa
 
 Each rating component is normalized against peers to produce percentiles.
 Example: `power` combines `iso`, `hr_per_pa`, `barrel_rate`, etc.
+For catchers, `fielding` can include both `framing_runs` and `blocking_runs` when available.
 
 The weighted percentile is then converted to a 1-99 rating using `rating_curve.percentile_to_rating`.
 
