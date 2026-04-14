@@ -298,9 +298,9 @@ def build_parser() -> argparse.ArgumentParser:
     process_parser.add_argument("output", type=Path, help="Output ratings JSON file")
     process_parser.add_argument("--team", type=str, default=None, help="Optional team abbreviation to filter before rating")
 
-    generate_parser = subparsers.add_parser("generate", help="Generate human-readable markdown reports from ratings JSON")
+    generate_parser = subparsers.add_parser("generate", help="Generate per-team hitter and pitcher CSV exports from ratings JSON")
     generate_parser.add_argument("input", type=Path, help="Ratings JSON file")
-    generate_parser.add_argument("output", type=Path, help="Output directory for team markdown reports")
+    generate_parser.add_argument("output", type=Path, help="Output directory for team CSV reports")
 
     rank_parser = subparsers.add_parser("rank", help="Rank rated players into recommended 22-man rosters")
     rank_parser.add_argument("input", type=Path, help="Ratings JSON file")

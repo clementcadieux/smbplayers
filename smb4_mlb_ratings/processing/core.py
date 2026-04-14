@@ -2658,6 +2658,8 @@ def _rate_players_core(
                 role=state.player.role,
                 team=state.player.team,
                 primary_position=state.player.primary_position,
+                bats=state.player.bats,
+                throws=state.player.throws,
                 ratings=dict(sorted(state.ratings.items())),
                 percentiles=dict(sorted(state.percentiles.items())),
                 overall_numeric=overall_numeric,

@@ -173,6 +173,7 @@ python -m smb4_mlb_ratings.cli rate players.json ratings_output.json
 python -m smb4_mlb_ratings.cli rate players.json ratings_output.json --config-path config.yaml
 python -m smb4_mlb_ratings.cli rate players.json ratings_output.json --team TOR
 python -m smb4_mlb_ratings.cli ingest savant_manifest.json normalized_players.json
+python -m smb4_mlb_ratings.cli generate ratings_output.json team_reports
 python -m smb4_mlb_ratings.cli rank ratings_output.json roster_output.json
 python -m smb4_mlb_ratings.cli ingest-rate savant_manifest.json ratings_output.json --normalized-output normalized_players.json
 python -m smb4_mlb_ratings.cli ingest-rate savant_manifest.json ratings_output.json --config-path config.yaml
@@ -180,6 +181,10 @@ python -m smb4_mlb_ratings.cli ingest-rate savant_manifest.json --structured-out
 python -m smb4_mlb_ratings.cli ingest-rate savant_manifest.json ratings_output.json --team TOR --structured-output team_ratings
 python -m smb4_mlb_ratings.cli refresh-bluejays-example
 ```
+
+The `generate` command writes per-team CSV files using role-specific schemas:
+- `<team>_hitters.csv`
+- `<team>_pitchers.csv`
 
 The `ingest` manifest can now target `baseball_savant`, `baseball_reference`, or `mixed`.
 
