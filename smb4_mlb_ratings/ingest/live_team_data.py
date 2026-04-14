@@ -924,7 +924,8 @@ def build_baseball_reference_pitcher_rows(
 ) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for player in players:
-        if player.get("type") != "pitcher":
+        player_type = _as_str(player.get("type"))
+        if player_type != "pitcher" and not _is_two_way_position(player.get("position"), None):
             continue
         if (_as_int(player.get("batters_faced")) or 0) <= 0:
             continue
@@ -961,7 +962,8 @@ def build_savant_pitcher_rows(
 ) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for player in players:
-        if player.get("type") != "pitcher":
+        player_type = _as_str(player.get("type"))
+        if player_type != "pitcher" and not _is_two_way_position(player.get("position"), None):
             continue
         if (_as_int(player.get("batters_faced")) or 0) <= 0:
             continue
@@ -1200,6 +1202,7 @@ def _fetch_roster_player(
 
     position = _as_str(roster_position.get("abbreviation")) or _as_str(primary_position.get("abbreviation"))
     position_type = _as_str(roster_position.get("type"))
+    is_two_way_position = _is_two_way_position(position, position_type)
     if position_type == "Pitcher" or position == "P":
         stat_group = "pitching"
         player_type = "pitcher"
@@ -1306,6 +1309,88 @@ def _fetch_roster_player(
                     mlb_stats_api=mlb_stats_api,
                 )
                 or {},
+            }
+        )
+
+        if not is_two_way_position:
+            return base_player
+
+        pitching_stats = _fetch_stats(
+            player_id,
+            "pitching",
+            seasons=seasons,
+            ssl_context=ssl_context,
+            mlb_stats_api=mlb_stats_api,
+        )
+        if pitching_stats is None:
+            return base_player
+
+        batters_faced = _as_int(pitching_stats.get("battersFaced")) or 0
+        if batters_faced == 0:
+            return base_player
+
+        advanced_pitching_stats = _fetch_stats(
+            player_id,
+            "pitching",
+            seasons=seasons,
+            ssl_context=ssl_context,
+            mlb_stats_api=mlb_stats_api,
+            stats_type="seasonAdvanced",
+        ) or {}
+        pitching_handedness_splits = _fetch_handedness_splits(
+            player_id,
+            "pitching",
+            seasons=seasons,
+            ssl_context=ssl_context,
+            mlb_stats_api=mlb_stats_api,
+        )
+        situational_pitching_splits = _fetch_situation_splits(
+            player_id,
+            "pitching",
+            codes=("c00", "ron", "lc", "c30", "c31", "c32"),
+            seasons=seasons,
+            ssl_context=ssl_context,
+            mlb_stats_api=mlb_stats_api,
+        )
+        pitch_arsenal = _fetch_pitch_arsenal(
+            player_id,
+            seasons=seasons,
+            ssl_context=ssl_context,
+            mlb_stats_api=mlb_stats_api,
+        )
+        base_player.update(
+            {
+                "batters_faced": batters_faced,
+                "walks": _as_int(pitching_stats.get("baseOnBalls")) or 0,
+                "strikeouts": _as_int(pitching_stats.get("strikeOuts")) or 0,
+                "home_runs": _as_int(pitching_stats.get("homeRuns")) or 0,
+                "hits": _as_int(pitching_stats.get("hits")) or 0,
+                "innings_pitched": _as_str(pitching_stats.get("inningsPitched")) or "0.0",
+                "number_of_pitches": _as_int(pitching_stats.get("numberOfPitches")) or 0,
+                "strikes": _as_int(pitching_stats.get("strikes")) or 0,
+                "strike_percentage": _as_str(pitching_stats.get("strikePercentage")) or _as_str(advanced_pitching_stats.get("strikePercentage")),
+                "stolen_bases_allowed": _as_int(pitching_stats.get("stolenBases")) or 0,
+                "caught_stealing": _as_int(pitching_stats.get("caughtStealing")) or 0,
+                "pickoffs": _as_int(pitching_stats.get("pickoffs")) or 0,
+                "stolen_base_percentage": _as_str(pitching_stats.get("stolenBasePercentage")),
+                "advanced_pitching": advanced_pitching_stats,
+                "situational_pitching_metrics": derive_pitcher_situational_metrics(
+                    situational_pitching_splits,
+                    {
+                        "stolen_bases_allowed": _as_int(pitching_stats.get("stolenBases")) or 0,
+                        "caught_stealing": _as_int(pitching_stats.get("caughtStealing")) or 0,
+                        "pickoffs": _as_int(pitching_stats.get("pickoffs")) or 0,
+                        "stolen_base_percentage": _as_str(pitching_stats.get("stolenBasePercentage")),
+                    },
+                ),
+                "pitching_handedness_splits": pitching_handedness_splits,
+                "savant_pitch_details": _fetch_savant_pitch_details(
+                    player_id,
+                    ssl_context=ssl_context,
+                    baseball_savant=baseball_savant,
+                    http_failures=http_failures,
+                ),
+                "pitch_arsenal": pitch_arsenal,
             }
         )
         return base_player
@@ -1476,6 +1561,14 @@ def _fetch_pitch_arsenal(
         if arsenal_data:
             return arsenal_data
     return {}
+
+
+def _is_two_way_position(position: Any, position_type: Any) -> bool:
+    position_text = (_as_str(position) or "").upper()
+    if position_text in {"TWP", "TW"}:
+        return True
+    position_type_text = (_as_str(position_type) or "").lower()
+    return "two-way" in position_type_text or "two way" in position_type_text
 
 
 def _fetch_savant_pitch_details(
