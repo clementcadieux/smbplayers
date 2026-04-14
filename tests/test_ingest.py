@@ -1233,7 +1233,55 @@ class IngestFrameworkTests(unittest.TestCase):
         ratings = json.loads(ratings_path.read_text(encoding="utf-8"))
         self.assertEqual([item["name"] for item in ratings], ["Keep Me"])
 
-    def test_ingest_preserves_roster_status_metadata(self) -> None:
+    def test_layer_commands_each_exit_zero_with_minimal_fixture(self) -> None:
+        # Smoke test: verify each pipeline layer sub-command (ingest, aggregate, process,
+        # generate, rank) independently exits 0 on a minimal synthetic fixture.
+        normalized_path = self.root / "layers_normalized.json"
+        ratings_path = self.root / "layers_ratings.json"
+        reports_dir = self.root / "layers_reports"
+        roster_path = self.root / "layers_roster.json"
+
+        # Layer 1 – ingest
+        self.assertEqual(
+            main(["ingest", str(self.root / "manifest.json"), str(normalized_path)]),
+            0,
+            "ingest layer should exit 0",
+        )
+        self.assertTrue(normalized_path.exists(), "ingest layer should produce output file")
+
+        # Layer 1b – aggregate (alias for ingest)
+        aggregate_path = self.root / "layers_aggregate.json"
+        self.assertEqual(
+            main(["aggregate", str(self.root / "manifest.json"), str(aggregate_path)]),
+            0,
+            "aggregate layer should exit 0",
+        )
+        self.assertTrue(aggregate_path.exists(), "aggregate layer should produce output file")
+
+        # Layer 2 – process
+        self.assertEqual(
+            main(["process", str(normalized_path), str(ratings_path)]),
+            0,
+            "process layer should exit 0",
+        )
+        self.assertTrue(ratings_path.exists(), "process layer should produce output file")
+
+        # Layer 3 – generate
+        self.assertEqual(
+            main(["generate", str(ratings_path), str(reports_dir)]),
+            0,
+            "generate layer should exit 0",
+        )
+        self.assertTrue(reports_dir.exists(), "generate layer should produce output directory")
+
+        # Layer 4 – rank
+        self.assertEqual(
+            main(["rank", str(ratings_path), str(roster_path)]),
+            0,
+            "rank layer should exit 0",
+        )
+        self.assertTrue(roster_path.exists(), "rank layer should produce output file")
+
         roster_path = self.root / "status_roster_2025.csv"
         hitters_path = self.root / "status_hitters_2025.csv"
         manifest_path = self.root / "status_manifest.json"

@@ -1048,7 +1048,130 @@ class SurfaceBlendTests(unittest.TestCase):
 
         self.assertTrue(all(len(output.assigned_traits) <= canonical_limit for output in outputs))
 
-    def test_elite_pitch_traits_prefer_mlb_wide_percentiles_from_metadata(self) -> None:
+    def test_positive_trait_beats_negative_trait_of_equal_confidence_when_cap_forces_choice(self) -> None:
+        # When a player qualifies for a positive and a negative trait at equal confidence and a
+        # cap of 1 is forced, the positive trait must win.  Both traits share the same chemistry
+        # type (Competitive) so they receive identical personality-score boosts; the only
+        # remaining difference is the polarity bonus (+8 positive vs +4 negative).
+        outputs = rate_players(
+            [
+                {
+                    "name": "Polarity Test Hitter",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "CF",
+                    "metrics": {
+                        "iso": 0.175,
+                        "hr_per_pa": 0.030,
+                        "barrel_rate": 0.082,
+                        "slugging": 0.432,
+                        "avg_exit_velocity": 88.9,
+                        "strikeout_rate": 0.208,
+                        "contact_rate": 0.772,
+                        "batting_average": 0.268,
+                        "adjusted_obp": 0.338,
+                    },
+                    "samples": {"weighted_pa": 550},
+                    "metadata": {
+                        # Force the trait cap to 1 so only one of the two can survive.
+                        "final_trait_limit": 1,
+                        "trait_hints": {
+                            # Positive trait (Competitive chemistry) – must win the cap race.
+                            "Sprinter": {"score": 70, "confidence": "medium", "reason": "from stats"},
+                            # Negative trait (Competitive chemistry) – must be dropped.
+                            "Injury Prone": {"score": 70, "confidence": "medium", "reason": "from stats"},
+                        },
+                    },
+                },
+                {
+                    "name": "Polarity Peer",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "LF",
+                    "metrics": {
+                        "iso": 0.160,
+                        "hr_per_pa": 0.025,
+                        "barrel_rate": 0.070,
+                        "slugging": 0.410,
+                        "avg_exit_velocity": 87.8,
+                        "strikeout_rate": 0.190,
+                        "contact_rate": 0.782,
+                        "batting_average": 0.258,
+                        "adjusted_obp": 0.325,
+                    },
+                    "samples": {"weighted_pa": 540},
+                },
+            ],
+            trim_final_traits=True,
+        )
+
+        hitter_out = next(o for o in outputs if o.name == "Polarity Test Hitter")
+        trait_names = {trait.name for trait in hitter_out.assigned_traits}
+        self.assertEqual(len(trait_names), 1, f"Expected exactly 1 trait (cap forced to 1): {trait_names}")
+        self.assertIn("Sprinter", trait_names, f"Expected Sprinter (positive) in {trait_names}")
+        self.assertNotIn("Injury Prone", trait_names, f"Expected Injury Prone (negative) absent: {trait_names}")
+
+    def test_two_positive_traits_both_kept_over_one_negative_when_cap_is_two(self) -> None:
+        # When two positive and one negative trait all qualify at equal confidence with the
+        # same chemistry type (so identical personality-score boosts), the two positives must
+        # be kept and the negative dropped by the 2-trait cap.
+        outputs = rate_players(
+            [
+                {
+                    "name": "Two Positive Hitter",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "CF",
+                    "metrics": {
+                        "iso": 0.175,
+                        "hr_per_pa": 0.030,
+                        "barrel_rate": 0.082,
+                        "slugging": 0.432,
+                        "avg_exit_velocity": 88.9,
+                        "strikeout_rate": 0.208,
+                        "contact_rate": 0.772,
+                        "batting_average": 0.268,
+                        "adjusted_obp": 0.338,
+                    },
+                    "samples": {"weighted_pa": 550},
+                    "metadata": {
+                        "trait_hints": {
+                            # Two positive traits (both Competitive chemistry)
+                            "Sprinter": {"score": 70, "confidence": "medium", "reason": "from stats"},
+                            "Cannon Arm": {"score": 70, "confidence": "medium", "reason": "from stats"},
+                            # One negative trait (also Competitive) – must be dropped
+                            "Injury Prone": {"score": 70, "confidence": "medium", "reason": "from stats"},
+                        }
+                    },
+                },
+                {
+                    "name": "Two Positive Peer",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "LF",
+                    "metrics": {
+                        "iso": 0.160,
+                        "hr_per_pa": 0.025,
+                        "barrel_rate": 0.070,
+                        "slugging": 0.410,
+                        "avg_exit_velocity": 87.8,
+                        "strikeout_rate": 0.190,
+                        "contact_rate": 0.782,
+                        "batting_average": 0.258,
+                        "adjusted_obp": 0.325,
+                    },
+                    "samples": {"weighted_pa": 540},
+                },
+            ],
+            trim_final_traits=True,
+        )
+
+        hitter_out = next(o for o in outputs if o.name == "Two Positive Hitter")
+        trait_names = {trait.name for trait in hitter_out.assigned_traits}
+        self.assertIn("Sprinter", trait_names, f"Expected Sprinter (positive) in {trait_names}")
+        self.assertIn("Cannon Arm", trait_names, f"Expected Cannon Arm (positive) in {trait_names}")
+        self.assertNotIn("Injury Prone", trait_names, f"Expected Injury Prone (negative) absent: {trait_names}")
+
         outputs = rate_players(
             [
                 {
@@ -1513,9 +1636,9 @@ class SurfaceBlendTests(unittest.TestCase):
 
     def test_interpolate_rating_expands_elite_percentile_band(self) -> None:
         self.assertEqual(interpolate_rating(88.0), 85)
-        self.assertEqual(interpolate_rating(93.0), 90)
-        self.assertEqual(interpolate_rating(96.0), 94)
-        self.assertEqual(interpolate_rating(99.5), 98)
+        self.assertEqual(interpolate_rating(90.0), 90)
+        self.assertEqual(interpolate_rating(95.0), 95)
+        self.assertEqual(interpolate_rating(99.5), 99)
 
     def test_elite_contact_hitter_reaches_extreme_rating_values(self) -> None:
         outputs = rate_players(self._build_contact_players())
@@ -2597,7 +2720,7 @@ class SurfaceBlendTests(unittest.TestCase):
         self.assertGreater(sp_out.overall_numeric or 0, rp_out.overall_numeric or 0)
 
     def test_elite_sp_reaches_a_plus_overall(self) -> None:
-        # An ace-calibre SP should floor at A+ (≥ 93) overall.
+        # An ace-calibre SP should floor at A+ (≥ 93) and almost certainly reach S (≥ 95).
         sp_peers = [
             self._pitcher_peer(f"SP Peer {i}", 91.0 + i * 0.1, 0.100 + i * 0.001, 0.265 + i * 0.001, 0.085 - i * 0.0005, role_hint="starter", weighted_bf=820 + i * 5)
             for i in range(1, 20)
@@ -2629,8 +2752,7 @@ class SurfaceBlendTests(unittest.TestCase):
         }
         outputs = rate_players([skubal, *sp_peers])
         skubal_out = next(o for o in outputs if o.name == "Skubal Tier SP")
-        self.assertGreaterEqual(skubal_out.overall_numeric or 0, 93)
-
+        self.assertGreaterEqual(skubal_out.overall_numeric or 0, 95)
 
         base_metrics = {
             "iso": 0.175,

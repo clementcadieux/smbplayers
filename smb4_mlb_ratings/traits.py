@@ -312,6 +312,10 @@ def trim_traits_for_output(output: RatingOutput, player: PlayerInput) -> list[Tr
     elite_names = elite_pitch_trait_names()
     max_elite_pitch_traits = int(TRAIT_LIMIT_CONFIG.get("max_elite_pitch_traits", DEFAULT_MAX_ELITE_PITCH_TRAITS))
 
+    # Rank polarity so positive traits beat negative ones when priority scores tie.
+    # Neutral/unknown traits sit between positive and negative.
+    _polarity_rank = {"positive": 2, "neutral": 1, "unknown": 1, "negative": 0}
+
     ordered_traits = sorted(
         merged_traits,
         key=lambda trait: (
@@ -322,6 +326,7 @@ def trim_traits_for_output(output: RatingOutput, player: PlayerInput) -> list[Tr
                 player_role=player.role,
                 elite_trait_names_set=elite_names,
             ),
+            _polarity_rank.get(trait.polarity, 1),
             trait.name,
         ),
         reverse=True,
