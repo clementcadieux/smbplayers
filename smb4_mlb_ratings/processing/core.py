@@ -1618,7 +1618,7 @@ def apply_pitcher_outcome_adjustments(
 
 def apply_pitcher_defensive_defaults(outputs: list[RatingOutput]) -> None:
     for output in outputs:
-        if output.role != "pitcher":
+        if output.role not in ("pitcher", "two_way"):
             continue
         for rating_name, default_value in PITCHER_DEFAULT_RATINGS.items():
             current_value = output.ratings.get(rating_name)
