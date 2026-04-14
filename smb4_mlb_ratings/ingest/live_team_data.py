@@ -2107,10 +2107,12 @@ def _apply_savant_catcher_defense(
             if framing is not None:
                 fielding["framingRuns"] = framing
 
-        # blocking_metrics (catcher-blocking leaderboard) takes priority, then framing/frv fallback
-        blocking_source = blocking_metrics or framing_source
-        if blocking_source and _as_float(fielding.get("blockingRuns")) is None and _as_float(fielding.get("catcherBlockingRuns")) is None:
-            blocking = _as_float(blocking_source.get("blocking_runs"))
+        # Prefer blocking runs from framing/frv payload when present; otherwise
+        # fall back to catcher-blocking leaderboard data.
+        if _as_float(fielding.get("blockingRuns")) is None and _as_float(fielding.get("catcherBlockingRuns")) is None:
+            blocking = _as_float((framing_source or {}).get("blocking_runs"))
+            if blocking is None:
+                blocking = _as_float((blocking_metrics or {}).get("blocking_runs"))
             if blocking is not None:
                 fielding["blockingRuns"] = blocking
 
