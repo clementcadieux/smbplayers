@@ -1612,6 +1612,32 @@ def apply_pitcher_outcome_adjustments(
             (float(output.overall_numeric) * effective_raw_weight)
             + (outcome_rating * effective_outcome_weight)
         ) / total_weight
+
+        proxy_adjustment = 0.0
+        current_walk_rate = current_season_value(state.player.metrics.get("walk_rate"))
+        current_weak_contact = current_season_value(state.player.metrics.get("weak_contact_rate"))
+        accuracy_rating = float(output.ratings.get("accuracy", 0.0) or 0.0)
+        velocity_rating = float(output.ratings.get("velocity", 0.0) or 0.0)
+        junk_rating = float(output.ratings.get("junk", 0.0) or 0.0)
+
+        # Overrated power arms in small samples often show severe current walk issues.
+        if current_walk_rate is not None and current_walk_rate >= 0.12:
+            max_penalty = 8.0 if role_bucket == "SP" else 5.0
+            walk_scale = (current_walk_rate - 0.12) / 0.06
+            proxy_adjustment -= min(max_penalty, max(0.0, walk_scale) * max_penalty)
+
+        # Reward command-backed SP profiles so true aces separate from raw-only arms.
+        if role_bucket == "SP":
+            if accuracy_rating >= 94 and velocity_rating >= 70 and junk_rating >= 65:
+                proxy_adjustment += 2.0
+            elif velocity_rating >= 92 and junk_rating >= 80 and accuracy_rating >= 80:
+                proxy_adjustment += 1.5
+            if current_walk_rate is not None and current_walk_rate <= 0.06:
+                proxy_adjustment += 1.0
+            if current_weak_contact is not None and current_weak_contact >= 0.80:
+                proxy_adjustment += 1.0
+
+        blended_overall += proxy_adjustment
         output.overall_numeric = int(round(clamp(blended_overall, 1.0, 99.0)))
         output.overall_grade = overall_grade(output.overall_numeric)
 

@@ -99,7 +99,9 @@
     ["Reverse Splits", "Specialist"],
     ["Big Hack", "Little Hack"],
     ["Tough Out", "Whiffer"],
-    ["Two Way (C)", "Two Way (IF)", "Two Way (OF)"]
+    ["Two Way (C)", "Two Way (IF)", "Two Way (OF)"],
+    ["Outside Pitch", "Inside Pitch"],
+    ["High Pitch", "Low Pitch"]
   ],
   "role_overall_weights": {
     "hitter": {

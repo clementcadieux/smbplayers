@@ -2738,6 +2738,49 @@ class SurfaceBlendTests(unittest.TestCase):
         weighted = role_weighted_overall_numeric("pitcher", ratings)
         self.assertGreaterEqual(weighted or 0, 95)
 
+    def test_pitcher_wild_power_arm_ranks_below_command_profile(self) -> None:
+        wild_power_arm = {
+            "velocity": 99,
+            "junk": 84,
+            "accuracy": 67,
+        }
+        command_profile = {
+            "velocity": 90,
+            "junk": 82,
+            "accuracy": 95,
+        }
+
+        wild_weighted = role_weighted_overall_numeric("pitcher", wild_power_arm, pitcher_role="SP")
+        command_weighted = role_weighted_overall_numeric("pitcher", command_profile, pitcher_role="SP")
+
+        self.assertIsNotNone(wild_weighted)
+        self.assertIsNotNone(command_weighted)
+        self.assertLess(wild_weighted or 0, command_weighted or 0)
+
+    def test_starter_with_complete_ace_profile_gets_sp_archetype_bonus(self) -> None:
+        reliever_view = role_weighted_overall_numeric(
+            "pitcher",
+            {
+                "velocity": 95,
+                "junk": 87,
+                "accuracy": 94,
+            },
+            pitcher_role="RP",
+        )
+        starter_view = role_weighted_overall_numeric(
+            "pitcher",
+            {
+                "velocity": 95,
+                "junk": 87,
+                "accuracy": 94,
+            },
+            pitcher_role="SP",
+        )
+
+        self.assertIsNotNone(reliever_view)
+        self.assertIsNotNone(starter_view)
+        self.assertGreaterEqual(starter_view or 0, reliever_view or 0)
+
     def test_sp_rates_higher_than_equal_rp(self) -> None:
         # An SP and RP with identical raw stats should produce different overall ratings
         # because starting pitchers sustain their performance across more innings.
@@ -3415,6 +3458,91 @@ class SurfaceBlendTests(unittest.TestCase):
         reliever = next(output for output in outputs if output.name == "Reliever Poor Outcomes")
 
         self.assertLessEqual(starter.overall_numeric or 0, reliever.overall_numeric or 0)
+
+    def test_outcome_adjustment_penalizes_extreme_current_walk_rate_for_starters(self) -> None:
+        players: list[dict[str, object]] = [
+            {
+                "name": "Wild Current Starter",
+                "role": "pitcher",
+                "team": "PIT",
+                "primary_position": "P",
+                "metadata": {"pitching_role": "starter"},
+                "pitch_mix": {"ff": 0.59, "sl": 0.25, "ch": 0.16},
+                "metrics": {
+                    "avg_fastball_velocity": 98.7,
+                    "peak_fastball_velocity": 100.3,
+                    "fastball_usage": 0.59,
+                    "swinging_strike_rate": 0.149,
+                    "chase_rate": 0.331,
+                    "movement_quality": 27.1,
+                    "stuff_metric": 145.0,
+                    "arsenal_diversity": 0.85,
+                    "weak_contact_rate": 0.81,
+                    "walk_rate": {"current": 0.182, "previous": 0.041, "two_years_ago": 0.044},
+                    "strikeout_rate": 0.233,
+                    "k_pct": 0.233,
+                    "bb_pct": {"current": 0.182, "previous": 0.041, "two_years_ago": 0.044},
+                    "era_minus": 112.0,
+                    "fip_minus": 109.0,
+                    "whip": 1.33,
+                    "strike_pct": 0.633,
+                    "zone_pct": 0.463,
+                    "first_pitch_strike_pct": 0.589,
+                    "command_error_rate": 0.371,
+                },
+                "samples": {"weighted_bf": 820, "tracked_pitches": 3040, "tracked_fastballs": 1720},
+            },
+            {
+                "name": "Stable Command Starter",
+                "role": "pitcher",
+                "team": "PIT",
+                "primary_position": "P",
+                "metadata": {"pitching_role": "starter"},
+                "pitch_mix": {"ff": 0.58, "sl": 0.26, "ch": 0.16},
+                "metrics": {
+                    "avg_fastball_velocity": 97.9,
+                    "peak_fastball_velocity": 99.4,
+                    "fastball_usage": 0.58,
+                    "swinging_strike_rate": 0.145,
+                    "chase_rate": 0.327,
+                    "movement_quality": 26.8,
+                    "stuff_metric": 141.0,
+                    "arsenal_diversity": 0.84,
+                    "weak_contact_rate": 0.80,
+                    "walk_rate": {"current": 0.057, "previous": 0.053, "two_years_ago": 0.056},
+                    "strikeout_rate": 0.231,
+                    "k_pct": 0.231,
+                    "bb_pct": {"current": 0.057, "previous": 0.053, "two_years_ago": 0.056},
+                    "era_minus": 101.0,
+                    "fip_minus": 102.0,
+                    "whip": 1.21,
+                    "strike_pct": 0.651,
+                    "zone_pct": 0.486,
+                    "first_pitch_strike_pct": 0.618,
+                    "command_error_rate": 0.344,
+                },
+                "samples": {"weighted_bf": 815, "tracked_pitches": 3000, "tracked_fastballs": 1695},
+            },
+        ]
+
+        players.extend(
+            self._pitcher_peer(
+                f"Walk Penalty Peer {index}",
+                92.4 + (index * 0.2),
+                0.112 + (index * 0.002),
+                0.282 + (index * 0.003),
+                0.074 - (index * 0.001),
+                role_hint="starter",
+                weighted_bf=780 + (index * 14),
+            )
+            for index in range(1, 8)
+        )
+
+        outputs = rate_players(players)
+        wild = next(output for output in outputs if output.name == "Wild Current Starter")
+        stable = next(output for output in outputs if output.name == "Stable Command Starter")
+
+        self.assertLess(wild.overall_numeric or 0, stable.overall_numeric or 0)
 
     def test_pitcher_defaults_apply_only_to_pure_pitchers(self) -> None:
         outputs = rate_players(
