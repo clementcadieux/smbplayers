@@ -56,52 +56,19 @@
 
 ## Open Issues
 
-### Issue #122 – Elite Hitters and Starters Are Still Too Low Rated
+### Issue #128 – SMB4 League File Encoder/Decoder
 
-**Problem:** Relievers appear overrated relative to hitters and starters. The very best 1–2 players in each large position group (Hitters, Starters, Relievers) should be S-rated, with ratings scaling downward from there. Performance stats (OPS, wRC+, HR/AB, ERA, FIP, etc.) likely need more weight.
-
-**Plan:**
-1. **Intra-group percentile normalisation** – In `processing/core.py`, after computing raw composite scores, rank each player within their group (Hitters, Starters, Relievers) separately and re-map to percentiles before applying `percentile_to_rating`. This ensures each group has its own S-tier ceiling, independent of inter-group scale differences.
-2. **Increase performance-stat weights** – In `config.yaml` (or `config.json`), raise the weight of real-performance composites (e.g. `wrc_plus`, `ops`, `era_minus`, `fip_minus`) relative to raw-stuff metrics. Start with +20 % on real-performance composites for hitters and starters.
-3. **Reliever normalisation guard** – Ensure RP composites are not inadvertently boosted by the `sp_overall_bonus`; confirm the bonus applies only to SP role.
-4. **Regression tests** – Add assertions that the top hitter in a synthetic population reaches ≥ 95 overall, and that the top starter also reaches ≥ 95, while an average reliever scores below both.
-
----
-
-### Issue #123 – Pitchers with Good Raw Stuff but Poor Results Are Overrated
-
-**Problem:** Players like Jacob Misiorowski score near the top despite weak real-world results; raw stuff (velocity, spin, movement) carries too much weight compared to actual outcome metrics.
+**Problem:** Rated players need to be brought into SMB4 via the game's proprietary save format. Currently there is no tooling to write player data into that format or read it back out, making it impossible to load generated ratings directly into the game.
 
 **Plan:**
-1. **Rebalance pitcher composite weights** – In `config.yaml` under `pitcher_weights` (or equivalent), reduce the weight of raw-stuff composites (`velocity`, `movement_quality`, `spin_rate`) and increase the weight of outcome composites (`era_minus`, `fip_minus`, `whip`, `k_pct`, `bb_pct`, `chase_rate`). A ratio of roughly 30 % raw stuff / 70 % outcomes for starters is the target.
-2. **Minimum-sample outcome gate** – If a pitcher has fewer than a configurable `min_ip_for_outcome_weight` innings, fall back to a higher raw-stuff weighting (since outcomes are noisy). Store the threshold in `smb4_player_reference.json` or `config.yaml`.
-3. **Starter vs. reliever weight profiles** – Outcome reliability differs between roles; allow separate weight profiles for SP and RP in config.
-4. **Tests** – Add a test with a synthetic pitcher whose raw stuff is elite but ERA/FIP are poor; assert their overall rating does not exceed the "average" tier.
-
----
-
-### Issue #124 – Pitchers Need Default Fielding Values
-
-**Problem:** Non-two-way pitchers currently have no speed, fielding, or arm values. The game requires these slots to be filled; defaults should be 30 speed, 40 fielding, 50 arm.
-
-**Plan:**
-1. **Apply defaults in output layer** – In `processing/core.py` (or the Generation layer), after rating calculation, for any player whose `role` is `"pitcher"` (not `"two_way"`), set `speed = 30`, `fielding = 40`, and `arm = 50` if those fields are absent or zero.
-2. **Store defaults in config** – Add `pitcher_default_speed`, `pitcher_default_fielding`, and `pitcher_default_arm` keys to `config.yaml` (defaulting to 30, 40, 50 respectively) so they can be tuned without code changes.
-3. **Guard against overwriting real data** – Only apply defaults when the computed value is `None` or 0 (indicating no data), not when an actual fielding metric is present.
-4. **Tests** – Add a unit test confirming a pitcher with no fielding data receives exactly the three default values, and a two-way pitcher does not have the defaults applied.
-
----
-
-### Issue #125 – Shohei Ohtani Appears Only as a Hitter
-
-**Problem:** Ohtani is a two-way player but currently only appears in hitter output. He should appear in the pitchers section as well, with his batting stats present.
-
-**Plan:**
-1. **Two-way player duplication in output** – In the Generation layer (`generation/`), detect players with `role == "two_way"` and emit two output records: one in the hitter file (with batting composites) and one in the pitcher file (with pitching composites + batting stats carried over).
-2. **Preserve batting fields on pitcher record** – Extend the pitcher CSV/JSON schema to include a subset of batting stats (`contact`, `power`, `speed`) for two-way players, reflecting their dual value.
-3. **Ingestion deduplication guard** – Ensure ingestion does not accidentally create two separate players when a two-way player appears in both Statcast batting and pitching exports. Use the existing composite merge key (player_id / name+team+season) to merge both export rows onto a single `PlayerInput` record with `role = "two_way"`.
-4. **Roster selector** – Confirm `roster_selector.py` can recommend a two-way player for both a batting slot and a pitching slot simultaneously (or at minimum, for whichever slot best fits team needs).
-5. **Tests** – Add a test with a synthetic two-way player fixture; assert they appear in both hitter and pitcher output sections and that their batting stats are non-zero in the pitcher record.
+1. **Reverse-engineer the save format** – Use any available external tools (e.g. hex editors, community-published format docs, SMB4 modding resources) to map the binary/JSON structure of an SMB4 league file. Document field offsets, data types, and encoding rules in a `SAVE_FORMAT.md` reference document.
+2. **Implement the decoder** – Create `smb4_mlb_ratings/codec/decoder.py` that reads a raw SMB4 league file and returns a list of `PlayerInput`-compatible dicts (or a new `LeagueFile` model), making it easy to round-trip existing league data through the pipeline.
+3. **Implement the encoder** – Create `smb4_mlb_ratings/codec/encoder.py` that accepts a list of `PlayerOutput` records (or a `LeagueFile` model) and writes a valid SMB4 league file, replacing or patching existing player slots as needed.
+4. **CLI integration** – Add two new sub-commands to `cli.py`:
+   - `decode <league_file> <output_json>` – decode a league file to JSON.
+   - `encode <input_json> <league_file>` – encode rated players back into a league file.
+5. **Config / reference data** – Store any format-version constants, field offsets, or encoding tables in `smb4_player_reference.json` or a new `codec_config.yaml` so they can be updated without code changes when the game patches.
+6. **Tests** – Add round-trip tests: encode a synthetic `PlayerOutput` list to bytes, decode the bytes back, and assert field-level parity. Add a smoke test confirming the CLI sub-commands exit cleanly with a minimal fixture file.
 
 ---
 
@@ -110,3 +77,7 @@
 - **#114 – Quick Layer-Specific Triggers** – Created `Makefile` with one target per pipeline layer (`ingest`, `aggregate`, `process`, `generate`, `rank`) plus a `run-all` target using configurable default paths; added layer-trigger documentation section to `README.md`; added `test_layer_commands_each_exit_zero_with_minimal_fixture` smoke test in `test_ingest.py`.
 - **#116 – Elite Players Ratings Too Low** – Widened the upper tail of `percentile_to_rating` in `config.yaml` so the 90th percentile maps to ≥ 90 and the 95th percentile maps to ≥ 95; raised the Skubal-tier regression-test assertion from ≥ 93 to ≥ 95 (S tier); updated `test_interpolate_rating_expands_elite_percentile_band` to reflect the new curve knots.
 - **#117 – Prioritize Positive Traits Over Negative Traits** – Added polarity as a secondary sort key in `trim_traits_for_output` (`traits.py`) so that positive traits beat negative ones when priority scores tie; added two regression tests confirming positive traits are kept over negative traits of equal confidence when the 2-trait cap forces a choice.
+- **#122 – Elite Hitters and Starters Are Still Too Low Rated** – Implemented intra-group percentile normalisation in `processing/core.py` so Hitters, Starters, and Relievers each rank within their own group before mapping to ratings; increased weights of real-performance composites (`wrc_plus`, `ops`, `era_minus`, `fip_minus`); confirmed `sp_overall_bonus` does not affect RPs; added regression tests asserting top hitter and top starter reach ≥ 95 overall.
+- **#123 – Pitchers with Good Raw Stuff but Poor Results Are Overrated** – Rebalanced pitcher composite weights to ~30 % raw stuff / 70 % outcomes in `config.yaml`; added `min_ip_for_outcome_weight` sample-size gate that falls back to higher raw-stuff weighting for pitchers with small samples; created separate SP/RP weight profiles; added test confirming an elite-stuff/poor-results pitcher does not exceed the average tier.
+- **#124 – Pitchers Need Default Fielding Values** – Applied configurable defaults (speed 30, fielding 40, arm 50) in the output layer for all non-two-way pitchers when computed values are absent or zero; stored defaults in `config.yaml`; added unit tests confirming pitchers without fielding data receive exact defaults and two-way players are unaffected.
+- **#125 – Shohei Ohtani Appears Only as a Hitter** – Detected two-way players (`role == "two_way"`) in the Generation layer and emitted dual output records (one in the hitter file, one in the pitcher file with batting stats carried over); extended pitcher CSV schema with a batting-stats subset; added ingestion deduplication guard using the composite merge key; confirmed `roster_selector.py` handles two-way slot eligibility; added synthetic two-way player round-trip tests.
