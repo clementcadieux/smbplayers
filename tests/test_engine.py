@@ -3218,6 +3218,48 @@ class SurfaceBlendTests(unittest.TestCase):
         self.assertNotEqual(two_way.ratings.get("fielding"), 40)
         self.assertNotEqual(two_way.ratings.get("arm"), 50)
 
+    def test_shohei_ohtani_gets_two_way_trait_and_pitching_fallbacks(self) -> None:
+        outputs = rate_players(
+            [
+                {
+                    "name": "Shohei Ohtani",
+                    "role": "two_way",
+                    "team": "LAD",
+                    "primary_position": "DH",
+                    "metrics": {
+                        "iso": 0.246,
+                        "hr_per_pa": 0.061,
+                        "barrel_rate": 0.159,
+                        "slugging": 0.612,
+                        "avg_exit_velocity": 94.3,
+                        "strikeout_rate": 0.251,
+                        "contact_rate": 0.736,
+                        "batting_average": 0.297,
+                        "adjusted_obp": 0.391,
+                        "sprint_speed": 28.7,
+                        "baserunning_value": 4.2,
+                        "sb_attempt_rate": 0.06,
+                        "sb_success_rate": 0.84,
+                    },
+                    "samples": {
+                        "weighted_pa": 520,
+                        "baserunning_opportunities": 170,
+                    },
+                },
+                self._pitcher_peer("Pitcher Peer 1", 95.0, 0.13, 0.30, 0.075),
+                self._pitcher_peer("Pitcher Peer 2", 93.5, 0.11, 0.28, 0.085),
+                self._player("Hitter Peer 1", 0.500, 425, iso=0.220, hr_per_pa=0.045, barrel_rate=0.110, avg_exit_velocity=91.0),
+                self._player("Hitter Peer 2", 0.360, 425, iso=0.120, hr_per_pa=0.025, barrel_rate=0.060, avg_exit_velocity=87.5),
+            ]
+        )
+
+        ohtani = next(output for output in outputs if output.name == "Shohei Ohtani")
+        assigned_trait_names = {trait.name for trait in ohtani.assigned_traits}
+
+        self.assertIn("Two Way (OF)", assigned_trait_names)
+        self.assertGreater(ohtani.ratings.get("velocity", 0), 0)
+        self.assertGreater(ohtani.ratings.get("junk", 0), 0)
+
     def _build_average_hitter_band(self) -> list[dict[str, object]]:
         players = [
             {

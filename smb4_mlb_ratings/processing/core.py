@@ -63,6 +63,13 @@ SP_OVERALL_BONUS: float = 4.0
 OVERALL_GROUP_NORMALIZATION_CONFIG: dict[str, float | bool] = {}
 PITCHER_OUTCOME_ADJUSTMENT_CONFIG: dict[str, object] = {}
 PITCHER_DEFAULT_RATINGS: dict[str, int] = {}
+KNOWN_TWO_WAY_PLAYER_OVERRIDES: dict[str, dict[str, object]] = {
+    "shohei ohtani": {
+        "mandatory_trait": "Two Way (OF)",
+        "velocity_floor": 72,
+        "junk_floor": 68,
+    }
+}
 HITTER_PLATOON_TRAIT_TO_SPEC = {
     "CON vs LHP": "contact",
     "CON vs RHP": "contact",
@@ -351,6 +358,7 @@ def refresh_runtime_tuning() -> None:
         "fielding": 40,
         "arm": 50,
     }
+
     if isinstance(raw_pitcher_defaults, Mapping):
         for key, fallback_value in parsed_pitcher_defaults.items():
             raw_value = raw_pitcher_defaults.get(key)
@@ -1618,6 +1626,59 @@ def apply_pitcher_defensive_defaults(outputs: list[RatingOutput]) -> None:
             current_value = output.ratings.get(rating_name)
             if current_value is None or int(current_value) <= 0:
                 output.ratings[rating_name] = int(default_value)
+
+
+def apply_known_two_way_player_overrides(
+    outputs: list[RatingOutput],
+    states_by_identity: Mapping[str, PlayerState],
+) -> None:
+    for output in outputs:
+        if output.role != "two_way":
+            continue
+
+        normalized_name = " ".join(output.name.strip().lower().split()) if isinstance(output.name, str) else ""
+        override = KNOWN_TWO_WAY_PLAYER_OVERRIDES.get(normalized_name)
+        if override is None:
+            continue
+
+        updated_ratings = False
+        velocity_floor = int(override.get("velocity_floor", 0))
+        junk_floor = int(override.get("junk_floor", 0))
+
+        current_velocity = output.ratings.get("velocity")
+        if current_velocity is None or int(current_velocity) <= 0:
+            output.ratings["velocity"] = velocity_floor
+            updated_ratings = True
+
+        current_junk = output.ratings.get("junk")
+        if current_junk is None or int(current_junk) <= 0:
+            output.ratings["junk"] = junk_floor
+            updated_ratings = True
+
+        mandatory_trait_name = str(override.get("mandatory_trait", "")).strip()
+        if mandatory_trait_name:
+            existing_trait_names = {trait.name for trait in output.assigned_traits}
+            if mandatory_trait_name not in existing_trait_names:
+                output.assigned_traits.insert(
+                    0,
+                    TraitSuggestion(
+                        name=mandatory_trait_name,
+                        chemistry_type=trait_chemistry_type(mandatory_trait_name),
+                        polarity=catalog_trait_polarity(mandatory_trait_name),
+                        confidence="high",
+                        reason="Known two-way override: always preserve this SMB two-way trait for this player.",
+                    ),
+                )
+
+        if not updated_ratings:
+            continue
+        state = states_by_identity.get(_output_identity_key(output))
+        output.overall_numeric = role_weighted_overall_numeric(
+            output.role,
+            output.ratings,
+            pitcher_role=pitcher_role_bucket_for_state(state) if state is not None else None,
+        )
+        output.overall_grade = overall_grade(output.overall_numeric)
 
 
 def confidence_level(flags: list[str]) -> str:
@@ -3075,6 +3136,7 @@ def _rate_players_core(
 
     apply_pitcher_defensive_defaults(outputs)
     apply_pitcher_outcome_adjustments(outputs, states_by_identity)
+    apply_known_two_way_player_overrides(outputs, states_by_identity)
     apply_overall_group_normalization(outputs, states_by_identity)
     return outputs
 
