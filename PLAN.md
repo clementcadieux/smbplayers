@@ -47,44 +47,41 @@
 - **#100 – Platoon Traits Are Too Common** – Defined a statistically meaningful minimum split threshold (wRC+/OPS difference) below which the platoon trait is not assigned; decoupled the platoon penalty from trait assignment so balanced hitters receive neither; applied threshold gate in `engine.py` before computing the penalty; stored threshold in config; added tests for balanced, heavy-platoon, and borderline cases; updated `RATINGS_GUIDE.md`.
 - **#104 – Improved Handling of HTTP Failure During Ingestion** – Tracked failed HTTP requests in an in-memory failure list during ingestion; added a single retry pass at the end of ingestion that removes players from the list on success; logged/returned persistent failures after the retry pass; added tests for failure tracking, successful retry, and persistent failure reporting.
 - **#105 – Additional Traits Not Being Produced** – Implemented *Mind Gamer* (high BB%), *Easy Target* (low BB%), *Workhorse* (high-volume starter), *Stimulated* (high-leverage performance), *Dive Wizard* (high range metrics), *Butter Finger* (low range metrics), *Durable* (high % of full-volume seasons), and *Injury Prone* (low % of full-volume seasons); defined thresholds in `smb4_player_reference.json`/`config.json`; added unit tests and updated `TRAITS_GUIDE.md`.
+- **#108 – Some Traits Are Too Common** – Replaced raw-value thresholds with percentile-based confidence classification (High: top 10 %, Medium: top 33 %, Low: top 50 %) for all trait-specific metrics; updated thresholds in `smb4_player_reference.json`/`config.json`; removed hard-coded raw cutoffs; added boundary tests; updated `TRAITS_GUIDE.md`.
+- **#109 – Catcher Framing Runs Are Missing** – Diagnosed the data gap; expanded CSV column aliases for `framing_runs` in `savant.py`; added a Baseball Reference fallback for catchers; validated normalisation bounds in `smb4_player_reference.json`; added regression tests for both primary and fallback parse paths.
 
 ---
 
 ## Open Issues
 
-## Issue #108 – Some Traits Are Too Common
+## Issue #113 – Build up Generation Code
 
-**Problem:** Certain traits (e.g. *Easy Target*) appear far too frequently. Trait confidence should be determined by a player's percentile rank in the relevant metric rather than a fixed raw-value threshold.
+**Problem:** The Generation layer currently lacks a structured CSV output. Each team's players need to be exported in a well-defined format that can be directly consumed downstream.
 
 ### Steps
 
-1. **Switch to percentile-based confidence classification:**
-   - *Low confidence* – top 50 % of players in the trait metric.
-   - *Medium confidence* – top 33 %.
-   - *High confidence* – top 10 %.
+1. **Define output schema:**
+   - *Hitters:* Name, Throw Hand, Bat Hand, Primary Position, Secondary Positions, Contact, Power, Speed, Fielding, Arm, Trait 1, Trait 2.
+   - *Pitchers:* Name, Throw Hand, Bat Hand, Arsenal, Velocity, Junk, Accuracy, Trait 1, Trait 2, Contact, Power, Speed, Fielding, Arm.
 
-2. **Audit all trait-specific metrics** currently evaluated by raw threshold and replace each with a percentile gate.
+2. **Implement CSV writer** in the Generation layer (`smb4_mlb_ratings/generation/`) that produces one file per team, splitting hitters and pitchers into the correct column sets.
 
-3. **Update thresholds/parameters** in `smb4_player_reference.json` / `config.json` to reflect the new percentile approach; remove hard-coded raw cutoffs.
+3. **Wire into the `generate` CLI sub-command** so running `python -m smb4_mlb_ratings.cli generate <processed_data> <output_dir>` writes one CSV per team.
 
-4. **Add tests** confirming that a player at exactly the 10 % boundary receives *High* confidence, at the 33 % boundary receives *Medium*, and below the 50 % boundary receives no trait.
-
-5. **Update `TRAITS_GUIDE.md`** to document the percentile-based classification rules.
+4. **Add tests** confirming column headers match the schema and all required fields are populated for synthetic hitter and pitcher records.
 
 ---
 
-## Issue #109 – Catcher Framing Runs Are Missing
+## Issue #114 – Quick Layer-Specific Triggers
 
-**Problem:** Many catchers are missing framing-run data, leaving them with incomplete ratings in the arm/fielding composites that depend on this metric.
+**Problem:** Running individual pipeline layers requires memorising the full CLI invocation. A convenient shortcut mechanism is needed so each of the four layers (Ingest, Aggregate, Process, Generate) can be triggered independently with minimal typing.
 
 ### Steps
 
-1. **Diagnose the data gap:** Identify which catchers are missing `framing_runs` after ingestion and determine whether the gap is in the Statcast export, the parsing step in `savant.py`, or the merge step.
+1. **Audit existing CLI sub-commands** (`ingest`, `aggregate`, `process`, `generate`) to confirm they are each independently invocable.
 
-2. **Expand CSV column aliases:** Add any alternate column names used by different Statcast export versions to the `framing_runs` parser in `savant.py`.
+2. **Create trigger scripts or a `Makefile`** (one target per layer plus a `run-all` target) that wraps the full CLI invocation with sensible defaults for input/output paths.
 
-3. **Add a Baseball Reference fallback:** If `framing_runs` is absent from Savant data for a catcher, attempt to derive or approximate the value from Baseball Reference fielding data.
+3. **Document usage** in `README.md` (or a dedicated `RUNNING.md`) with one-line examples for each layer trigger.
 
-4. **Validate normalisation bounds:** Confirm that the normalisation range for `framing_runs` in `smb4_player_reference.json` covers the real-world value distribution for catchers.
-
-5. **Add tests:** Add a regression test asserting that a synthetic catcher record with a known `framing_runs` value produces a non-zero arm/fielding composite score, and a test confirming the fallback path is exercised when the Savant column is absent.
+4. **Add a smoke test** that invokes each trigger script/target with a minimal synthetic fixture and asserts zero exit code.
