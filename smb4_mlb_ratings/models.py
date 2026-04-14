@@ -135,6 +135,8 @@ class RatingOutput:
     role: str
     team: str | None
     primary_position: str | None
+    bats: str | None
+    throws: str | None
     ratings: dict[str, int]
     percentiles: dict[str, float]
     overall_numeric: int | None
@@ -161,6 +163,8 @@ class RatingOutput:
             "player_id": self.player_id,
             "team": self.team,
             "primary_position": self.primary_position,
+            "bats": self.bats,
+            "throws": self.throws,
             "secondary_position": self.secondary_position,
             "secondary_positions": self.secondary_positions,
             "age": self.age,
@@ -188,6 +192,8 @@ class RatingOutput:
             player_id=str(data["player_id"]) if data.get("player_id") is not None else None,
             team=data.get("team"),
             primary_position=data.get("primary_position"),
+            bats=data.get("bats"),
+            throws=data.get("throws"),
             ratings={str(key): int(value) for key, value in data.get("ratings", {}).items()},
             percentiles={str(key): float(value) for key, value in data.get("percentiles", {}).items()},
             overall_numeric=data.get("overall_numeric"),

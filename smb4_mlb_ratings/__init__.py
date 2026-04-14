@@ -1,4 +1,4 @@
-from .generation import generate_output, generate_player_report, generate_team_report
+from .generation import build_hitter_row, build_pitcher_row, generate_output
 from .ingest import IngestManifest, ingest_from_manifest, load_manifest
 from .models import PersonalityRecommendation, PlayerInput, RatingOutput, TraitSuggestion
 from .output import TEAM_DIVISIONS, write_structured_output
@@ -16,8 +16,8 @@ __all__ = [
 	"ingest_from_manifest",
 	"process_players",
 	"generate_output",
-	"generate_team_report",
-	"generate_player_report",
+	"build_hitter_row",
+	"build_pitcher_row",
 	"TEAM_DIVISIONS",
 	"write_structured_output",
 	"select_pitch_mix",
