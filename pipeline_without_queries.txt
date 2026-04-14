@@ -1,0 +1,3 @@
+python -m smb4_mlb_ratings.ingest.ingest_league
+python -m smb4_mlb_ratings.cli process export/league_normalized.json export/league_ratings.json
+python -m smb4_mlb_ratings.cli generate export/league_ratings.json team_reports
