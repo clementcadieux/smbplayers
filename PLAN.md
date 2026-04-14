@@ -49,28 +49,12 @@
 - **#105 – Additional Traits Not Being Produced** – Implemented *Mind Gamer* (high BB%), *Easy Target* (low BB%), *Workhorse* (high-volume starter), *Stimulated* (high-leverage performance), *Dive Wizard* (high range metrics), *Butter Finger* (low range metrics), *Durable* (high % of full-volume seasons), and *Injury Prone* (low % of full-volume seasons); defined thresholds in `smb4_player_reference.json`/`config.json`; added unit tests and updated `TRAITS_GUIDE.md`.
 - **#108 – Some Traits Are Too Common** – Replaced raw-value thresholds with percentile-based confidence classification (High: top 10 %, Medium: top 33 %, Low: top 50 %) for all trait-specific metrics; updated thresholds in `smb4_player_reference.json`/`config.json`; removed hard-coded raw cutoffs; added boundary tests; updated `TRAITS_GUIDE.md`.
 - **#109 – Catcher Framing Runs Are Missing** – Diagnosed the data gap; expanded CSV column aliases for `framing_runs` in `savant.py`; added a Baseball Reference fallback for catchers; validated normalisation bounds in `smb4_player_reference.json`; added regression tests for both primary and fallback parse paths.
+- **#113 – Build up Generation Code** – Defined hitter/pitcher CSV output schemas; implemented CSV writer in the Generation layer producing one file per team; wired into the `generate` CLI sub-command; added tests confirming column headers and required fields for synthetic records.
+- **#119 – Starters Are Still Underrated** – Added a configurable `sp_overall_bonus` (default 4.0) in `config.yaml` under `pitcher_adjustments`; loaded it in `refresh_runtime_tuning()`; modified `role_weighted_overall_numeric` to accept an optional `pitcher_role` argument and apply the bonus for SP-classified pitchers; updated both overall-computation call sites to pass the pitcher role; added tests asserting an SP rates higher than an identical RP and that a Skubal-tier ace reaches A+ (≥ 93) overall.
 
 ---
 
 ## Open Issues
-
-## Issue #113 – Build up Generation Code
-
-**Problem:** The Generation layer currently lacks a structured CSV output. Each team's players need to be exported in a well-defined format that can be directly consumed downstream.
-
-### Steps
-
-1. **Define output schema:**
-   - *Hitters:* Name, Throw Hand, Bat Hand, Primary Position, Secondary Positions, Contact, Power, Speed, Fielding, Arm, Trait 1, Trait 2.
-   - *Pitchers:* Name, Throw Hand, Bat Hand, Arsenal, Velocity, Junk, Accuracy, Trait 1, Trait 2, Contact, Power, Speed, Fielding, Arm.
-
-2. **Implement CSV writer** in the Generation layer (`smb4_mlb_ratings/generation/`) that produces one file per team, splitting hitters and pitchers into the correct column sets.
-
-3. **Wire into the `generate` CLI sub-command** so running `python -m smb4_mlb_ratings.cli generate <processed_data> <output_dir>` writes one CSV per team.
-
-4. **Add tests** confirming column headers match the schema and all required fields are populated for synthetic hitter and pitcher records.
-
----
 
 ## Issue #114 – Quick Layer-Specific Triggers
 
@@ -85,3 +69,35 @@
 3. **Document usage** in `README.md` (or a dedicated `RUNNING.md`) with one-line examples for each layer trigger.
 
 4. **Add a smoke test** that invokes each trigger script/target with a minimal synthetic fixture and asserts zero exit code.
+
+---
+
+## Issue #116 – Elite Players Ratings Too Low
+
+**Problem:** Elite players' overall ratings are still not extreme enough. Top-tier pitchers like Skubal should floor at A+ and very likely reach S; the current curve does not push truly elite stat lines into the highest rating bands.
+
+### Steps
+
+1. **Audit the percentile-to-rating curve** in `config.json` to identify where elite percentile scores are being capped below the S/A+ band.
+
+2. **Widen the upper tail** of the non-linear rating curve so that the top 5 % of performers map to 95–99 and the top 10 % map to at least 90; store updated curve parameters in `config.json`.
+
+3. **Add or update named-player regression tests** asserting that a Skubal-level stat line produces an overall SP rating ≥ 90 (A+) and almost certainly ≥ 95 (S).
+
+4. **Verify no general inflation** – confirm that average-tier players do not drift above their expected mid-range bands.
+
+---
+
+## Issue #117 – Prioritize Positive Traits Over Negative Traits
+
+**Problem:** When a player qualifies for both positive and negative traits and the 2-trait cap forces a tie-break, negative traits are sometimes chosen over positive ones, which unfairly punishes players.
+
+### Steps
+
+1. **Classify all traits** in `smb4_player_reference.json` (or `config.json`) as `positive`, `negative`, or `neutral`.
+
+2. **Update trait selection logic** in `engine.py` so that, after scoring, positive traits are ranked above negative traits of equal confidence score before applying the 2-trait cap.
+
+3. **Preserve the elite-pitch priority rule** – elite-pitch traits (already boosted) should still outrank ordinary positive traits.
+
+4. **Add unit tests** for a player who qualifies for one positive and one negative trait at equal confidence, asserting only the positive trait is kept, and for a player with two positives and one negative, asserting both positives are kept.

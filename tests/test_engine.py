@@ -2575,7 +2575,63 @@ class SurfaceBlendTests(unittest.TestCase):
         weighted = role_weighted_overall_numeric("pitcher", ratings)
         self.assertGreaterEqual(weighted or 0, 95)
 
-    def test_duplicate_names_keep_identity_specific_traits(self) -> None:
+    def test_sp_rates_higher_than_equal_rp(self) -> None:
+        # An SP and RP with identical raw stats should produce different overall ratings
+        # because starting pitchers sustain their performance across more innings.
+        sp_peers = [
+            self._pitcher_peer(f"SP Peer {i}", 91.0 + i * 0.1, 0.100 + i * 0.001, 0.265 + i * 0.001, 0.085 - i * 0.0005, role_hint="starter", weighted_bf=820 + i * 5)
+            for i in range(1, 10)
+        ]
+        rp_peers = [
+            self._pitcher_peer(f"RP Peer {i}", 94.0 + i * 0.1, 0.130 + i * 0.001, 0.300 + i * 0.001, 0.080 - i * 0.0005, role_hint="reliever", weighted_bf=310 + i * 5)
+            for i in range(1, 10)
+        ]
+        shared_metrics = (93.0, 0.120, 0.290, 0.075)
+        sp = self._pitcher_peer("SP Candidate", *shared_metrics, role_hint="starter", weighted_bf=850)
+        rp = self._pitcher_peer("RP Candidate", *shared_metrics, role_hint="reliever", weighted_bf=310)
+
+        outputs = rate_players([sp, rp, *sp_peers, *rp_peers])
+        sp_out = next(o for o in outputs if o.name == "SP Candidate")
+        rp_out = next(o for o in outputs if o.name == "RP Candidate")
+
+        self.assertGreater(sp_out.overall_numeric or 0, rp_out.overall_numeric or 0)
+
+    def test_elite_sp_reaches_a_plus_overall(self) -> None:
+        # An ace-calibre SP should floor at A+ (≥ 93) overall.
+        sp_peers = [
+            self._pitcher_peer(f"SP Peer {i}", 91.0 + i * 0.1, 0.100 + i * 0.001, 0.265 + i * 0.001, 0.085 - i * 0.0005, role_hint="starter", weighted_bf=820 + i * 5)
+            for i in range(1, 20)
+        ]
+        skubal = {
+            "name": "Skubal Tier SP",
+            "role": "pitcher",
+            "team": "DET",
+            "primary_position": "P",
+            "metadata": {"pitching_role": "starter"},
+            "pitch_mix": {"ff": 0.55, "sl": 0.25, "ch": 0.20},
+            "metrics": {
+                "avg_fastball_velocity": 94.5,
+                "peak_fastball_velocity": 96.5,
+                "fastball_usage": 0.55,
+                "swinging_strike_rate": 0.160,
+                "chase_rate": 0.340,
+                "movement_quality": 30.0,
+                "stuff_metric": 150.0,
+                "arsenal_diversity": 0.88,
+                "weak_contact_rate": 0.73,
+                "walk_rate": 0.043,
+                "strike_pct": 0.720,
+                "zone_pct": 0.550,
+                "first_pitch_strike_pct": 0.700,
+                "command_error_rate": 0.180,
+            },
+            "samples": {"tracked_pitches": 3100, "tracked_fastballs": 1600, "weighted_bf": 860},
+        }
+        outputs = rate_players([skubal, *sp_peers])
+        skubal_out = next(o for o in outputs if o.name == "Skubal Tier SP")
+        self.assertGreaterEqual(skubal_out.overall_numeric or 0, 93)
+
+
         base_metrics = {
             "iso": 0.175,
             "hr_per_pa": 0.030,

@@ -59,6 +59,7 @@ TRAIT_CONFLICT_GROUPS: tuple[frozenset[str], ...] = ()
 ROLE_OVERALL_WEIGHTS: dict[str, dict[str, float]] = {}
 PLATOON_ADJUSTMENT_CONFIG: dict[str, object] = {}
 SURFACE_WEIGHT_CAPS: dict[str, float] = {}
+SP_OVERALL_BONUS: float = 4.0
 HITTER_PLATOON_TRAIT_TO_SPEC = {
     "CON vs LHP": "contact",
     "CON vs RHP": "contact",
@@ -95,6 +96,7 @@ def refresh_runtime_tuning() -> None:
     global ROLE_OVERALL_WEIGHTS
     global PLATOON_ADJUSTMENT_CONFIG
     global SURFACE_WEIGHT_CAPS
+    global SP_OVERALL_BONUS
 
     tuning = load_processing_tuning_config()
     rating_curve = tuning.get("rating_curve", {})
@@ -204,6 +206,16 @@ def refresh_runtime_tuning() -> None:
             if parsed:
                 parsed_role_weights[role_name] = parsed
     ROLE_OVERALL_WEIGHTS = parsed_role_weights
+
+    raw_pitcher_adjustments = tuning.get("pitcher_adjustments", {})
+    try:
+        SP_OVERALL_BONUS = float(
+            raw_pitcher_adjustments.get("sp_overall_bonus", 4.0)
+            if isinstance(raw_pitcher_adjustments, Mapping)
+            else 4.0
+        )
+    except (TypeError, ValueError):
+        SP_OVERALL_BONUS = 4.0
 
     raw_platoon_adjustment = tuning.get("platoon_adjustment", {})
     parsed_platoon_adjustment: dict[str, object] = {
@@ -1220,7 +1232,7 @@ def overall_grade(value: int | None) -> str | None:
     return None
 
 
-def role_weighted_overall_numeric(role: str, ratings: Mapping[str, int]) -> int | None:
+def role_weighted_overall_numeric(role: str, ratings: Mapping[str, int], pitcher_role: str | None = None) -> int | None:
     if not ratings:
         return None
 
@@ -1269,6 +1281,12 @@ def role_weighted_overall_numeric(role: str, ratings: Mapping[str, int]) -> int 
             bonus += 2.5
         if base_overall >= 86 and min_value >= 76:
             bonus += 1.0
+
+    # Starting pitchers are more valuable than relievers of equal component ratings
+    # because they sustain their performance across more innings. Apply a configurable
+    # bonus to the overall for SP-classified pitchers.
+    if pitcher_role == "SP":
+        bonus += SP_OVERALL_BONUS
 
     return int(round(clamp(base_overall + bonus, 1.0, 99.0)))
 
@@ -2645,7 +2663,9 @@ def _rate_players_core(
     for state in states:
         derived_secondary_positions = state.secondary_positions
         covered_groups = utility_covered_groups(state.player, derived_secondary_positions)
-        overall_numeric = role_weighted_overall_numeric(state.player.role, state.ratings)
+        overall_numeric = role_weighted_overall_numeric(
+            state.player.role, state.ratings, pitcher_role=pitcher_role_bucket_for_state(state)
+        )
         deduped_flags = sorted(set(state.review_flags))
         output_metadata = dict(state.player.metadata)
         output_metadata.setdefault("positions", {})
@@ -2717,7 +2737,11 @@ def _rate_players_core(
             output.percentiles[spec_name] = round(penalized_percentile, 2)
             output.ratings[spec_name] = interpolate_rating(penalized_percentile)
 
-        output.overall_numeric = role_weighted_overall_numeric(player.role, output.ratings)
+        output.overall_numeric = role_weighted_overall_numeric(
+            player.role,
+            output.ratings,
+            pitcher_role=pitcher_role_bucket_for_state(state) if state is not None else None,
+        )
         output.overall_grade = overall_grade(output.overall_numeric)
     return outputs
 
