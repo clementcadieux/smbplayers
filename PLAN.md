@@ -105,6 +105,22 @@
 
 ---
 
+### Issue #128 – SMB4 League File Encoder/Decoder
+
+**Problem:** Rated players need to be brought into SMB4 via the game's proprietary save format. Currently there is no tooling to write player data into that format or read it back out, making it impossible to load generated ratings directly into the game.
+
+**Plan:**
+1. **Reverse-engineer the save format** – Use any available external tools (e.g. hex editors, community-published format docs, SMB4 modding resources) to map the binary/JSON structure of an SMB4 league file. Document field offsets, data types, and encoding rules in a `SAVE_FORMAT.md` reference document.
+2. **Implement the decoder** – Create `smb4_mlb_ratings/codec/decoder.py` that reads a raw SMB4 league file and returns a list of `PlayerInput`-compatible dicts (or a new `LeagueFile` model), making it easy to round-trip existing league data through the pipeline.
+3. **Implement the encoder** – Create `smb4_mlb_ratings/codec/encoder.py` that accepts a list of `PlayerOutput` records (or a `LeagueFile` model) and writes a valid SMB4 league file, replacing or patching existing player slots as needed.
+4. **CLI integration** – Add two new sub-commands to `cli.py`:
+   - `decode <league_file> <output_json>` – decode a league file to JSON.
+   - `encode <input_json> <league_file>` – encode rated players back into a league file.
+5. **Config / reference data** – Store any format-version constants, field offsets, or encoding tables in `smb4_player_reference.json` or a new `codec_config.yaml` so they can be updated without code changes when the game patches.
+6. **Tests** – Add round-trip tests: encode a synthetic `PlayerOutput` list to bytes, decode the bytes back, and assert field-level parity. Add a smoke test confirming the CLI sub-commands exit cleanly with a minimal fixture file.
+
+---
+
 ## Completed Issues (continued)
 
 - **#114 – Quick Layer-Specific Triggers** – Created `Makefile` with one target per pipeline layer (`ingest`, `aggregate`, `process`, `generate`, `rank`) plus a `run-all` target using configurable default paths; added layer-trigger documentation section to `README.md`; added `test_layer_commands_each_exit_zero_with_minimal_fixture` smoke test in `test_ingest.py`.
