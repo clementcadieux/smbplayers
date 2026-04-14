@@ -2720,7 +2720,7 @@ class SurfaceBlendTests(unittest.TestCase):
         self.assertGreater(sp_out.overall_numeric or 0, rp_out.overall_numeric or 0)
 
     def test_elite_sp_reaches_a_plus_overall(self) -> None:
-        # An ace-calibre SP should floor at A+ (≥ 93) and almost certainly reach S (≥ 95).
+        # An ace-caliber SP should floor at A+ (≥ 93) and almost certainly reach S (≥ 95).
         sp_peers = [
             self._pitcher_peer(f"SP Peer {i}", 91.0 + i * 0.1, 0.100 + i * 0.001, 0.265 + i * 0.001, 0.085 - i * 0.0005, role_hint="starter", weighted_bf=820 + i * 5)
             for i in range(1, 20)
