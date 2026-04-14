@@ -22,13 +22,14 @@ from smb4_mlb_ratings.cli import write_csv, write_json
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 EXPORT_DIR = PROJECT_ROOT / "export"
+RAW_EXPORT_DIR = EXPORT_DIR / "raw"
 
 # MLB team IDs and abbreviations
 TEAMS = {
     110: ("BAL", "orioles"),       # Baltimore Orioles
     111: ("BOS", "redsox"),        # Boston Red Sox
     147: ("NYY", "yankees"),       # New York Yankees
-    145: ("TB", "rays"),           # Tampa Bay Rays
+    139: ("TB", "rays"),           # Tampa Bay Rays
     141: ("TOR", "bluejays"),      # Toronto Blue Jays
     145: ("CWS", "whitesox"),      # Chicago White Sox
     114: ("CLE", "guardians"),     # Cleveland Guardians
@@ -48,10 +49,10 @@ TEAMS = {
     112: ("CHC", "cubs"),          # Chicago Cubs
     113: ("CIN", "reds"),          # Cincinnati Reds
     158: ("MIL", "brewers"),       # Milwaukee Brewers
-    115: ("PIT", "pirates"),       # Pittsburgh Pirates
+    134: ("PIT", "pirates"),       # Pittsburgh Pirates
     138: ("STL", "cardinals"),     # St. Louis Cardinals
     109: ("ARI", "diamondbacks"),  # Arizona Diamondbacks
-    137: ("COL", "rockies"),       # Colorado Rockies
+    115: ("COL", "rockies"),       # Colorado Rockies
     119: ("LAD", "dodgers"),       # Los Angeles Dodgers
     135: ("SD", "padres"),         # San Diego Padres
     137: ("SF", "giants"),         # San Francisco Giants
@@ -71,6 +72,9 @@ def ingest_team(team_id: int, team_abbrev: str, team_name: str, insecure_ssl: bo
         ssl_context = ssl._create_unverified_context()
 
     try:
+        team_export_dir = RAW_EXPORT_DIR / team_abbrev
+        team_export_dir.mkdir(parents=True, exist_ok=True)
+
         # Fetch current season players
         current_players = fetch_team_players(
             team_id,
@@ -94,18 +98,18 @@ def ingest_team(team_id: int, team_abbrev: str, team_name: str, insecure_ssl: bo
         )
 
         # Define output paths
-        roster_file = EXPORT_DIR / f"{team_name}_live_roster_{ROSTER_SEASON}.csv"
-        current_savant_hitters = EXPORT_DIR / f"{team_name}_live_savant_hitters_{CURRENT_STAT_SEASON}.csv"
-        current_savant_pitchers = EXPORT_DIR / f"{team_name}_live_savant_pitchers_{CURRENT_STAT_SEASON}.csv"
-        current_savant_fielding = EXPORT_DIR / f"{team_name}_live_savant_fielding_{CURRENT_STAT_SEASON}.csv"
-        current_bref_hitters = EXPORT_DIR / f"{team_name}_live_bref_hitters_{CURRENT_STAT_SEASON}.csv"
-        current_bref_pitchers = EXPORT_DIR / f"{team_name}_live_bref_pitchers_{CURRENT_STAT_SEASON}.csv"
+        roster_file = team_export_dir / f"{team_name}_live_roster_{ROSTER_SEASON}.csv"
+        current_savant_hitters = team_export_dir / f"{team_name}_live_savant_hitters_{CURRENT_STAT_SEASON}.csv"
+        current_savant_pitchers = team_export_dir / f"{team_name}_live_savant_pitchers_{CURRENT_STAT_SEASON}.csv"
+        current_savant_fielding = team_export_dir / f"{team_name}_live_savant_fielding_{CURRENT_STAT_SEASON}.csv"
+        current_bref_hitters = team_export_dir / f"{team_name}_live_bref_hitters_{CURRENT_STAT_SEASON}.csv"
+        current_bref_pitchers = team_export_dir / f"{team_name}_live_bref_pitchers_{CURRENT_STAT_SEASON}.csv"
 
-        previous_savant_hitters = EXPORT_DIR / f"{team_name}_live_savant_hitters_{PREVIOUS_STAT_SEASON}.csv"
-        previous_savant_pitchers = EXPORT_DIR / f"{team_name}_live_savant_pitchers_{PREVIOUS_STAT_SEASON}.csv"
-        previous_savant_fielding = EXPORT_DIR / f"{team_name}_live_savant_fielding_{PREVIOUS_STAT_SEASON}.csv"
-        previous_bref_hitters = EXPORT_DIR / f"{team_name}_live_bref_hitters_{PREVIOUS_STAT_SEASON}.csv"
-        previous_bref_pitchers = EXPORT_DIR / f"{team_name}_live_bref_pitchers_{PREVIOUS_STAT_SEASON}.csv"
+        previous_savant_hitters = team_export_dir / f"{team_name}_live_savant_hitters_{PREVIOUS_STAT_SEASON}.csv"
+        previous_savant_pitchers = team_export_dir / f"{team_name}_live_savant_pitchers_{PREVIOUS_STAT_SEASON}.csv"
+        previous_savant_fielding = team_export_dir / f"{team_name}_live_savant_fielding_{PREVIOUS_STAT_SEASON}.csv"
+        previous_bref_hitters = team_export_dir / f"{team_name}_live_bref_hitters_{PREVIOUS_STAT_SEASON}.csv"
+        previous_bref_pitchers = team_export_dir / f"{team_name}_live_bref_pitchers_{PREVIOUS_STAT_SEASON}.csv"
 
         # Write CSVs
         write_csv(roster_file, build_roster_rows(current_players, team_abbreviation=team_abbrev))
@@ -172,6 +176,7 @@ def ingest_team(team_id: int, team_abbrev: str, team_name: str, insecure_ssl: bo
 def main() -> None:
     """Fetch and ingest data for all 30 MLB teams."""
     EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+    RAW_EXPORT_DIR.mkdir(parents=True, exist_ok=True)
 
     print("League-wide data ingestion")
     print("=" * 60)
@@ -187,7 +192,7 @@ def main() -> None:
 
     print("=" * 60)
     print(f"Ingestion complete: {processed}/30 teams")
-    print(f"Created CSV files in: {EXPORT_DIR}")
+    print(f"Created CSV files in: {RAW_EXPORT_DIR}")
 
     if failed:
         print(f"\nFailed teams ({len(failed)}):")

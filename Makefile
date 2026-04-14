@@ -8,10 +8,10 @@
 
 PYTHON        ?= python3 -m smb4_mlb_ratings.cli
 MANIFEST      ?= manifest.json
-NORMALIZED    ?= normalized_players.json
-RATINGS       ?= ratings_output.json
+NORMALIZED    ?= export/league_normalized.json
+RATINGS       ?= export/league_ratings.json
 REPORTS_DIR   ?= team_reports
-ROSTER        ?= roster_output.json
+ROSTER        ?= export/league_roster.json
 TEAM          ?=
 
 # Build the optional --team flag only when TEAM is set.

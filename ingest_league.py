@@ -43,13 +43,14 @@ TEAMS = {
 }
 
 EXPORT_DIR = Path(__file__).parent / "export"
+RAW_EXPORT_DIR = EXPORT_DIR / "raw"
 PROJECT_ROOT = Path(__file__).parent
 
 
 def build_team_manifest(team_abbrev: str, team_name: str) -> dict:
     """Build a manifest for a single team."""
     # Use absolute paths so they work regardless of where the manifest file is
-    export_abs = (PROJECT_ROOT / "export").resolve()
+    team_export_dir = (RAW_EXPORT_DIR / team_abbrev).resolve()
     
     return {
         "source": "mixed",
@@ -63,16 +64,16 @@ def build_team_manifest(team_abbrev: str, team_name: str) -> dict:
                 "sources": {
                     "baseball_reference": {
                         "files": {
-                            "hitters": str(export_abs / f"{team_name}_live_bref_hitters_2026.csv"),
-                            "pitchers": str(export_abs / f"{team_name}_live_bref_pitchers_2026.csv")
+                            "hitters": str(team_export_dir / f"{team_name}_live_bref_hitters_2026.csv"),
+                            "pitchers": str(team_export_dir / f"{team_name}_live_bref_pitchers_2026.csv")
                         }
                     },
                     "baseball_savant": {
                         "files": {
-                            "roster": str(export_abs / f"{team_name}_live_roster_2026.csv"),
-                            "hitters": str(export_abs / f"{team_name}_live_savant_hitters_2026.csv"),
-                            "pitchers": str(export_abs / f"{team_name}_live_savant_pitchers_2026.csv"),
-                            "fielding": str(export_abs / f"{team_name}_live_savant_fielding_2026.csv")
+                            "roster": str(team_export_dir / f"{team_name}_live_roster_2026.csv"),
+                            "hitters": str(team_export_dir / f"{team_name}_live_savant_hitters_2026.csv"),
+                            "pitchers": str(team_export_dir / f"{team_name}_live_savant_pitchers_2026.csv"),
+                            "fielding": str(team_export_dir / f"{team_name}_live_savant_fielding_2026.csv")
                         }
                     }
                 }
@@ -82,15 +83,15 @@ def build_team_manifest(team_abbrev: str, team_name: str) -> dict:
                 "sources": {
                     "baseball_reference": {
                         "files": {
-                            "hitters": str(export_abs / f"{team_name}_live_bref_hitters_2025.csv"),
-                            "pitchers": str(export_abs / f"{team_name}_live_bref_pitchers_2025.csv")
+                            "hitters": str(team_export_dir / f"{team_name}_live_bref_hitters_2025.csv"),
+                            "pitchers": str(team_export_dir / f"{team_name}_live_bref_pitchers_2025.csv")
                         }
                     },
                     "baseball_savant": {
                         "files": {
-                            "hitters": str(export_abs / f"{team_name}_live_savant_hitters_2025.csv"),
-                            "pitchers": str(export_abs / f"{team_name}_live_savant_pitchers_2025.csv"),
-                            "fielding": str(export_abs / f"{team_name}_live_savant_fielding_2025.csv")
+                            "hitters": str(team_export_dir / f"{team_name}_live_savant_hitters_2025.csv"),
+                            "pitchers": str(team_export_dir / f"{team_name}_live_savant_pitchers_2025.csv"),
+                            "fielding": str(team_export_dir / f"{team_name}_live_savant_fielding_2025.csv")
                         }
                     }
                 }
@@ -136,7 +137,8 @@ def ingest_league() -> None:
             failed_teams.append((team_abbrev, str(e)))
 
     # Write combined output
-    output_path = PROJECT_ROOT / "league_normalized.json"
+    output_path = EXPORT_DIR / "league_normalized.json"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(
         json.dumps({"players": all_players}, indent=2),
         encoding="utf-8"

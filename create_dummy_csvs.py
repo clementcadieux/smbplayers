@@ -6,7 +6,8 @@ Create minimal dummy CSV files for all 30 teams to enable ingest to run.
 from pathlib import Path
 
 EXPORT_DIR = Path(__file__).parent / "export"
-EXPORT_DIR.mkdir(exist_ok=True)
+RAW_EXPORT_DIR = EXPORT_DIR / "raw"
+RAW_EXPORT_DIR.mkdir(parents=True, exist_ok=True)
 
 TEAMS = {
     "BAL": "orioles",
@@ -120,46 +121,49 @@ def main() -> None:
     for team_abbrev, team_name in TEAMS.items():
         print(f"Creating CSVs for {team_abbrev} ({team_name})... ", end="", flush=True)
 
+        team_dir = RAW_EXPORT_DIR / team_abbrev
+        team_dir.mkdir(parents=True, exist_ok=True)
+
         # 2026 files
         create_bref_hitters_csv(
-            EXPORT_DIR / f"{team_name}_live_bref_hitters_2026.csv", team_abbrev
+            team_dir / f"{team_name}_live_bref_hitters_2026.csv", team_abbrev
         )
         create_bref_pitchers_csv(
-            EXPORT_DIR / f"{team_name}_live_bref_pitchers_2026.csv", team_abbrev
+            team_dir / f"{team_name}_live_bref_pitchers_2026.csv", team_abbrev
         )
         create_roster_csv(
-            EXPORT_DIR / f"{team_name}_live_roster_2026.csv", team_abbrev
+            team_dir / f"{team_name}_live_roster_2026.csv", team_abbrev
         )
         create_savant_hitters_csv(
-            EXPORT_DIR / f"{team_name}_live_savant_hitters_2026.csv", team_abbrev
+            team_dir / f"{team_name}_live_savant_hitters_2026.csv", team_abbrev
         )
         create_savant_pitchers_csv(
-            EXPORT_DIR / f"{team_name}_live_savant_pitchers_2026.csv", team_abbrev
+            team_dir / f"{team_name}_live_savant_pitchers_2026.csv", team_abbrev
         )
         create_savant_fielding_csv(
-            EXPORT_DIR / f"{team_name}_live_savant_fielding_2026.csv", team_abbrev
+            team_dir / f"{team_name}_live_savant_fielding_2026.csv", team_abbrev
         )
 
         # 2025 files (same structure)
         create_bref_hitters_csv(
-            EXPORT_DIR / f"{team_name}_live_bref_hitters_2025.csv", team_abbrev
+            team_dir / f"{team_name}_live_bref_hitters_2025.csv", team_abbrev
         )
         create_bref_pitchers_csv(
-            EXPORT_DIR / f"{team_name}_live_bref_pitchers_2025.csv", team_abbrev
+            team_dir / f"{team_name}_live_bref_pitchers_2025.csv", team_abbrev
         )
         create_savant_hitters_csv(
-            EXPORT_DIR / f"{team_name}_live_savant_hitters_2025.csv", team_abbrev
+            team_dir / f"{team_name}_live_savant_hitters_2025.csv", team_abbrev
         )
         create_savant_pitchers_csv(
-            EXPORT_DIR / f"{team_name}_live_savant_pitchers_2025.csv", team_abbrev
+            team_dir / f"{team_name}_live_savant_pitchers_2025.csv", team_abbrev
         )
         create_savant_fielding_csv(
-            EXPORT_DIR / f"{team_name}_live_savant_fielding_2025.csv", team_abbrev
+            team_dir / f"{team_name}_live_savant_fielding_2025.csv", team_abbrev
         )
 
         print("✓")
 
-    print(f"\nCreated {len(TEAMS) * 11} CSV files in {EXPORT_DIR}")
+    print(f"\nCreated {len(TEAMS) * 11} CSV files in {RAW_EXPORT_DIR}")
 
 
 if __name__ == "__main__":
