@@ -66,12 +66,6 @@ PITCHER_DEFAULT_RATINGS: dict[str, int] = {}
 KNOWN_TWO_WAY_PLAYER_OVERRIDES: dict[str, dict[str, object]] = {
     "shohei ohtani": {
         "mandatory_trait": "Two Way (OF)",
-        "velocity_floor": 90,
-        "junk_floor": 84,
-        "accuracy_floor": 68,
-        "fielding_floor": 40,
-        "arm_floor": 50,
-        "recommended_pitches": ["4F", "SL", "CH", "2F"],
     }
 }
 HITTER_PLATOON_TRAIT_TO_SPEC = {
@@ -1645,38 +1639,6 @@ def apply_known_two_way_player_overrides(
         if override is None:
             continue
 
-        updated_ratings = False
-        velocity_floor = int(override.get("velocity_floor", 0))
-        junk_floor = int(override.get("junk_floor", 0))
-
-        current_velocity = output.ratings.get("velocity")
-        if current_velocity is None or int(current_velocity) <= 0:
-            output.ratings["velocity"] = velocity_floor
-            updated_ratings = True
-
-        current_junk = output.ratings.get("junk")
-        if current_junk is None or int(current_junk) <= 0:
-            output.ratings["junk"] = junk_floor
-            updated_ratings = True
-
-        accuracy_floor = int(override.get("accuracy_floor", 0))
-        current_accuracy = output.ratings.get("accuracy")
-        if current_accuracy is None or int(current_accuracy) <= 0:
-            output.ratings["accuracy"] = accuracy_floor
-            updated_ratings = True
-
-        fielding_floor = int(override.get("fielding_floor", 0))
-        current_fielding = output.ratings.get("fielding")
-        if current_fielding is None or int(current_fielding) <= 0:
-            output.ratings["fielding"] = fielding_floor
-            updated_ratings = True
-
-        arm_floor = int(override.get("arm_floor", 0))
-        current_arm = output.ratings.get("arm")
-        if current_arm is None or int(current_arm) <= 0:
-            output.ratings["arm"] = arm_floor
-            updated_ratings = True
-
         mandatory_trait_name = str(override.get("mandatory_trait", "")).strip()
         if mandatory_trait_name:
             existing_trait_names = {trait.name for trait in output.assigned_traits}
@@ -1691,25 +1653,6 @@ def apply_known_two_way_player_overrides(
                         reason="Known two-way override: always preserve this SMB two-way trait for this player.",
                     ),
                 )
-
-        if not output.recommended_pitches:
-            override_pitches = override.get("recommended_pitches")
-            if isinstance(override_pitches, list):
-                output.recommended_pitches = [
-                    str(pitch).strip()
-                    for pitch in override_pitches
-                    if isinstance(pitch, str) and str(pitch).strip()
-                ]
-
-        if not updated_ratings:
-            continue
-        state = states_by_identity.get(_output_identity_key(output))
-        output.overall_numeric = role_weighted_overall_numeric(
-            output.role,
-            output.ratings,
-            pitcher_role=pitcher_role_bucket_for_state(state) if state is not None else None,
-        )
-        output.overall_grade = overall_grade(output.overall_numeric)
 
 
 def confidence_level(flags: list[str]) -> str:
