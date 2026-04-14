@@ -123,6 +123,15 @@ POSITION_ALIASES = {
     "PITCHER": "P",
 }
 
+TWO_WAY_POSITION_MARKERS = {
+    "twp",
+    "twoway",
+    "twowayplayer",
+    "twowaypitcher",
+    "two_way",
+    "two-way",
+}
+
 POSITION_DIFFICULTY = {
     "C": 0.98,
     "SS": 0.92,
@@ -461,6 +470,36 @@ def _row_positions(row: dict[str, str]) -> list[str]:
         seen.add(position)
         ordered.append(position)
     return ordered
+
+
+def _row_indicates_two_way_position(row: dict[str, str]) -> bool:
+    for field_name in (
+        "primary_position",
+        "position",
+        "pos",
+        "fielding_position",
+        "mlb_pos",
+        *SECONDARY_FIELD_POSITION_COLUMNS,
+        "secondary_position",
+        "secondary_pos",
+    ):
+        raw_value = _pick_first(row, field_name)
+        if not isinstance(raw_value, str) or not raw_value.strip():
+            continue
+        if _normalized_key(raw_value) in TWO_WAY_POSITION_MARKERS:
+            return True
+        pieces = (
+            raw_value.replace("/", ",")
+            .replace(";", ",")
+            .replace("|", ",")
+            .replace("-", ",")
+            .split(",")
+        )
+        for piece in pieces:
+            marker = _normalized_key(piece)
+            if marker in TWO_WAY_POSITION_MARKERS:
+                return True
+    return False
 
 
 def _row_player_name(row: dict[str, str]) -> str | None:
@@ -973,6 +1012,8 @@ def _flag_injury_shortened_seasons(players: dict[tuple[str, str], PlayerAccumula
 
 def _apply_hitter_row(player: PlayerAccumulator, season_key: str, row: dict[str, str]) -> None:
     player.roles.add("hitter")
+    if _row_indicates_two_way_position(row):
+        player.roles.add("pitcher")
     _apply_identity(player, row)
     player.set_days_on_roster(season_key, _row_days_on_roster(row))
     player.set_trait_metrics(season_key, _row_trait_metrics(row, HITTER_TRAIT_METRIC_COLUMNS))
