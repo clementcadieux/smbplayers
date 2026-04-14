@@ -3,6 +3,8 @@ from .ingest import IngestManifest, ingest_from_manifest, load_manifest
 from .codec import (
 	build_codec_import_from_file,
 	build_codec_import_payload,
+	build_dry_run_patch_preview,
+	build_dry_run_patch_preview_from_file,
 	build_encoder_operation_plan,
 	build_encoder_operation_plan_from_file,
 	load_bridge_payload,
@@ -24,6 +26,8 @@ __all__ = [
 	"load_bridge_payload",
 	"build_codec_import_payload",
 	"build_codec_import_from_file",
+	"build_dry_run_patch_preview",
+	"build_dry_run_patch_preview_from_file",
 	"build_encoder_operation_plan",
 	"build_encoder_operation_plan_from_file",
 	"process_players",

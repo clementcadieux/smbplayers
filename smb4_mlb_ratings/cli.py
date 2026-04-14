@@ -8,7 +8,11 @@ import sys
 from pathlib import Path
 
 from .aggregation import aggregate_from_manifest
-from .codec import build_codec_import_from_file, build_encoder_operation_plan_from_file
+from .codec import (
+    build_codec_import_from_file,
+    build_dry_run_patch_preview_from_file,
+    build_encoder_operation_plan_from_file,
+)
 from .generation import generate_output
 from .ingest import load_manifest
 from .league_bridge import build_roster_attribute_bridge
@@ -161,6 +165,14 @@ def run_build_encoder_plan(
     output_path: Path,
 ) -> int:
     build_encoder_operation_plan_from_file(codec_import_path, output_path)
+    return 0
+
+
+def run_build_dry_run_report(
+    encoder_plan_path: Path,
+    output_path: Path,
+) -> int:
+    build_dry_run_patch_preview_from_file(encoder_plan_path, output_path)
     return 0
 
 
@@ -408,6 +420,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output encoder operation plan JSON",
     )
 
+    dry_run_parser = subparsers.add_parser(
+        "build-dry-run-report",
+        help="Build dry-run patch preview report from encoder plan JSON",
+    )
+    dry_run_parser.add_argument(
+        "encoder_plan",
+        type=Path,
+        help="Encoder operation plan JSON (usually export/encoder_plan.json)",
+    )
+    dry_run_parser.add_argument(
+        "output",
+        type=Path,
+        help="Output dry-run patch preview JSON",
+    )
+
     ingest_rate_parser = subparsers.add_parser("ingest-rate", help="Normalize supported source files and rate them")
     ingest_rate_parser.add_argument("manifest", type=Path, help="Ingestion manifest JSON file")
     ingest_rate_parser.add_argument("output", type=Path, nargs="?", default=None, help="Optional output ratings JSON file")
@@ -484,6 +511,11 @@ def main(argv: list[str] | None = None) -> int:
     if namespace.command == "build-encoder-plan":
         return run_build_encoder_plan(
             namespace.codec_import,
+            namespace.output,
+        )
+    if namespace.command == "build-dry-run-report":
+        return run_build_dry_run_report(
+            namespace.encoder_plan,
             namespace.output,
         )
     if namespace.command == "ingest-rate":
