@@ -151,6 +151,11 @@ class LiveTeamDataTests(unittest.TestCase):
             "strikeouts": 180,
             "home_runs": 18,
             "hits": 132,
+            "era": 2.87,
+            "fip": 3.18,
+            "whip": 1.06,
+            "era_minus": 74.0,
+            "fip_minus": 82.0,
             "stolen_bases_allowed": 12,
             "caught_stealing": 7,
             "pickoffs": 3,
@@ -218,7 +223,20 @@ class LiveTeamDataTests(unittest.TestCase):
         self.assertEqual(savant_fielding_rows[0]["Fielding %"], 0.982)
         self.assertEqual(savant_fielding_rows[0]["PO"], 120.0)
         self.assertGreater(bref_pitcher_rows[0]["Same Handed Pitching"], bref_pitcher_rows[0]["Opposite Handed Pitching"])
+        self.assertEqual(bref_pitcher_rows[0]["ERA"], 2.87)
+        self.assertEqual(bref_pitcher_rows[0]["FIP"], 3.18)
+        self.assertEqual(bref_pitcher_rows[0]["WHIP"], 1.06)
+        self.assertEqual(bref_pitcher_rows[0]["ERA Minus"], 74.0)
+        self.assertEqual(bref_pitcher_rows[0]["FIP Minus"], 82.0)
+        self.assertAlmostEqual(bref_pitcher_rows[0]["K %"], 30.0)
+        self.assertAlmostEqual(bref_pitcher_rows[0]["BB %"], 8.0, places=3)
         self.assertIn("Pitch Quality SL", savant_pitcher_rows[0])
+        self.assertEqual(savant_pitcher_rows[0]["ERA"], 2.87)
+        self.assertEqual(savant_pitcher_rows[0]["FIP"], 3.18)
+        self.assertEqual(savant_pitcher_rows[0]["WHIP"], 1.06)
+        self.assertEqual(savant_pitcher_rows[0]["ERA Minus"], 74.0)
+        self.assertEqual(savant_pitcher_rows[0]["FIP Minus"], 82.0)
+        self.assertAlmostEqual(savant_pitcher_rows[0]["K %"], 30.0)
         self.assertEqual(savant_pitcher_rows[0]["Strike %"], 65.4)
         self.assertEqual(savant_pitcher_rows[0]["Chase %"], 32.1)
         self.assertEqual(savant_pitcher_rows[0]["Zone %"], 48.6)
@@ -266,6 +284,130 @@ class LiveTeamDataTests(unittest.TestCase):
         self.assertEqual(build_savant_hitter_rows([roster_only_hitter], team_abbreviation="TOR"), [])
         self.assertEqual(build_baseball_reference_pitcher_rows([roster_only_pitcher], team_abbreviation="TOR"), [])
         self.assertEqual(build_savant_pitcher_rows([roster_only_pitcher], team_abbreviation="TOR"), [])
+
+    def test_build_savant_pitcher_rows_includes_two_way_hitter_with_pitching_sample(self) -> None:
+        two_way_hitter = {
+            "player_id": 660271,
+            "name": "Shohei Ohtani",
+            "team": "LAD",
+            "type": "hitter",
+            "position": "TWP",
+            "throws": "R",
+            "batters_faced": 72,
+            "number_of_pitches": 285,
+            "walks": 6,
+            "advanced_pitching": {
+                "whiffPercentage": 0.29,
+                "chasePercentage": 0.33,
+                "zonePercentage": 0.49,
+                "firstPitchStrikePercentage": 0.61,
+            },
+            "pitch_arsenal": {
+                "FF": {"percentage": 0.46, "averageSpeed": 97.2},
+                "SL": {"percentage": 0.31, "averageSpeed": 87.8},
+                "CH": {"percentage": 0.23, "averageSpeed": 89.1},
+            },
+        }
+
+        rows = build_savant_pitcher_rows([two_way_hitter], team_abbreviation="LAD")
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["player_name"], "Shohei Ohtani")
+        self.assertEqual(rows[0]["position"], "P")
+        self.assertEqual(rows[0]["BF"], 72)
+        self.assertIsNotNone(rows[0]["Avg Fastball Velocity"])
+
+    def test_fetch_roster_player_two_way_hitter_enriches_pitching_metrics(self) -> None:
+        roster_entry = {
+            "person": {"id": 660271, "fullName": "Shohei Ohtani"},
+            "position": {"abbreviation": "TWP", "type": "Two-Way Player"},
+            "status": {"description": "Active", "code": "A"},
+        }
+        person_payload = {
+            "people": [
+                {
+                    "fullName": "Shohei Ohtani",
+                    "currentAge": 31,
+                    "primaryPosition": {"abbreviation": "DH"},
+                    "batSide": {"code": "L"},
+                    "pitchHand": {"code": "R"},
+                }
+            ]
+        }
+
+        def fake_fetch_stats(
+            player_id: int,
+            group: str,
+            *,
+            seasons,
+            ssl_context,
+            mlb_stats_api,
+            stats_type: str = "season",
+        ):
+            if group == "hitting" and stats_type == "season":
+                return {
+                    "plateAppearances": 90,
+                    "atBats": 82,
+                    "hits": 24,
+                    "doubles": 3,
+                    "triples": 0,
+                    "homeRuns": 6,
+                    "baseOnBalls": 12,
+                    "strikeOuts": 23,
+                    "hitByPitch": 2,
+                    "stolenBases": 0,
+                    "caughtStealing": 0,
+                    "avg": ".293",
+                    "obp": ".398",
+                    "slg": ".598",
+                }
+            if group == "hitting" and stats_type == "seasonAdvanced":
+                return {"totalSwings": 120, "swingAndMisses": 34}
+            if group == "pitching" and stats_type == "season":
+                return {
+                    "battersFaced": 72,
+                    "baseOnBalls": 6,
+                    "strikeOuts": 31,
+                    "homeRuns": 4,
+                    "hits": 18,
+                    "inningsPitched": "17.2",
+                    "numberOfPitches": 285,
+                    "strikes": 183,
+                    "strikePercentage": "64.2",
+                    "stolenBases": 1,
+                    "caughtStealing": 0,
+                    "pickoffs": 0,
+                    "stolenBasePercentage": "100.0",
+                }
+            if group == "pitching" and stats_type == "seasonAdvanced":
+                return {"whiffPercentage": 0.29}
+            return {}
+
+        with patch.object(live_team_data_module, "_fetch_json", return_value=person_payload), patch.object(
+            live_team_data_module, "_fetch_days_on_roster", return_value=19
+        ), patch.object(live_team_data_module, "_fetch_stats", side_effect=fake_fetch_stats), patch.object(
+            live_team_data_module, "_fetch_handedness_splits", return_value={}
+        ), patch.object(live_team_data_module, "_fetch_savant_hitter_summary", return_value={}), patch.object(
+            live_team_data_module, "_fetch_savant_hitter_pitch_details", return_value={}
+        ), patch.object(live_team_data_module, "_fetch_situation_splits", return_value={}), patch.object(
+            live_team_data_module, "_fetch_pitch_arsenal", return_value={"FF": {"percentage": 0.5, "averageSpeed": 97.1}}
+        ), patch.object(live_team_data_module, "_fetch_savant_pitch_details", return_value={}):
+            player = live_team_data_module._fetch_roster_player(
+                roster_entry,
+                team_abbreviation="LAD",
+                seasons=(2026, 2026),
+                ssl_context=None,
+                mlb_stats_api="https://statsapi.mlb.com/api/v1",
+                baseball_savant="https://baseballsavant.mlb.com",
+            )
+
+        self.assertIsNotNone(player)
+        assert player is not None
+        self.assertEqual(player["type"], "hitter")
+        self.assertEqual(player["position"], "TWP")
+        self.assertEqual(player.get("batters_faced"), 72)
+        self.assertIn("pitch_arsenal", player)
+        self.assertIn("FF", player["pitch_arsenal"])
 
     def test_fetch_roster_player_keeps_injured_pitcher_without_current_sample(self) -> None:
         roster_entry = {

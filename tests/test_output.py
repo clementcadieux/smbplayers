@@ -175,6 +175,8 @@ class StructuredOutputTests(unittest.TestCase):
             role="hitter",
             team=team,
             primary_position="CF",
+            bats=None,
+            throws=None,
             ratings={"power": 80},
             percentiles={"power": 75.0},
             overall_numeric=80,

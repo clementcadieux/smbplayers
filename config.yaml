@@ -99,7 +99,9 @@
     ["Reverse Splits", "Specialist"],
     ["Big Hack", "Little Hack"],
     ["Tough Out", "Whiffer"],
-    ["Two Way (C)", "Two Way (IF)", "Two Way (OF)"]
+    ["Two Way (C)", "Two Way (IF)", "Two Way (OF)"],
+    ["Outside Pitch", "Inside Pitch"],
+    ["High Pitch", "Low Pitch"]
   ],
   "role_overall_weights": {
     "hitter": {
@@ -118,11 +120,10 @@
       "power": 0.14,
       "contact": 0.14,
       "speed": 0.1,
-      "fielding": 0.07,
-      "arm": 0.05,
+      "fielding": 0.08,
       "velocity": 0.18,
       "junk": 0.18,
-      "accuracy": 0.14
+      "accuracy": 0.18
     }
   },
   "platoon_adjustment": {
@@ -169,6 +170,83 @@
     "utility_bonus_weight": 1.0
   },
   "pitcher_adjustments": {
-    "sp_overall_bonus": 4.0
+    "sp_overall_bonus": 7.0,
+    "starter_volume_stuff_boost": {
+      "enabled": true,
+      "min_projected_ip": 80.0,
+      "max_projected_ip": 190.0,
+      "max_velocity_bonus": 8.0,
+      "max_junk_bonus": 12.0
+    }
+  },
+  "overall_group_normalization": {
+    "enabled": true,
+    "blend_weight": 0.6,
+    "minimum_group_size": 5
+  },
+  "pitcher_outcome_adjustment": {
+    "enabled": true,
+    "minimum_peer_count": 4,
+    "min_ip_for_outcome_weight": {
+      "SP": 80.0,
+      "RP": 30.0,
+      "default": 50.0
+    },
+    "role_profiles": {
+      "SP": {
+        "raw_weight": 0.30,
+        "outcome_weight": 0.70
+      },
+      "RP": {
+        "raw_weight": 0.5,
+        "outcome_weight": 0.5
+      },
+      "default": {
+        "raw_weight": 0.35,
+        "outcome_weight": 0.65
+      }
+    },
+    "metrics": {
+      "era_minus": {
+        "weight": 1.35,
+        "higher_is_better": false
+      },
+      "fip_minus": {
+        "weight": 1.2,
+        "higher_is_better": false
+      },
+      "whip": {
+        "weight": 1.15,
+        "higher_is_better": false
+      },
+      "k_pct": {
+        "weight": 1.0,
+        "higher_is_better": true
+      },
+      "strikeout_rate": {
+        "weight": 1.0,
+        "higher_is_better": true
+      },
+      "bb_pct": {
+        "weight": 0.95,
+        "higher_is_better": false
+      },
+      "walk_rate": {
+        "weight": 1.0,
+        "higher_is_better": false
+      },
+      "chase_rate": {
+        "weight": 0.7,
+        "higher_is_better": true
+      },
+      "weak_contact_rate": {
+        "weight": 0.5,
+        "higher_is_better": true
+      }
+    }
+  },
+  "pitcher_defaults": {
+    "speed": 30,
+    "fielding": 40
   }
 }

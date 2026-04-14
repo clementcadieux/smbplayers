@@ -59,7 +59,16 @@ TRAIT_CONFLICT_GROUPS: tuple[frozenset[str], ...] = ()
 ROLE_OVERALL_WEIGHTS: dict[str, dict[str, float]] = {}
 PLATOON_ADJUSTMENT_CONFIG: dict[str, object] = {}
 SURFACE_WEIGHT_CAPS: dict[str, float] = {}
-SP_OVERALL_BONUS: float = 4.0
+SP_OVERALL_BONUS: float = 7.0
+STARTER_VOLUME_STUFF_BOOST_CONFIG: dict[str, object] = {}
+OVERALL_GROUP_NORMALIZATION_CONFIG: dict[str, float | bool] = {}
+PITCHER_OUTCOME_ADJUSTMENT_CONFIG: dict[str, object] = {}
+PITCHER_DEFAULT_RATINGS: dict[str, int] = {}
+KNOWN_TWO_WAY_PLAYER_OVERRIDES: dict[str, dict[str, object]] = {
+    "shohei ohtani": {
+        "mandatory_trait": "Two Way (OF)",
+    }
+}
 HITTER_PLATOON_TRAIT_TO_SPEC = {
     "CON vs LHP": "contact",
     "CON vs RHP": "contact",
@@ -97,6 +106,10 @@ def refresh_runtime_tuning() -> None:
     global PLATOON_ADJUSTMENT_CONFIG
     global SURFACE_WEIGHT_CAPS
     global SP_OVERALL_BONUS
+    global STARTER_VOLUME_STUFF_BOOST_CONFIG
+    global OVERALL_GROUP_NORMALIZATION_CONFIG
+    global PITCHER_OUTCOME_ADJUSTMENT_CONFIG
+    global PITCHER_DEFAULT_RATINGS
 
     tuning = load_processing_tuning_config()
     rating_curve = tuning.get("rating_curve", {})
@@ -210,12 +223,197 @@ def refresh_runtime_tuning() -> None:
     raw_pitcher_adjustments = tuning.get("pitcher_adjustments", {})
     try:
         SP_OVERALL_BONUS = float(
-            raw_pitcher_adjustments.get("sp_overall_bonus", 4.0)
+            raw_pitcher_adjustments.get("sp_overall_bonus", 7.0)
             if isinstance(raw_pitcher_adjustments, Mapping)
-            else 4.0
+            else 7.0
         )
     except (TypeError, ValueError):
-        SP_OVERALL_BONUS = 4.0
+        SP_OVERALL_BONUS = 7.0
+
+    parsed_starter_volume_stuff_boost: dict[str, object] = {
+        "enabled": True,
+        "min_projected_ip": 80.0,
+        "max_projected_ip": 190.0,
+        "max_velocity_bonus": 8.0,
+        "max_junk_bonus": 12.0,
+    }
+    if isinstance(raw_pitcher_adjustments, Mapping):
+        raw_starter_boost = raw_pitcher_adjustments.get("starter_volume_stuff_boost")
+        if isinstance(raw_starter_boost, Mapping):
+            raw_enabled = raw_starter_boost.get("enabled")
+            if isinstance(raw_enabled, bool):
+                parsed_starter_volume_stuff_boost["enabled"] = raw_enabled
+
+            for key in (
+                "min_projected_ip",
+                "max_projected_ip",
+                "max_velocity_bonus",
+                "max_junk_bonus",
+            ):
+                raw_value = raw_starter_boost.get(key)
+                if raw_value is None:
+                    continue
+                try:
+                    parsed_starter_volume_stuff_boost[key] = float(raw_value)
+                except (TypeError, ValueError):
+                    continue
+
+    parsed_starter_volume_stuff_boost["min_projected_ip"] = max(
+        0.0,
+        float(parsed_starter_volume_stuff_boost["min_projected_ip"]),
+    )
+    parsed_starter_volume_stuff_boost["max_projected_ip"] = max(
+        float(parsed_starter_volume_stuff_boost["min_projected_ip"]),
+        float(parsed_starter_volume_stuff_boost["max_projected_ip"]),
+    )
+    parsed_starter_volume_stuff_boost["max_velocity_bonus"] = max(
+        0.0,
+        float(parsed_starter_volume_stuff_boost["max_velocity_bonus"]),
+    )
+    parsed_starter_volume_stuff_boost["max_junk_bonus"] = max(
+        0.0,
+        float(parsed_starter_volume_stuff_boost["max_junk_bonus"]),
+    )
+    STARTER_VOLUME_STUFF_BOOST_CONFIG = parsed_starter_volume_stuff_boost
+
+    raw_overall_group_norm = tuning.get("overall_group_normalization", {})
+    parsed_overall_group_norm: dict[str, float | bool] = {
+        "enabled": True,
+        "blend_weight": 0.6,
+        "minimum_group_size": 5.0,
+    }
+    if isinstance(raw_overall_group_norm, Mapping):
+        raw_enabled = raw_overall_group_norm.get("enabled")
+        if isinstance(raw_enabled, bool):
+            parsed_overall_group_norm["enabled"] = raw_enabled
+        for key in ("blend_weight", "minimum_group_size"):
+            raw_value = raw_overall_group_norm.get(key)
+            if raw_value is None:
+                continue
+            try:
+                parsed_overall_group_norm[key] = float(raw_value)
+            except (TypeError, ValueError):
+                continue
+    parsed_overall_group_norm["blend_weight"] = min(1.0, max(0.0, float(parsed_overall_group_norm["blend_weight"])))
+    parsed_overall_group_norm["minimum_group_size"] = max(2.0, float(parsed_overall_group_norm["minimum_group_size"]))
+    OVERALL_GROUP_NORMALIZATION_CONFIG = parsed_overall_group_norm
+
+    raw_pitcher_outcome_adjustment = tuning.get("pitcher_outcome_adjustment", {})
+    parsed_pitcher_outcome_adjustment: dict[str, object] = {
+        "enabled": True,
+        "metrics": {
+            "era_minus": {"weight": 1.35, "higher_is_better": False},
+            "fip_minus": {"weight": 1.2, "higher_is_better": False},
+            "whip": {"weight": 1.15, "higher_is_better": False},
+            "k_pct": {"weight": 0.6, "higher_is_better": True},
+            "strikeout_rate": {"weight": 0.6, "higher_is_better": True},
+            "bb_pct": {"weight": 0.95, "higher_is_better": False},
+            "walk_rate": {"weight": 1.0, "higher_is_better": False},
+            "chase_rate": {"weight": 0.3, "higher_is_better": True},
+            "weak_contact_rate": {"weight": 0.45, "higher_is_better": True},
+        },
+        "role_profiles": {
+            "SP": {"raw_weight": 0.25, "outcome_weight": 0.75},
+            "RP": {"raw_weight": 0.50, "outcome_weight": 0.50},
+            "default": {"raw_weight": 0.35, "outcome_weight": 0.65},
+        },
+        "min_ip_for_outcome_weight": {
+            "SP": 80.0,
+            "RP": 30.0,
+            "default": 50.0,
+        },
+        "minimum_peer_count": 4.0,
+    }
+    if isinstance(raw_pitcher_outcome_adjustment, Mapping):
+        raw_enabled = raw_pitcher_outcome_adjustment.get("enabled")
+        if isinstance(raw_enabled, bool):
+            parsed_pitcher_outcome_adjustment["enabled"] = raw_enabled
+
+        raw_min_peer_count = raw_pitcher_outcome_adjustment.get("minimum_peer_count")
+        if raw_min_peer_count is not None:
+            try:
+                parsed_pitcher_outcome_adjustment["minimum_peer_count"] = float(raw_min_peer_count)
+            except (TypeError, ValueError):
+                pass
+
+        raw_metric_overrides = raw_pitcher_outcome_adjustment.get("metrics")
+        if isinstance(raw_metric_overrides, Mapping):
+            merged_metrics = {
+                metric_name: dict(metric_cfg)
+                for metric_name, metric_cfg in parsed_pitcher_outcome_adjustment["metrics"].items()
+                if isinstance(metric_cfg, Mapping)
+            }
+            for metric_name, raw_metric_cfg in raw_metric_overrides.items():
+                if not isinstance(metric_name, str) or not isinstance(raw_metric_cfg, Mapping):
+                    continue
+                merged_metrics.setdefault(metric_name, {"weight": 1.0, "higher_is_better": True})
+                metric_config = dict(merged_metrics[metric_name])
+                raw_weight = raw_metric_cfg.get("weight")
+                if raw_weight is not None:
+                    try:
+                        metric_config["weight"] = max(0.0, float(raw_weight))
+                    except (TypeError, ValueError):
+                        pass
+                raw_higher_is_better = raw_metric_cfg.get("higher_is_better")
+                if isinstance(raw_higher_is_better, bool):
+                    metric_config["higher_is_better"] = raw_higher_is_better
+                merged_metrics[metric_name] = metric_config
+            parsed_pitcher_outcome_adjustment["metrics"] = merged_metrics
+
+        raw_role_profiles = raw_pitcher_outcome_adjustment.get("role_profiles")
+        if isinstance(raw_role_profiles, Mapping):
+            merged_profiles = {
+                role_name: dict(profile_cfg)
+                for role_name, profile_cfg in parsed_pitcher_outcome_adjustment["role_profiles"].items()
+                if isinstance(profile_cfg, Mapping)
+            }
+            for role_name, raw_profile in raw_role_profiles.items():
+                if not isinstance(role_name, str) or not isinstance(raw_profile, Mapping):
+                    continue
+                profile_config = dict(merged_profiles.get(role_name, {"raw_weight": 0.4, "outcome_weight": 0.6}))
+                for profile_key in ("raw_weight", "outcome_weight"):
+                    raw_value = raw_profile.get(profile_key)
+                    if raw_value is None:
+                        continue
+                    try:
+                        profile_config[profile_key] = max(0.0, float(raw_value))
+                    except (TypeError, ValueError):
+                        continue
+                merged_profiles[role_name] = profile_config
+            parsed_pitcher_outcome_adjustment["role_profiles"] = merged_profiles
+
+        raw_min_ip = raw_pitcher_outcome_adjustment.get("min_ip_for_outcome_weight")
+        if isinstance(raw_min_ip, Mapping):
+            merged_min_ip = {
+                role_name: float(value)
+                for role_name, value in parsed_pitcher_outcome_adjustment["min_ip_for_outcome_weight"].items()
+            }
+            for role_name, raw_value in raw_min_ip.items():
+                if not isinstance(role_name, str):
+                    continue
+                try:
+                    merged_min_ip[role_name] = max(0.0, float(raw_value))
+                except (TypeError, ValueError):
+                    continue
+            parsed_pitcher_outcome_adjustment["min_ip_for_outcome_weight"] = merged_min_ip
+    PITCHER_OUTCOME_ADJUSTMENT_CONFIG = parsed_pitcher_outcome_adjustment
+
+    raw_pitcher_defaults = tuning.get("pitcher_defaults", {})
+    parsed_pitcher_defaults = {
+        "speed": 30,
+        "fielding": 40,
+    }
+
+    if isinstance(raw_pitcher_defaults, Mapping):
+        for key, fallback_value in parsed_pitcher_defaults.items():
+            raw_value = raw_pitcher_defaults.get(key)
+            if raw_value is None:
+                continue
+            try:
+                parsed_pitcher_defaults[key] = int(round(float(raw_value)))
+            except (TypeError, ValueError):
+                parsed_pitcher_defaults[key] = fallback_value
+    PITCHER_DEFAULT_RATINGS = parsed_pitcher_defaults
 
     raw_platoon_adjustment = tuning.get("platoon_adjustment", {})
     parsed_platoon_adjustment: dict[str, object] = {
@@ -423,33 +621,32 @@ RATING_SPECS = (
         name="velocity",
         roles=frozenset({"pitcher", "two_way"}),
         sample_key="tracked_fastballs",
-        stabilization_threshold=175,
+        stabilization_threshold=140,
         review_threshold=80,
         peer_mode="pitcher_role",
         volume_exponent=0.50,
         raw_tools_bias=True,
         components=(
-            ComponentSpec("avg_fastball_velocity", 0.70),
-            ComponentSpec("peak_fastball_velocity", 0.20),
-            ComponentSpec("fastball_usage", 0.10),
+            ComponentSpec("avg_fastball_velocity", 0.82),
+            ComponentSpec("peak_fastball_velocity", 0.18),
         ),
     ),
     RatingSpec(
         name="junk",
         roles=frozenset({"pitcher", "two_way"}),
         sample_key="tracked_pitches",
-        stabilization_threshold=275,
+        stabilization_threshold=220,
         review_threshold=120,
         peer_mode="pitcher_role",
         volume_exponent=0.60,
         raw_tools_bias=True,
         components=(
-            ComponentSpec("swinging_strike_rate", 0.25),
-            ComponentSpec("chase_rate", 0.15),
-            ComponentSpec("movement_quality", 0.20),
-            ComponentSpec("stuff_metric", 0.20),
-            ComponentSpec("arsenal_diversity", 0.10),
-            ComponentSpec("weak_contact_rate", 0.10, is_surface_stat=True),
+            ComponentSpec("swinging_strike_rate", 0.30),
+            ComponentSpec("chase_rate", 0.18),
+            ComponentSpec("movement_quality", 0.16),
+            ComponentSpec("stuff_metric", 0.24),
+            ComponentSpec("arsenal_diversity", 0.07),
+            ComponentSpec("weak_contact_rate", 0.05, is_surface_stat=True),
         ),
     ),
     RatingSpec(
@@ -1289,6 +1486,333 @@ def role_weighted_overall_numeric(role: str, ratings: Mapping[str, int], pitcher
         bonus += SP_OVERALL_BONUS
 
     return int(round(clamp(base_overall + bonus, 1.0, 99.0)))
+
+
+def _overall_group_key(output: RatingOutput, state: PlayerState | None) -> str:
+    if output.role in {"hitter", "two_way"}:
+        return "HITTER"
+    if output.role == "pitcher":
+        role_bucket = pitcher_role_bucket_for_state(state) if state is not None else None
+        return role_bucket or "RP"
+    return output.role.upper()
+
+
+def apply_overall_group_normalization(
+    outputs: list[RatingOutput],
+    states_by_identity: Mapping[str, PlayerState],
+) -> None:
+    if not outputs:
+        return
+    if not bool(OVERALL_GROUP_NORMALIZATION_CONFIG.get("enabled", True)):
+        return
+
+    blend_weight = clamp(float(OVERALL_GROUP_NORMALIZATION_CONFIG.get("blend_weight", 0.6)), 0.0, 1.0)
+    minimum_group_size = int(max(2.0, float(OVERALL_GROUP_NORMALIZATION_CONFIG.get("minimum_group_size", 5.0))))
+
+    grouped_outputs: dict[str, list[RatingOutput]] = defaultdict(list)
+    for output in outputs:
+        state = states_by_identity.get(_output_identity_key(output))
+        grouped_outputs[_overall_group_key(output, state)].append(output)
+
+    for group_outputs in grouped_outputs.values():
+        values = [float(output.overall_numeric) for output in group_outputs if output.overall_numeric is not None]
+        if len(values) < minimum_group_size:
+            continue
+        for output in group_outputs:
+            if output.overall_numeric is None:
+                continue
+            raw_overall = float(output.overall_numeric)
+            group_percentile = percentile_rank(raw_overall, values, higher_is_better=True)
+            normalized_overall = float(interpolate_rating(group_percentile))
+            blended_overall = (raw_overall * (1.0 - blend_weight)) + (normalized_overall * blend_weight)
+            output.overall_numeric = int(round(clamp(blended_overall, 1.0, 99.0)))
+            output.overall_grade = overall_grade(output.overall_numeric)
+
+
+def _state_sample_ip(state: PlayerState) -> float | None:
+    if state.player.projected_ip is not None:
+        return float(state.player.projected_ip)
+    weighted_bf = state.samples.get("weighted_bf")
+    if weighted_bf is not None and weighted_bf > 0:
+        return float(weighted_bf) / 4.25
+    return None
+
+
+def _state_current_sample_ip(state: PlayerState) -> float | None:
+    defensive_innings = season_dict(state.player.samples.get("defensive_innings"))
+    if defensive_innings is not None:
+        current_innings = defensive_innings.get("current")
+        if current_innings is not None and current_innings > 0:
+            return float(current_innings)
+
+    weighted_bf = season_dict(state.player.samples.get("weighted_bf"))
+    if weighted_bf is None:
+        return None
+
+    current_bf = weighted_bf.get("current")
+    if current_bf is None or current_bf <= 0:
+        return None
+    return float(current_bf) / 4.25
+
+
+def apply_pitcher_outcome_adjustments(
+    outputs: list[RatingOutput],
+    states_by_identity: Mapping[str, PlayerState],
+) -> None:
+    if not outputs:
+        return
+    if not bool(PITCHER_OUTCOME_ADJUSTMENT_CONFIG.get("enabled", True)):
+        return
+
+    metric_configs = PITCHER_OUTCOME_ADJUSTMENT_CONFIG.get("metrics", {})
+    if not isinstance(metric_configs, Mapping) or not metric_configs:
+        return
+    role_profiles = PITCHER_OUTCOME_ADJUSTMENT_CONFIG.get("role_profiles", {})
+    min_ip_config = PITCHER_OUTCOME_ADJUSTMENT_CONFIG.get("min_ip_for_outcome_weight", {})
+    minimum_peer_count = int(max(2.0, float(PITCHER_OUTCOME_ADJUSTMENT_CONFIG.get("minimum_peer_count", 4.0))))
+
+    pitcher_states: list[PlayerState] = []
+    for output in outputs:
+        if output.role not in {"pitcher", "two_way"}:
+            continue
+        state = states_by_identity.get(_output_identity_key(output))
+        if state is None or output.overall_numeric is None:
+            continue
+        pitcher_states.append(state)
+    if not pitcher_states:
+        return
+
+    for output in outputs:
+        if output.role not in {"pitcher", "two_way"} or output.overall_numeric is None:
+            continue
+        state = states_by_identity.get(_output_identity_key(output))
+        if state is None:
+            continue
+
+        role_bucket = pitcher_role_bucket_for_state(state) or "default"
+        profile_cfg = role_profiles.get(role_bucket) if isinstance(role_profiles, Mapping) else None
+        if not isinstance(profile_cfg, Mapping):
+            profile_cfg = role_profiles.get("default") if isinstance(role_profiles, Mapping) else None
+        if not isinstance(profile_cfg, Mapping):
+            profile_cfg = {"raw_weight": 0.4, "outcome_weight": 0.6}
+
+        try:
+            raw_weight = max(0.0, float(profile_cfg.get("raw_weight", 0.4)))
+        except (TypeError, ValueError):
+            raw_weight = 0.4
+        try:
+            outcome_weight = max(0.0, float(profile_cfg.get("outcome_weight", 0.6)))
+        except (TypeError, ValueError):
+            outcome_weight = 0.6
+        if raw_weight + outcome_weight <= 0:
+            continue
+
+        metric_scores: list[tuple[float, float]] = []
+        for metric_name, metric_cfg in metric_configs.items():
+            if not isinstance(metric_name, str) or not isinstance(metric_cfg, Mapping):
+                continue
+            player_metric_value = weighted_value(state.player.metrics.get(metric_name))
+            if player_metric_value is None:
+                continue
+
+            metric_peers = [
+                weighted_value(peer_state.player.metrics.get(metric_name))
+                for peer_state in pitcher_states
+                if peer_state.player.role in {"pitcher", "two_way"}
+            ]
+            metric_peer_values = [value for value in metric_peers if value is not None]
+            if len(metric_peer_values) < minimum_peer_count:
+                continue
+
+            higher_is_better = bool(metric_cfg.get("higher_is_better", True))
+            metric_percentile = percentile_rank(
+                float(player_metric_value),
+                [float(value) for value in metric_peer_values],
+                higher_is_better=higher_is_better,
+            )
+            try:
+                metric_weight = max(0.0, float(metric_cfg.get("weight", 1.0)))
+            except (TypeError, ValueError):
+                metric_weight = 1.0
+            if metric_weight <= 0:
+                continue
+            metric_scores.append((metric_percentile, metric_weight))
+
+        if not metric_scores:
+            continue
+
+        total_metric_weight = sum(weight for _, weight in metric_scores)
+        if total_metric_weight <= 0:
+            continue
+        outcome_percentile = sum(percentile * weight for percentile, weight in metric_scores) / total_metric_weight
+        outcome_rating = float(interpolate_rating(outcome_percentile))
+
+        min_ip_role = role_bucket if isinstance(role_bucket, str) else "default"
+        min_ip_threshold = 0.0
+        if isinstance(min_ip_config, Mapping):
+            raw_min_ip = min_ip_config.get(min_ip_role, min_ip_config.get("default", 0.0))
+            try:
+                min_ip_threshold = max(0.0, float(raw_min_ip))
+            except (TypeError, ValueError):
+                min_ip_threshold = 0.0
+
+        sample_ip = _state_current_sample_ip(state)
+        if min_ip_threshold > 0.0:
+            if sample_ip is None or sample_ip <= 0:
+                outcome_gate = 0.0
+            else:
+                outcome_gate = clamp(sample_ip / min_ip_threshold, 0.0, 1.0)
+        else:
+            outcome_gate = 1.0
+
+        effective_raw_weight = raw_weight + (outcome_weight * (1.0 - outcome_gate))
+        effective_outcome_weight = outcome_weight * outcome_gate
+        total_weight = effective_raw_weight + effective_outcome_weight
+        if total_weight <= 0:
+            continue
+
+        blended_overall = (
+            (float(output.overall_numeric) * effective_raw_weight)
+            + (outcome_rating * effective_outcome_weight)
+        ) / total_weight
+
+        proxy_adjustment = 0.0
+        current_walk_rate = current_season_value(state.player.metrics.get("walk_rate"))
+        current_weak_contact = current_season_value(state.player.metrics.get("weak_contact_rate"))
+        accuracy_rating = float(output.ratings.get("accuracy", 0.0) or 0.0)
+        velocity_rating = float(output.ratings.get("velocity", 0.0) or 0.0)
+        junk_rating = float(output.ratings.get("junk", 0.0) or 0.0)
+
+        # Overrated power arms in small samples often show severe current walk issues.
+        if current_walk_rate is not None and current_walk_rate >= 0.12:
+            max_penalty = 8.0 if role_bucket == "SP" else 5.0
+            walk_scale = (current_walk_rate - 0.12) / 0.06
+            proxy_adjustment -= min(max_penalty, max(0.0, walk_scale) * max_penalty)
+
+        # Reward command-backed SP profiles so true aces separate from raw-only arms.
+        if role_bucket == "SP":
+            if accuracy_rating >= 94 and velocity_rating >= 70 and junk_rating >= 65:
+                proxy_adjustment += 2.0
+            elif velocity_rating >= 92 and junk_rating >= 80 and accuracy_rating >= 80:
+                proxy_adjustment += 1.5
+            if current_walk_rate is not None and current_walk_rate <= 0.06:
+                proxy_adjustment += 1.0
+            if current_weak_contact is not None and current_weak_contact >= 0.80:
+                proxy_adjustment += 1.0
+
+        blended_overall += proxy_adjustment
+        output.overall_numeric = int(round(clamp(blended_overall, 1.0, 99.0)))
+        output.overall_grade = overall_grade(output.overall_numeric)
+
+
+def apply_pitcher_defensive_defaults(outputs: list[RatingOutput]) -> None:
+    for output in outputs:
+        if output.role != "pitcher":
+            continue
+        for rating_name, default_value in PITCHER_DEFAULT_RATINGS.items():
+            current_value = output.ratings.get(rating_name)
+            if current_value is None or int(current_value) <= 0:
+                output.ratings[rating_name] = int(default_value)
+
+
+def apply_starter_volume_stuff_boost(
+    outputs: list[RatingOutput],
+    states_by_identity: Mapping[str, PlayerState],
+) -> None:
+    if not outputs:
+        return
+    if not bool(STARTER_VOLUME_STUFF_BOOST_CONFIG.get("enabled", True)):
+        return
+
+    min_projected_ip = max(0.0, float(STARTER_VOLUME_STUFF_BOOST_CONFIG.get("min_projected_ip", 80.0)))
+    max_projected_ip = max(
+        min_projected_ip,
+        float(STARTER_VOLUME_STUFF_BOOST_CONFIG.get("max_projected_ip", 190.0)),
+    )
+    max_velocity_bonus = max(0.0, float(STARTER_VOLUME_STUFF_BOOST_CONFIG.get("max_velocity_bonus", 8.0)))
+    max_junk_bonus = max(0.0, float(STARTER_VOLUME_STUFF_BOOST_CONFIG.get("max_junk_bonus", 12.0)))
+
+    if max_velocity_bonus <= 0.0 and max_junk_bonus <= 0.0:
+        return
+
+    for output in outputs:
+        if output.role not in {"pitcher", "two_way"}:
+            continue
+        if output.ratings.get("velocity") is None and output.ratings.get("junk") is None:
+            continue
+
+        state = states_by_identity.get(_output_identity_key(output))
+        if state is None:
+            continue
+        if pitcher_role_bucket_for_state(state) != "SP":
+            continue
+
+        projected_ip = resolved_projected_ip(state.player)
+        if projected_ip is None or projected_ip <= 0.0:
+            projected_ip = _state_sample_ip(state)
+        if projected_ip is None or projected_ip <= 0.0:
+            continue
+
+        if max_projected_ip > min_projected_ip:
+            volume_scale = clamp(
+                (float(projected_ip) - min_projected_ip) / (max_projected_ip - min_projected_ip),
+                0.0,
+                1.0,
+            )
+        else:
+            volume_scale = 1.0 if float(projected_ip) >= min_projected_ip else 0.0
+        if volume_scale <= 0.0:
+            continue
+
+        rating_changed = False
+        if output.ratings.get("velocity") is not None and max_velocity_bonus > 0.0:
+            boosted_velocity = int(
+                round(clamp(float(output.ratings["velocity"]) + (max_velocity_bonus * volume_scale), 1.0, 99.0))
+            )
+            if boosted_velocity != int(output.ratings["velocity"]):
+                output.ratings["velocity"] = boosted_velocity
+                rating_changed = True
+
+        if output.ratings.get("junk") is not None and max_junk_bonus > 0.0:
+            boosted_junk = int(round(clamp(float(output.ratings["junk"]) + (max_junk_bonus * volume_scale), 1.0, 99.0)))
+            if boosted_junk != int(output.ratings["junk"]):
+                output.ratings["junk"] = boosted_junk
+                rating_changed = True
+
+        if not rating_changed:
+            continue
+
+        output.overall_numeric = role_weighted_overall_numeric(output.role, output.ratings, pitcher_role="SP")
+        output.overall_grade = overall_grade(output.overall_numeric)
+
+
+def apply_known_two_way_player_overrides(
+    outputs: list[RatingOutput],
+    states_by_identity: Mapping[str, PlayerState],
+) -> None:
+    for output in outputs:
+        if output.role != "two_way":
+            continue
+
+        normalized_name = " ".join(output.name.strip().lower().split()) if isinstance(output.name, str) else ""
+        override = KNOWN_TWO_WAY_PLAYER_OVERRIDES.get(normalized_name)
+        if override is None:
+            continue
+
+        mandatory_trait_name = str(override.get("mandatory_trait", "")).strip()
+        if mandatory_trait_name:
+            existing_trait_names = {trait.name for trait in output.assigned_traits}
+            if mandatory_trait_name not in existing_trait_names:
+                output.assigned_traits.insert(
+                    0,
+                    TraitSuggestion(
+                        name=mandatory_trait_name,
+                        chemistry_type=trait_chemistry_type(mandatory_trait_name),
+                        polarity=catalog_trait_polarity(mandatory_trait_name),
+                        confidence="high",
+                        reason="Known two-way override: always preserve this SMB two-way trait for this player.",
+                    ),
+                )
 
 
 def confidence_level(flags: list[str]) -> str:
@@ -2459,6 +2983,10 @@ def pitcher_role_bucket_for_state(state: PlayerState) -> str | None:
     if state.player.projected_ip is not None:
         return "SP" if state.player.projected_ip >= 80 else "RP"
 
+    resolved_ip = resolved_projected_ip(state.player)
+    if resolved_ip is not None:
+        return "SP" if resolved_ip >= 80 else "RP"
+
     weighted_bf = state.samples.get("weighted_bf")
     if weighted_bf is not None:
         return "SP" if (weighted_bf / 4.25) >= 80 else "RP"
@@ -2743,6 +3271,12 @@ def _rate_players_core(
             pitcher_role=pitcher_role_bucket_for_state(state) if state is not None else None,
         )
         output.overall_grade = overall_grade(output.overall_numeric)
+
+    apply_pitcher_defensive_defaults(outputs)
+    apply_starter_volume_stuff_boost(outputs, states_by_identity)
+    apply_pitcher_outcome_adjustments(outputs, states_by_identity)
+    apply_known_two_way_player_overrides(outputs, states_by_identity)
+    apply_overall_group_normalization(outputs, states_by_identity)
     return outputs
 
 

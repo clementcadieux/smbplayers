@@ -210,8 +210,40 @@ def _apply_pitcher_row(player: PlayerAccumulator, season_key: str, row: dict[str
         movement_estimated = True
 
     strikeout_rate = _pick_number(row, "k_pct", "k_percent", "strikeout_rate", rate=True)
+    strikeout_rate_estimated = False
     if strikeout_rate is None:
         strikeout_rate = _safe_divide(strikeouts, batters_faced)
+        strikeout_rate_estimated = strikeout_rate is not None
+
+    k_pct = _pick_number(row, "k_pct", "k_percent", "strikeout_rate", "strikeout_pct", rate=True)
+    k_pct_estimated = False
+    if k_pct is None and strikeout_rate is not None:
+        k_pct = strikeout_rate
+        k_pct_estimated = True
+
+    bb_pct = _pick_number(row, "bb_pct", "bb_percent", "walk_rate", "walk_pct", rate=True)
+    bb_pct_estimated = False
+    if bb_pct is None and walk_rate is not None:
+        bb_pct = walk_rate
+        bb_pct_estimated = True
+
+    era_minus = _pick_number(
+        row,
+        "era_minus",
+        "era-",
+        "era_minus_index",
+        "era_minus_value",
+    )
+    fip_minus = _pick_number(
+        row,
+        "fip_minus",
+        "fip-",
+        "fip_minus_index",
+        "fip_minus_value",
+    )
+    whip = _pick_number(row, "whip")
+    era = _pick_number(row, "era", "earned_run_average")
+    fip = _pick_number(row, "fip")
 
     weak_contact_rate = _pick_number(row, "weak_contact_rate", "weak_pct", rate=True)
     weak_contact_estimated = False
@@ -238,12 +270,25 @@ def _apply_pitcher_row(player: PlayerAccumulator, season_key: str, row: dict[str
 
     innings_outs = _parse_ip_to_outs(_pick_first(row, "ip", "innings_pitched"))
     defensive_innings = innings_outs / 3.0 if innings_outs is not None else None
+    whip_estimated = False
+    if whip is None and innings_outs is not None and innings_outs > 0:
+        hits_plus_walks = (hits or 0.0) + (walks or 0.0)
+        whip = (hits_plus_walks * 3.0) / innings_outs
+        whip_estimated = True
 
     player.set_metric("stuff_metric", season_key, stuff_metric, estimated=stuff_estimated)
     player.set_metric("chase_rate", season_key, chase_rate)
     player.set_metric("movement_quality", season_key, movement_quality, estimated=movement_estimated)
     player.set_metric("weak_contact_rate", season_key, weak_contact_rate, estimated=weak_contact_estimated)
     player.set_metric("walk_rate", season_key, walk_rate, estimated=walk_rate_estimated)
+    player.set_metric("bb_pct", season_key, bb_pct, estimated=bb_pct_estimated)
+    player.set_metric("strikeout_rate", season_key, strikeout_rate, estimated=strikeout_rate_estimated)
+    player.set_metric("k_pct", season_key, k_pct, estimated=k_pct_estimated)
+    player.set_metric("whip", season_key, whip, estimated=whip_estimated)
+    player.set_metric("era", season_key, era)
+    player.set_metric("fip", season_key, fip)
+    player.set_metric("era_minus", season_key, era_minus)
+    player.set_metric("fip_minus", season_key, fip_minus)
     player.set_metric("strike_pct", season_key, strike_pct, estimated=strike_pct_estimated)
     player.set_metric("zone_pct", season_key, zone_pct, estimated=zone_pct_estimated)
     player.set_metric("first_pitch_strike_pct", season_key, first_pitch_strike_pct, estimated=first_pitch_strike_pct_estimated)

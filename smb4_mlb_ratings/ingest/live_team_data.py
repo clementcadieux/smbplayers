@@ -924,10 +924,18 @@ def build_baseball_reference_pitcher_rows(
 ) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for player in players:
-        if player.get("type") != "pitcher":
+        player_type = _as_str(player.get("type"))
+        if player_type != "pitcher" and not _is_two_way_position(player.get("position"), None):
             continue
         if (_as_int(player.get("batters_faced")) or 0) <= 0:
             continue
+        derived_whip = _as_float(player.get("whip"))
+        if derived_whip is None:
+            derived_whip = _derive_whip_from_counts(
+                player.get("walks"),
+                player.get("hits"),
+                player.get("innings_pitched"),
+            )
         pitching_splits = player.get("pitching_handedness_splits") if isinstance(player.get("pitching_handedness_splits"), Mapping) else {}
         throws = _as_str(player.get("throws"))
         rows.append(
@@ -945,6 +953,13 @@ def build_baseball_reference_pitcher_rows(
                 "IP": player.get("innings_pitched"),
                 "Pitches": player.get("number_of_pitches"),
                 "Strikes": player.get("strikes"),
+                "ERA": player.get("era"),
+                "FIP": player.get("fip"),
+                "WHIP": derived_whip,
+                "ERA Minus": player.get("era_minus"),
+                "FIP Minus": player.get("fip_minus"),
+                "K %": _percentage(player.get("strikeouts"), player.get("batters_faced")),
+                "BB %": _percentage(player.get("walks"), player.get("batters_faced")),
                 "Same Handed Pitching": pitcher_handedness_score(throws, pitching_splits, split_type="same"),
                 "Same Handed Pitching Gap": pitcher_handedness_gap(throws, pitching_splits, split_type="same"),
                 "Opposite Handed Pitching": pitcher_handedness_score(throws, pitching_splits, split_type="opposite"),
@@ -961,10 +976,18 @@ def build_savant_pitcher_rows(
 ) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for player in players:
-        if player.get("type") != "pitcher":
+        player_type = _as_str(player.get("type"))
+        if player_type != "pitcher" and not _is_two_way_position(player.get("position"), None):
             continue
         if (_as_int(player.get("batters_faced")) or 0) <= 0:
             continue
+        derived_whip = _as_float(player.get("whip"))
+        if derived_whip is None:
+            derived_whip = _derive_whip_from_counts(
+                player.get("walks"),
+                player.get("hits"),
+                player.get("innings_pitched"),
+            )
         advanced = player.get("advanced_pitching") if isinstance(player.get("advanced_pitching"), Mapping) else {}
         arsenal_data = player.get("pitch_arsenal") if isinstance(player.get("pitch_arsenal"), Mapping) else {}
         pitching_splits = player.get("pitching_handedness_splits") if isinstance(player.get("pitching_handedness_splits"), Mapping) else {}
@@ -1038,6 +1061,10 @@ def build_savant_pitcher_rows(
                 "position": "P",
                 "Days On Roster": player.get("days_on_roster"),
                 "BF": player.get("batters_faced"),
+                "BB": player.get("walks"),
+                "H": player.get("hits"),
+                "IP": player.get("innings_pitched"),
+                "SO": player.get("strikeouts"),
                 "Pitches": player.get("number_of_pitches"),
                 "Avg Fastball Velocity": fastball_velocity(arsenal_data, mode="average"),
                 "Peak Fastball Velocity": fastball_velocity(arsenal_data, mode="peak"),
@@ -1055,6 +1082,12 @@ def build_savant_pitcher_rows(
                 "SwStr %": _as_percentage_string(advanced.get("whiffPercentage")),
                 "Chase %": chase_rate,
                 "BB %": _percentage(player.get("walks"), player.get("batters_faced")),
+                "K %": _percentage(player.get("strikeouts"), player.get("batters_faced")),
+                "ERA": player.get("era"),
+                "FIP": player.get("fip"),
+                "WHIP": derived_whip,
+                "ERA Minus": player.get("era_minus"),
+                "FIP Minus": player.get("fip_minus"),
                 "Strike %": _as_percentage_string(player.get("strike_percentage")),
                 "Zone %": zone_pct,
                 "First Pitch Strike %": first_pitch_strike_pct,
@@ -1200,6 +1233,7 @@ def _fetch_roster_player(
 
     position = _as_str(roster_position.get("abbreviation")) or _as_str(primary_position.get("abbreviation"))
     position_type = _as_str(roster_position.get("type"))
+    is_two_way_position = _is_two_way_position(position, position_type)
     if position_type == "Pitcher" or position == "P":
         stat_group = "pitching"
         player_type = "pitcher"
@@ -1308,6 +1342,93 @@ def _fetch_roster_player(
                 or {},
             }
         )
+
+        if not is_two_way_position:
+            return base_player
+
+        pitching_stats = _fetch_stats(
+            player_id,
+            "pitching",
+            seasons=seasons,
+            ssl_context=ssl_context,
+            mlb_stats_api=mlb_stats_api,
+        )
+        if pitching_stats is None:
+            return base_player
+
+        batters_faced = _as_int(pitching_stats.get("battersFaced")) or 0
+        if batters_faced == 0:
+            return base_player
+
+        advanced_pitching_stats = _fetch_stats(
+            player_id,
+            "pitching",
+            seasons=seasons,
+            ssl_context=ssl_context,
+            mlb_stats_api=mlb_stats_api,
+            stats_type="seasonAdvanced",
+        ) or {}
+        pitching_handedness_splits = _fetch_handedness_splits(
+            player_id,
+            "pitching",
+            seasons=seasons,
+            ssl_context=ssl_context,
+            mlb_stats_api=mlb_stats_api,
+        )
+        situational_pitching_splits = _fetch_situation_splits(
+            player_id,
+            "pitching",
+            codes=("c00", "ron", "lc", "c30", "c31", "c32"),
+            seasons=seasons,
+            ssl_context=ssl_context,
+            mlb_stats_api=mlb_stats_api,
+        )
+        pitch_arsenal = _fetch_pitch_arsenal(
+            player_id,
+            seasons=seasons,
+            ssl_context=ssl_context,
+            mlb_stats_api=mlb_stats_api,
+        )
+        base_player.update(
+            {
+                "batters_faced": batters_faced,
+                "walks": _as_int(pitching_stats.get("baseOnBalls")) or 0,
+                "strikeouts": _as_int(pitching_stats.get("strikeOuts")) or 0,
+                "home_runs": _as_int(pitching_stats.get("homeRuns")) or 0,
+                "hits": _as_int(pitching_stats.get("hits")) or 0,
+                "era": _as_float(pitching_stats.get("era")) or _as_float(advanced_pitching_stats.get("era")),
+                "fip": _as_float(advanced_pitching_stats.get("fip")) or _as_float(pitching_stats.get("fip")),
+                "whip": _as_float(pitching_stats.get("whip")) or _as_float(advanced_pitching_stats.get("whip")),
+                "era_minus": _as_float(advanced_pitching_stats.get("eraMinus")) or _as_float(advanced_pitching_stats.get("era_minus")),
+                "fip_minus": _as_float(advanced_pitching_stats.get("fipMinus")) or _as_float(advanced_pitching_stats.get("fip_minus")),
+                "innings_pitched": _as_str(pitching_stats.get("inningsPitched")) or "0.0",
+                "number_of_pitches": _as_int(pitching_stats.get("numberOfPitches")) or 0,
+                "strikes": _as_int(pitching_stats.get("strikes")) or 0,
+                "strike_percentage": _as_str(pitching_stats.get("strikePercentage")) or _as_str(advanced_pitching_stats.get("strikePercentage")),
+                "stolen_bases_allowed": _as_int(pitching_stats.get("stolenBases")) or 0,
+                "caught_stealing": _as_int(pitching_stats.get("caughtStealing")) or 0,
+                "pickoffs": _as_int(pitching_stats.get("pickoffs")) or 0,
+                "stolen_base_percentage": _as_str(pitching_stats.get("stolenBasePercentage")),
+                "advanced_pitching": advanced_pitching_stats,
+                "situational_pitching_metrics": derive_pitcher_situational_metrics(
+                    situational_pitching_splits,
+                    {
+                        "stolen_bases_allowed": _as_int(pitching_stats.get("stolenBases")) or 0,
+                        "caught_stealing": _as_int(pitching_stats.get("caughtStealing")) or 0,
+                        "pickoffs": _as_int(pitching_stats.get("pickoffs")) or 0,
+                        "stolen_base_percentage": _as_str(pitching_stats.get("stolenBasePercentage")),
+                    },
+                ),
+                "pitching_handedness_splits": pitching_handedness_splits,
+                "savant_pitch_details": _fetch_savant_pitch_details(
+                    player_id,
+                    ssl_context=ssl_context,
+                    baseball_savant=baseball_savant,
+                    http_failures=http_failures,
+                ),
+                "pitch_arsenal": pitch_arsenal,
+            }
+        )
         return base_player
 
     batters_faced = _as_int(stats.get("battersFaced")) or 0
@@ -1349,6 +1470,11 @@ def _fetch_roster_player(
             "strikeouts": _as_int(stats.get("strikeOuts")) or 0,
             "home_runs": _as_int(stats.get("homeRuns")) or 0,
             "hits": _as_int(stats.get("hits")) or 0,
+            "era": _as_float(stats.get("era")) or _as_float(advanced_stats.get("era")),
+            "fip": _as_float(advanced_stats.get("fip")) or _as_float(stats.get("fip")),
+            "whip": _as_float(stats.get("whip")) or _as_float(advanced_stats.get("whip")),
+            "era_minus": _as_float(advanced_stats.get("eraMinus")) or _as_float(advanced_stats.get("era_minus")),
+            "fip_minus": _as_float(advanced_stats.get("fipMinus")) or _as_float(advanced_stats.get("fip_minus")),
             "innings_pitched": _as_str(stats.get("inningsPitched")) or "0.0",
             "number_of_pitches": _as_int(stats.get("numberOfPitches")) or 0,
             "strikes": _as_int(stats.get("strikes")) or 0,
@@ -1476,6 +1602,14 @@ def _fetch_pitch_arsenal(
         if arsenal_data:
             return arsenal_data
     return {}
+
+
+def _is_two_way_position(position: Any, position_type: Any) -> bool:
+    position_text = (_as_str(position) or "").upper()
+    if position_text in {"TWP", "TW"}:
+        return True
+    position_type_text = (_as_str(position_type) or "").lower()
+    return "two-way" in position_type_text or "two way" in position_type_text
 
 
 def _fetch_savant_pitch_details(
@@ -2316,6 +2450,33 @@ def _percentage(numerator: Any, denominator: Any) -> float | None:
     if numerator_value is None or denominator_value in (None, 0.0):
         return None
     return round((numerator_value / denominator_value) * 100.0, 3)
+
+
+def _parse_ip_to_outs(value: Any) -> float | None:
+    text = _as_str(value)
+    if text is None:
+        return None
+    cleaned = text.strip()
+    if not cleaned:
+        return None
+    if "." not in cleaned:
+        innings = _as_float(cleaned)
+        return (innings * 3.0) if innings is not None else None
+    innings_part, outs_part = cleaned.split(".", 1)
+    innings = _as_float(innings_part)
+    outs = _as_float(outs_part)
+    if innings is None or outs is None:
+        return None
+    return (innings * 3.0) + outs
+
+
+def _derive_whip_from_counts(walks: Any, hits: Any, innings_pitched: Any) -> float | None:
+    walks_value = _as_float(walks)
+    hits_value = _as_float(hits)
+    outs = _parse_ip_to_outs(innings_pitched)
+    if outs in (None, 0.0) or (walks_value is None and hits_value is None):
+        return None
+    return round((((walks_value or 0.0) + (hits_value or 0.0)) * 3.0) / float(outs), 3)
 
 
 def _as_percentage_string(value: Any) -> float | None:

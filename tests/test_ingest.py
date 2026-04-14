@@ -300,6 +300,9 @@ class IngestFrameworkTests(unittest.TestCase):
                     "HR": 19,
                     "H": 149,
                     "IP": "184.2",
+                    "WHIP": 1.13,
+                    "ERA Minus": 78,
+                    "FIP Minus": 83,
                     "Pitches": 2875,
                     "Strikes": 1896,
                     "Pressure Pitching": 71,
@@ -510,6 +513,9 @@ class IngestFrameworkTests(unittest.TestCase):
                     "HR": 18,
                     "H": 141,
                     "IP": "181.1",
+                    "WHIP": 1.08,
+                    "ERA Minus": 74,
+                    "FIP Minus": 81,
                     "Pitches": 2798,
                     "Strikes": 1855,
                     "Pressure Pitching": 69,
@@ -1425,6 +1431,12 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertEqual(pitcher["metadata"]["source"], "baseball_reference")
         self.assertEqual(pitcher["days_on_roster"]["current"], 172.0)
         self.assertAlmostEqual(pitcher["metrics"]["walk_rate"]["current"], 58 / 701, places=6)
+        self.assertAlmostEqual(pitcher["metrics"]["bb_pct"]["current"], 58 / 701, places=6)
+        self.assertAlmostEqual(pitcher["metrics"]["strikeout_rate"]["current"], 192 / 701, places=6)
+        self.assertAlmostEqual(pitcher["metrics"]["k_pct"]["current"], 192 / 701, places=6)
+        self.assertAlmostEqual(pitcher["metrics"]["whip"]["current"], 1.13)
+        self.assertAlmostEqual(pitcher["metrics"]["era_minus"]["current"], 78.0)
+        self.assertAlmostEqual(pitcher["metrics"]["fip_minus"]["current"], 83.0)
         self.assertEqual(pitcher["trait_metrics"]["pressure_pitching"]["current"], 71.0)
         self.assertEqual(pitcher["trait_metrics"]["same_handed_pitching"]["current"], 69.0)
         self.assertEqual(pitcher["trait_metrics"]["same_handed_pitching_gap"]["current"], 11.0)
@@ -1460,6 +1472,12 @@ class IngestFrameworkTests(unittest.TestCase):
 
         self.assertEqual(pitcher["metadata"]["source"], "mixed")
         self.assertAlmostEqual(pitcher["metrics"]["walk_rate"]["current"], 54 / 684, places=6)
+        self.assertAlmostEqual(pitcher["metrics"]["bb_pct"]["current"], 54 / 684, places=6)
+        self.assertAlmostEqual(pitcher["metrics"]["strikeout_rate"]["current"], 205 / 684, places=6)
+        self.assertAlmostEqual(pitcher["metrics"]["k_pct"]["current"], 205 / 684, places=6)
+        self.assertAlmostEqual(pitcher["metrics"]["whip"]["current"], 1.08)
+        self.assertAlmostEqual(pitcher["metrics"]["era_minus"]["current"], 74.0)
+        self.assertAlmostEqual(pitcher["metrics"]["fip_minus"]["current"], 81.0)
         self.assertAlmostEqual(pitcher["metrics"]["avg_fastball_velocity"]["current"], 97.1)
         self.assertAlmostEqual(pitcher["metrics"]["swinging_strike_rate"]["current"], 0.144)
         self.assertAlmostEqual(pitcher["metrics"]["chase_rate"]["current"], 0.331)
@@ -1480,6 +1498,168 @@ class IngestFrameworkTests(unittest.TestCase):
             1,
         )
         self.assertIn("baseball_reference:running", pitcher["metadata"]["ingest"]["missing_files"]["current"])
+
+    def test_two_way_rows_without_player_id_merge_by_name_team_and_season(self) -> None:
+        roster_path = self.root / "two_way_no_id_roster.csv"
+        hitters_path = self.root / "two_way_no_id_hitters.csv"
+        pitchers_path = self.root / "two_way_no_id_pitchers.csv"
+        manifest_path = self.root / "two_way_no_id_manifest.json"
+
+        self._write_csv(
+            roster_path,
+            [
+                {
+                    "player_name": "No ID Two Way",
+                    "team": "LAA",
+                    "age": 30,
+                    "position": "DH",
+                    "bats": "L",
+                    "throws": "R",
+                }
+            ],
+        )
+        self._write_csv(
+            hitters_path,
+            [
+                {
+                    "player_name": "No ID Two Way",
+                    "team": "LAA",
+                    "position": "DH",
+                    "PA": 505,
+                    "ISO": 0.235,
+                    "HR": 39,
+                    "SLG": 0.598,
+                    "AVG": 0.301,
+                    "OBP": 0.392,
+                    "K %": 22.8,
+                    "Contact %": 74.8,
+                    "Barrel %": 16.4,
+                    "Avg Exit Velocity": 93.7,
+                    "H": 155,
+                }
+            ],
+        )
+        self._write_csv(
+            pitchers_path,
+            [
+                {
+                    "player_name": "No ID Two Way",
+                    "team": "LAA",
+                    "position": "P",
+                    "BF": 715,
+                    "Pitches": 2810,
+                    "Avg Fastball Velocity": 97.0,
+                    "Peak Fastball Velocity": 99.2,
+                    "FF %": 51.0,
+                    "SwStr %": 14.8,
+                    "Chase %": 33.2,
+                    "BB %": 7.4,
+                    "Strike %": 66.0,
+                    "Zone %": 49.8,
+                    "First Pitch Strike %": 63.4,
+                }
+            ],
+        )
+
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "source": "baseball_savant",
+                    "seasons": {
+                        "current": {
+                            "year": 2025,
+                            "files": {
+                                "roster": roster_path.name,
+                                "hitters": hitters_path.name,
+                                "pitchers": pitchers_path.name,
+                            },
+                        }
+                    },
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        players = ingest_from_manifest(load_manifest(manifest_path))
+        self.assertEqual(len(players), 1)
+
+        player = players[0]
+        self.assertEqual(player["name"], "No ID Two Way")
+        self.assertEqual(player["role"], "two_way")
+        self.assertIn("iso", player["metrics"])
+        self.assertIn("avg_fastball_velocity", player["metrics"])
+        self.assertIn("weighted_pa", player["samples"])
+        self.assertIn("weighted_bf", player["samples"])
+
+    def test_twp_hitter_row_without_pitcher_file_is_marked_two_way(self) -> None:
+        roster_path = self.root / "twp_only_roster.csv"
+        hitters_path = self.root / "twp_only_hitters.csv"
+        manifest_path = self.root / "twp_only_manifest.json"
+
+        self._write_csv(
+            roster_path,
+            [
+                {
+                    "player_id": 117,
+                    "player_name": "Shohei TWP",
+                    "team": "LAD",
+                    "age": 31,
+                    "position": "DH",
+                    "bats": "L",
+                    "throws": "R",
+                }
+            ],
+        )
+        self._write_csv(
+            hitters_path,
+            [
+                {
+                    "player_id": 117,
+                    "player_name": "Shohei TWP",
+                    "team": "LAD",
+                    "position": "TWP",
+                    "PA": 503,
+                    "ISO": 0.260,
+                    "HR": 41,
+                    "SLG": 0.612,
+                    "AVG": 0.304,
+                    "OBP": 0.399,
+                    "K %": 24.1,
+                    "Contact %": 73.9,
+                    "Barrel %": 17.1,
+                    "Avg Exit Velocity": 94.2,
+                    "H": 158,
+                }
+            ],
+        )
+
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "source": "baseball_savant",
+                    "seasons": {
+                        "current": {
+                            "year": 2026,
+                            "files": {
+                                "roster": roster_path.name,
+                                "hitters": hitters_path.name,
+                            },
+                        }
+                    },
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        players = ingest_from_manifest(load_manifest(manifest_path))
+        self.assertEqual(len(players), 1)
+
+        player = players[0]
+        self.assertEqual(player["name"], "Shohei TWP")
+        self.assertEqual(player["role"], "two_way")
+        self.assertIn("weighted_pa", player["samples"])
 
     def test_pitcher_metric_aliases_are_parsed_from_savant_csv(self) -> None:
         roster_path = self.root / "alias_pitcher_roster.csv"

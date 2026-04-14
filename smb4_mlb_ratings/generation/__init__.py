@@ -14,7 +14,7 @@ HITTER_COLUMNS = [
     "Bat Hand",
     "Primary Position",
     "Secondary Positions",
-    "Letter Grade",
+    "Personality Type Recommendation",
     "Contact",
     "Power",
     "Speed",
@@ -29,7 +29,7 @@ PITCHER_COLUMNS = [
     "Throw Hand",
     "Bat Hand",
     "Arsenal",
-    "Letter Grade",
+    "Personality Type Recommendation",
     "Velocity",
     "Junk",
     "Accuracy",
@@ -39,7 +39,6 @@ PITCHER_COLUMNS = [
     "Power",
     "Speed",
     "Fielding",
-    "Arm",
 ]
 
 PITCHER_ROLES = {"pitcher", "sp", "rp"}
@@ -97,12 +96,20 @@ def _trait_name(player: RatingOutput, index: int) -> str:
     return ""
 
 
+def _personality_recommendation(player: RatingOutput) -> str:
+    if not player.recommended_personalities:
+        return ""
+    return _clean_text(player.recommended_personalities[0].chemistry_type)
+
+
 def _join_values(values: list[str]) -> str:
     return ", ".join(item.strip() for item in values if isinstance(item, str) and item.strip())
 
 
 def _is_pitcher(player: RatingOutput) -> bool:
     role = _clean_text(player.role).lower()
+    if role == "two_way":
+        return True
     if role in PITCHER_ROLES:
         return True
     if player.recommended_pitches:
@@ -129,7 +136,7 @@ def build_hitter_row(player: RatingOutput) -> dict[str, object]:
         "Bat Hand": _extract_bat_hand(player),
         "Primary Position": _clean_text(player.primary_position),
         "Secondary Positions": _join_values(secondary_positions),
-        "Letter Grade": _clean_text(player.overall_grade),
+        "Personality Type Recommendation": _personality_recommendation(player),
         "Contact": _rating_value(player, "contact"),
         "Power": _rating_value(player, "power"),
         "Speed": _rating_value(player, "speed"),
@@ -146,7 +153,7 @@ def build_pitcher_row(player: RatingOutput) -> dict[str, object]:
         "Throw Hand": _extract_throw_hand(player),
         "Bat Hand": _extract_bat_hand(player),
         "Arsenal": _join_values(player.recommended_pitches),
-        "Letter Grade": _clean_text(player.overall_grade),
+        "Personality Type Recommendation": _personality_recommendation(player),
         "Velocity": _rating_value(player, "velocity"),
         "Junk": _rating_value(player, "junk"),
         "Accuracy": _rating_value(player, "accuracy"),
@@ -156,7 +163,6 @@ def build_pitcher_row(player: RatingOutput) -> dict[str, object]:
         "Power": _rating_value(player, "power"),
         "Speed": _rating_value(player, "speed"),
         "Fielding": _rating_value(player, "fielding"),
-        "Arm": _rating_value(player, "arm"),
     }
 
 
