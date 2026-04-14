@@ -34,6 +34,35 @@ POSITION_GROUPS = {
     "OF": "outfield",
 }
 
+SPECIFIC_PRIMARY_POSITIONS = frozenset({"C", "1B", "2B", "3B", "SS", "LF", "CF", "RF", "DH", "P"})
+SECONDARY_GROUP_POSITIONS = frozenset({"IF", "OF", "1B/OF", "IF/OF"})
+ALLOWED_SECONDARY_POSITIONS = frozenset(SPECIFIC_PRIMARY_POSITIONS | SECONDARY_GROUP_POSITIONS)
+SECONDARY_POSITION_COVERAGE_EXPANSIONS = {
+    "IF": frozenset({"1B", "2B", "3B", "SS"}),
+    "OF": frozenset({"LF", "CF", "RF"}),
+    "1B/OF": frozenset({"1B", "LF", "CF", "RF"}),
+    "IF/OF": frozenset({"1B", "2B", "3B", "SS", "LF", "CF", "RF"}),
+}
+REDUNDANT_IF_SECONDARY_POSITIONS = frozenset({"1B", "2B", "3B", "SS"})
+REDUNDANT_OF_SECONDARY_POSITIONS = frozenset({"LF", "CF", "RF"})
+
+
+def _compact_secondary_positions(positions: list[str]) -> list[str]:
+    compacted_positions = list(positions)
+    if "IF" in compacted_positions:
+        compacted_positions = [
+            position
+            for position in compacted_positions
+            if position not in REDUNDANT_IF_SECONDARY_POSITIONS
+        ]
+    if "OF" in compacted_positions:
+        compacted_positions = [
+            position
+            for position in compacted_positions
+            if position not in REDUNDANT_OF_SECONDARY_POSITIONS
+        ]
+    return compacted_positions
+
 PITCHER_ROLE_HINTS = {
     "sp": "SP",
     "starter": "SP",
@@ -1949,7 +1978,7 @@ def normalized_position(position: str | None) -> str | None:
     if not isinstance(position, str):
         return None
     candidate = position.strip().upper()
-    return candidate if candidate in POSITION_GROUPS else None
+    return candidate if candidate in ALLOWED_SECONDARY_POSITIONS else None
 
 
 def derive_secondary_positions(player: PlayerInput) -> list[str]:
@@ -1979,15 +2008,16 @@ def derive_secondary_positions(player: PlayerInput) -> list[str]:
             continue
         seen.add(position)
         ordered_unique.append(position)
-    return ordered_unique
+    return _compact_secondary_positions(ordered_unique)
 
 
 def player_positions_for_coverage(player: PlayerInput, secondary_positions: list[str]) -> set[str]:
     positions = {position for position in [normalized_position(player.primary_position), *secondary_positions] if position is not None}
-    if "OF" in positions:
-        positions.update({"LF", "CF", "RF"})
-    if "IF" in positions:
-        positions.update({"1B", "2B", "3B", "SS"})
+    expanded_positions = set(positions)
+    for grouped_position, expanded_members in SECONDARY_POSITION_COVERAGE_EXPANSIONS.items():
+        if grouped_position in positions:
+            expanded_positions.update(expanded_members)
+    positions = expanded_positions
     return positions
 
 

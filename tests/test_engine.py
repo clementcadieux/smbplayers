@@ -323,6 +323,20 @@ class SurfaceBlendTests(unittest.TestCase):
 
         self.assertIsNone(resolved_projected_ip(player))
 
+    def test_player_input_autocorrects_grouped_primary_using_positional_games(self) -> None:
+        player = PlayerInput.from_dict(
+            {
+                "name": "Grouped Primary",
+                "role": "hitter",
+                "team": "NYM",
+                "primary_position": "IF/OF",
+                "positional_games": {"CF": 18, "1B": 24, "IF/OF": 12},
+            }
+        )
+
+        self.assertEqual(player.primary_position, "1B")
+        self.assertEqual(player.secondary_position, "IF/OF")
+
     def test_rate_players_surfaces_recommended_pitches_for_pitchers(self) -> None:
         outputs = rate_players(
             [
@@ -407,6 +421,51 @@ class SurfaceBlendTests(unittest.TestCase):
         multi_if = next(output for output in outputs if output.name == "Multi IF")
         self.assertEqual(multi_if.secondary_positions, ["SS", "3B", "1B"])
         self.assertEqual(multi_if.secondary_position, "SS")
+
+    def test_secondary_positions_allow_slash_group_labels(self) -> None:
+        player = PlayerInput.from_dict(
+            {
+                "name": "Slash Group Utility",
+                "role": "hitter",
+                "team": "NYM",
+                "primary_position": "2B",
+                "positional_games": {"2B": 950, "IF/OF": 35, "1B/OF": 22},
+            }
+        )
+
+        secondary_positions = processing_core_module.derive_secondary_positions(player)
+        covered_positions = processing_core_module.player_positions_for_coverage(player, secondary_positions)
+
+        self.assertEqual(secondary_positions, ["IF/OF", "1B/OF"])
+        self.assertTrue({"1B", "2B", "3B", "SS", "LF", "CF", "RF"}.issubset(covered_positions))
+
+    def test_if_secondary_suppresses_redundant_infield_positions(self) -> None:
+        player = PlayerInput.from_dict(
+            {
+                "name": "Infield Group Utility",
+                "role": "hitter",
+                "team": "SF",
+                "primary_position": "2B",
+                "positional_games": {"2B": 840, "IF": 130, "1B": 120, "3B": 90, "SS": 80},
+            }
+        )
+
+        secondary_positions = processing_core_module.derive_secondary_positions(player)
+        self.assertEqual(secondary_positions, ["IF"])
+
+    def test_of_secondary_suppresses_redundant_outfield_positions(self) -> None:
+        player = PlayerInput.from_dict(
+            {
+                "name": "Outfield Group Utility",
+                "role": "hitter",
+                "team": "SF",
+                "primary_position": "RF",
+                "positional_games": {"RF": 780, "OF": 125, "CF": 98, "LF": 80},
+            }
+        )
+
+        secondary_positions = processing_core_module.derive_secondary_positions(player)
+        self.assertEqual(secondary_positions, ["OF"])
 
     def test_full_outfield_coverage_boosts_utility_trait(self) -> None:
         outputs = rate_players(

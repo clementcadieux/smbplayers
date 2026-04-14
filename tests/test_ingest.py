@@ -1661,6 +1661,85 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertEqual(player["role"], "two_way")
         self.assertIn("weighted_pa", player["samples"])
 
+    def test_grouped_primary_position_is_autocorrected_from_positional_games(self) -> None:
+        roster_path = self.root / "grouped_primary_roster.csv"
+        hitters_path = self.root / "grouped_primary_hitters.csv"
+        fielding_path = self.root / "grouped_primary_fielding.csv"
+        manifest_path = self.root / "grouped_primary_manifest.json"
+
+        self._write_csv(
+            roster_path,
+            [
+                {
+                    "player_id": 811,
+                    "player_name": "Grouped Primary Hitter",
+                    "team": "MIL",
+                    "age": 27,
+                    "position": "IF/OF",
+                    "bats": "R",
+                    "throws": "R",
+                }
+            ],
+        )
+        self._write_csv(
+            hitters_path,
+            [
+                {
+                    "player_id": 811,
+                    "player_name": "Grouped Primary Hitter",
+                    "team": "MIL",
+                    "position": "IF/OF",
+                    "PA": 420,
+                    "ISO": 0.165,
+                    "HR": 16,
+                    "SLG": 0.427,
+                    "AVG": 0.264,
+                    "OBP": 0.331,
+                    "K %": 20.1,
+                    "Contact %": 77.9,
+                    "H": 111,
+                }
+            ],
+        )
+        self._write_csv(
+            fielding_path,
+            [
+                {
+                    "player_id": 811,
+                    "player_name": "Grouped Primary Hitter",
+                    "team": "MIL",
+                    "position": "CF",
+                    "Defensive Innings": 812,
+                }
+            ],
+        )
+
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "source": "baseball_savant",
+                    "seasons": {
+                        "current": {
+                            "year": 2025,
+                            "files": {
+                                "roster": roster_path.name,
+                                "hitters": hitters_path.name,
+                                "fielding": fielding_path.name,
+                            },
+                        }
+                    },
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        players = ingest_from_manifest(load_manifest(manifest_path))
+        hitter = next(player for player in players if player["name"] == "Grouped Primary Hitter")
+
+        self.assertEqual(hitter["primary_position"], "CF")
+        self.assertEqual(hitter["secondary_position"], "IF/OF")
+
     def test_pitcher_metric_aliases_are_parsed_from_savant_csv(self) -> None:
         roster_path = self.root / "alias_pitcher_roster.csv"
         pitchers_path = self.root / "alias_pitcher_metrics.csv"

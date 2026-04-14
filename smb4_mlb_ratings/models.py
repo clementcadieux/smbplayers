@@ -6,6 +6,46 @@ from typing import Any
 
 SeasonValue = float | int | dict[str, float | int] | None
 
+SPECIFIC_PRIMARY_POSITIONS = frozenset({"C", "1B", "2B", "3B", "SS", "LF", "CF", "RF", "DH", "P"})
+SECONDARY_GROUP_POSITIONS = frozenset({"IF", "OF", "1B/OF", "IF/OF"})
+
+
+def _normalized_position_token(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    cleaned = value.strip().upper()
+    if not cleaned:
+        return None
+    return cleaned
+
+
+def _most_played_specific_position(positional_games: dict[str, float] | None) -> str | None:
+    if not isinstance(positional_games, dict):
+        return None
+    ranked_positions: list[tuple[str, float]] = []
+    for key, raw_value in positional_games.items():
+        position = _normalized_position_token(key)
+        if position not in SPECIFIC_PRIMARY_POSITIONS:
+            continue
+        try:
+            games = float(raw_value)
+        except (TypeError, ValueError):
+            continue
+        ranked_positions.append((position, games))
+    if not ranked_positions:
+        return None
+    ranked_positions.sort(key=lambda item: (-item[1], item[0]))
+    return ranked_positions[0][0]
+
+
+def _resolved_primary_position(raw_primary: object, positional_games: dict[str, float] | None) -> str | None:
+    primary_position = _normalized_position_token(raw_primary)
+    if primary_position in SPECIFIC_PRIMARY_POSITIONS:
+        return primary_position
+    if primary_position in SECONDARY_GROUP_POSITIONS:
+        return _most_played_specific_position(positional_games)
+    return None
+
 
 @dataclass(slots=True)
 class PlayerInput:
@@ -48,6 +88,13 @@ class PlayerInput:
             if isinstance(raw_positional_games, dict)
             else None
         )
+        resolved_primary_position = _resolved_primary_position(data.get("primary_position"), positional_games)
+        raw_primary_position = _normalized_position_token(data.get("primary_position"))
+        resolved_secondary_position = _normalized_position_token(data.get("secondary_position"))
+        if resolved_secondary_position == "P" or resolved_secondary_position == resolved_primary_position:
+            resolved_secondary_position = None
+        if resolved_secondary_position is None and raw_primary_position in SECONDARY_GROUP_POSITIONS:
+            resolved_secondary_position = raw_primary_position
         return cls(
             name=data["name"],
             role=data["role"],
@@ -56,8 +103,8 @@ class PlayerInput:
             active=bool(data.get("active", True)),
             team=data.get("team"),
             age=data.get("age"),
-            primary_position=data.get("primary_position"),
-            secondary_position=data.get("secondary_position"),
+            primary_position=resolved_primary_position,
+            secondary_position=resolved_secondary_position,
             bats=data.get("bats"),
             throws=data.get("throws"),
             projected_pa=data.get("projected_pa"),

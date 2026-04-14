@@ -249,6 +249,44 @@ class GenerationTests(unittest.TestCase):
         self.assertEqual(pitcher_rows[0]["Trait 2"], "")
         self.assertNotIn("Arm", pitcher_rows[0])
 
+    def test_generate_output_preserves_slash_group_secondary_labels(self) -> None:
+        hitter = RatingOutput.from_dict(
+            {
+                "name": "Slash Group Hitter",
+                "role": "hitter",
+                "team": "TOR",
+                "primary_position": "2B",
+                "secondary_positions": ["IF/OF", "1B/OF"],
+                "ratings": {
+                    "contact": 78,
+                    "power": 69,
+                    "speed": 74,
+                    "fielding": 70,
+                    "arm": 66,
+                },
+                "percentiles": {"contact": 74.0},
+                "overall_numeric": 75,
+                "overall_grade": "B",
+                "confidence": "medium",
+                "review_flags": [],
+                "suggested_traits": [],
+                "assigned_traits": [],
+                "recommended_personalities": [],
+                "metadata": {"bats": "S", "throws": "R"},
+            }
+        )
+
+        input_path = self.root / "ratings_slash_groups.json"
+        output_dir = self.root / "reports_slash_groups"
+        input_path.write_text(json.dumps([hitter.to_dict()], indent=2), encoding="utf-8")
+
+        result = main(["generate", str(input_path), str(output_dir)])
+        self.assertEqual(result, 0)
+
+        _, hitter_rows = self._read_csv_rows(output_dir / "TOR_hitters.csv")
+        self.assertEqual(hitter_rows[0]["Primary Position"], "2B")
+        self.assertEqual(hitter_rows[0]["Secondary Positions"], "IF/OF, 1B/OF")
+
     def test_cli_generate_creates_team_csv_files(self) -> None:
         input_path = self.root / "ratings.json"
         output_dir = self.root / "reports"

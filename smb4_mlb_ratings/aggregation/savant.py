@@ -121,7 +121,16 @@ POSITION_ALIASES = {
     "RHP": "P",
     "LHP": "P",
     "PITCHER": "P",
+    "1BOF": "1B/OF",
+    "OF1B": "1B/OF",
+    "IFOF": "IF/OF",
+    "OFIF": "IF/OF",
+    "INFIELDOUTFIELD": "IF/OF",
+    "OUTFIELDINFIELD": "IF/OF",
 }
+
+SPECIFIC_PRIMARY_POSITIONS = frozenset({"C", "1B", "2B", "3B", "SS", "LF", "CF", "RF", "DH", "P"})
+SECONDARY_GROUP_POSITIONS = frozenset({"IF", "OF", "1B/OF", "IF/OF"})
 
 TWO_WAY_POSITION_MARKERS = {
     "twp",
@@ -430,6 +439,9 @@ def _canonical_position(raw_value: str | None) -> str | None:
 def _canonical_positions(raw_value: str | None) -> list[str]:
     if not raw_value:
         return []
+    direct_position = _canonical_position(raw_value.strip())
+    if direct_position is not None:
+        return [direct_position]
     pieces = (
         raw_value.replace("/", ",")
         .replace(";", ",")
@@ -543,10 +555,55 @@ def _row_days_on_roster(row: dict[str, str]) -> float | None:
 def _position_group_from_code(position: str | None) -> str | None:
     if position == "C":
         return "C"
-    if position in {"1B", "2B", "3B", "SS", "IF"}:
+    if position in {"1B", "2B", "3B", "SS", "IF", "1B/OF", "IF/OF"}:
         return "IF"
-    if position in {"LF", "CF", "RF", "OF"}:
+    if position in {"LF", "CF", "RF", "OF", "1B/OF", "IF/OF"}:
         return "OF"
+    return None
+
+
+def _is_specific_primary_position(position: str | None) -> bool:
+    return position in SPECIFIC_PRIMARY_POSITIONS
+
+
+def _is_secondary_group_position(position: str | None) -> bool:
+    return position in SECONDARY_GROUP_POSITIONS
+
+
+def _most_played_specific_position(player: PlayerAccumulator) -> str | None:
+    ranked_specific_positions: list[tuple[str, float]] = []
+    for position, raw_value in player.positional_games.items():
+        if not _is_specific_primary_position(position):
+            continue
+        try:
+            games = float(raw_value)
+        except (TypeError, ValueError):
+            continue
+        ranked_specific_positions.append((position, games))
+    if not ranked_specific_positions:
+        return None
+    ranked_specific_positions.sort(key=lambda item: (-item[1], item[0]))
+    return ranked_specific_positions[0][0]
+
+
+def _resolved_primary_position(
+    player: PlayerAccumulator,
+    row_positions: list[str],
+    default_position: str | None,
+) -> str | None:
+    for position in row_positions:
+        if _is_specific_primary_position(position):
+            return position
+
+    most_played_position = _most_played_specific_position(player)
+    if most_played_position is not None:
+        return most_played_position
+
+    if _is_specific_primary_position(player.primary_position):
+        return player.primary_position
+
+    if _is_specific_primary_position(default_position):
+        return default_position
     return None
 
 
@@ -904,18 +961,34 @@ def _apply_identity(player: PlayerAccumulator, row: dict[str, str], *, default_p
     if age_value is not None:
         player.age = int(age_value)
     row_positions = _row_positions(row)
-    primary_position = row_positions[0] if row_positions else None
-    if primary_position:
-        player.primary_position = primary_position
-    elif default_position and player.primary_position is None:
-        player.primary_position = default_position
-    secondary_position = row_positions[1] if len(row_positions) > 1 else _canonical_position(_pick_first(row, "secondary_position", "secondary_pos"))
+    resolved_primary_position = _resolved_primary_position(player, row_positions, default_position)
+    if resolved_primary_position:
+        player.primary_position = resolved_primary_position
+
+    secondary_candidates: list[str] = []
+    if row_positions and _is_secondary_group_position(row_positions[0]):
+        secondary_candidates.append(row_positions[0])
+    secondary_candidates.extend(row_positions[1:])
+    direct_secondary = _canonical_position(_pick_first(row, "secondary_position", "secondary_pos"))
+    if direct_secondary is not None:
+        secondary_candidates.append(direct_secondary)
+
+    secondary_position = None
+    seen_secondary: set[str] = set()
+    for candidate in secondary_candidates:
+        if candidate in seen_secondary:
+            continue
+        seen_secondary.add(candidate)
+        if candidate == "P" or candidate == player.primary_position:
+            continue
+        secondary_position = candidate
+        break
     if secondary_position:
         player.secondary_position = secondary_position
-    if player.primary_position in row_positions:
-        start_index = row_positions.index(player.primary_position) + 1
-        for alternate_position in row_positions[start_index:]:
-            player.add_positional_games(alternate_position, 1.0)
+    for alternate_position in row_positions:
+        if alternate_position == "P" or alternate_position == player.primary_position:
+            continue
+        player.add_positional_games(alternate_position, 1.0)
     player.add_trait_list_values("secondary_field_positions", _row_secondary_field_positions(row))
     bats = _pick_first(row, "bats", "bat_side", "stand", "stands")
     if bats:
