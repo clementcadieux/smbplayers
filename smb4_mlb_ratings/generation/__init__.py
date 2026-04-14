@@ -10,6 +10,7 @@ from ..models import RatingOutput
 
 HITTER_COLUMNS = [
     "Name",
+    "Age",
     "Throw Hand",
     "Bat Hand",
     "Primary Position",
@@ -26,6 +27,7 @@ HITTER_COLUMNS = [
 
 PITCHER_COLUMNS = [
     "Name",
+    "Age",
     "Throw Hand",
     "Bat Hand",
     "Arsenal",
@@ -131,6 +133,7 @@ def build_hitter_row(player: RatingOutput) -> dict[str, object]:
     if not secondary_positions and player.secondary_position:
         secondary_positions = [player.secondary_position]
     return {
+        "Age": player.age or "",
         "Name": _clean_text(player.name),
         "Throw Hand": _extract_throw_hand(player),
         "Bat Hand": _extract_bat_hand(player),
@@ -149,6 +152,7 @@ def build_hitter_row(player: RatingOutput) -> dict[str, object]:
 
 def build_pitcher_row(player: RatingOutput) -> dict[str, object]:
     return {
+        "Age": player.age or "",
         "Name": _clean_text(player.name),
         "Throw Hand": _extract_throw_hand(player),
         "Bat Hand": _extract_bat_hand(player),
