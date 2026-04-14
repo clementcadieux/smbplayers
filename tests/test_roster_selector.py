@@ -91,6 +91,12 @@ class RosterSelectorTests(unittest.TestCase):
             payload = json.loads(output_path.read_text(encoding="utf-8"))
             self.assertEqual(payload["teams"][0]["team"], "NYM")
             self.assertEqual(len(payload["teams"][0]["recommended_roster"]), 22)
+            self.assertIn("player_refs", payload["teams"][0])
+            self.assertNotIn("players", payload["teams"][0])
+            first_slot_player = payload["teams"][0]["recommended_roster"][0]["player"]
+            self.assertIn("player_key", first_slot_player)
+            self.assertIn("name", first_slot_player)
+            self.assertNotIn("ratings", first_slot_player)
 
     def test_select_roster_rejects_players_from_other_teams_when_target_team_is_given(self) -> None:
         players = self._team_players()

@@ -30,13 +30,31 @@ class RosterSlot:
     player: RatingOutput
     is_injured_list: bool = False
 
-    def to_dict(self) -> dict[str, object]:
+    def to_dict(self, *, compact_player: bool = False) -> dict[str, object]:
         return {
             "position_group": self.position_group,
             "slot_type": self.slot_type,
             "is_injured_list": self.is_injured_list,
-            "player": self.player.to_dict(),
+            "player": _player_reference(self.player) if compact_player else self.player.to_dict(),
         }
+
+
+def _player_key(player: RatingOutput) -> str:
+    if isinstance(player.player_id, str) and player.player_id:
+        return player.player_id
+    team = (player.team or "UNK").upper()
+    return f"{team}:{player.name}"
+
+
+def _player_reference(player: RatingOutput) -> dict[str, object]:
+    return {
+        "player_key": _player_key(player),
+        "player_id": player.player_id,
+        "name": player.name,
+        "team": player.team,
+        "role": player.role,
+        "primary_position": player.primary_position,
+    }
 
 
 def _position_values(player: RatingOutput) -> list[str]:
@@ -238,22 +256,45 @@ def load_ratings(path: Path) -> list[RatingOutput]:
     raise ValueError("Ratings JSON must be an array or an object with a 'players' or 'ratings' array")
 
 
-def roster_payload_for_team(team: str | None, players: list[RatingOutput], injured_list: set[str] | None = None) -> dict[str, object]:
+def roster_payload_for_team(
+    team: str | None,
+    players: list[RatingOutput],
+    injured_list: set[str] | None = None,
+    *,
+    include_full_players: bool = True,
+    compact_roster_players: bool = False,
+) -> dict[str, object]:
     roster = select_roster(players, injured_list=injured_list, target_team=team)
-    return {
+    payload: dict[str, object] = {
         "team": team,
-        "players": [player.to_dict() for player in sorted(players, key=lambda item: item.name)],
-        "recommended_roster": [slot.to_dict() for slot in roster],
+        "recommended_roster": [slot.to_dict(compact_player=compact_roster_players) for slot in roster],
     }
+    sorted_players = sorted(players, key=lambda item: item.name)
+    if include_full_players:
+        payload["players"] = [player.to_dict() for player in sorted_players]
+    else:
+        payload["player_refs"] = [_player_reference(player) for player in sorted_players]
+    return payload
 
 
-def build_rank_output(players: list[RatingOutput], injured_list: set[str] | None = None) -> dict[str, object]:
+def build_rank_output(
+    players: list[RatingOutput],
+    injured_list: set[str] | None = None,
+    *,
+    compact: bool = False,
+) -> dict[str, object]:
     grouped: dict[str | None, list[RatingOutput]] = {}
     for player in players:
         grouped.setdefault(player.team, []).append(player)
     return {
         "teams": [
-            roster_payload_for_team(team, grouped[team], injured_list=injured_list)
+            roster_payload_for_team(
+                team,
+                grouped[team],
+                injured_list=injured_list,
+                include_full_players=not compact,
+                compact_roster_players=compact,
+            )
             for team in sorted(grouped, key=lambda team_name: team_name or "")
         ]
     }

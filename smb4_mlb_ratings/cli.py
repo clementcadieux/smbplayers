@@ -122,7 +122,7 @@ def run_generate(input_path: Path, output_path: Path) -> int:
 
 def run_rank(input_path: Path, output_path: Path) -> int:
     ratings = load_ratings(input_path)
-    write_json(output_path, build_rank_output(ratings))
+    write_json(output_path, build_rank_output(ratings, compact=True))
     return 0
 
 

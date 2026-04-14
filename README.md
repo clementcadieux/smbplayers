@@ -216,6 +216,8 @@ The `generate` command writes per-team CSV files using role-specific schemas:
 - `<team>_hitters.csv`
 - `<team>_pitchers.csv`
 
+The `rank` command writes a compact league roster payload intended for roster bookkeeping. It includes team roster slots and identifier-level player references (`player_key`, `player_id`, `name`, team/role/primary position), while detailed ratings remain in the per-team CSV exports.
+
 The `ingest` manifest can now target `baseball_savant`, `baseball_reference`, or `mixed`.
 
 When `--structured-output` is provided to `ingest-rate`, the tool writes one file per team at `<output_dir>/<league>/<division>/<team>.json` and creates `<output_dir>/index.json` with the organized file list. Each team file includes both the full rated-player list and a recommended 22-man roster.
