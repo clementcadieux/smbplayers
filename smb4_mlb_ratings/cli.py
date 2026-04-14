@@ -10,6 +10,7 @@ from pathlib import Path
 from .aggregation import aggregate_from_manifest
 from .generation import generate_output
 from .ingest import load_manifest
+from .league_bridge import build_roster_attribute_bridge
 from .ingest.live_team_data import (
     build_baseball_reference_hitter_rows,
     build_baseball_reference_pitcher_rows,
@@ -123,6 +124,21 @@ def run_generate(input_path: Path, output_path: Path) -> int:
 def run_rank(input_path: Path, output_path: Path) -> int:
     ratings = load_ratings(input_path)
     write_json(output_path, build_rank_output(ratings, compact=True))
+    return 0
+
+
+def run_build_roster_bridge(
+    league_roster_path: Path,
+    team_reports_path: Path,
+    output_path: Path,
+    league_folder: Path | None = None,
+) -> int:
+    payload = build_roster_attribute_bridge(
+        league_roster_path,
+        team_reports_path,
+        league_folder_override=league_folder,
+    )
+    write_json(output_path, payload)
     return 0
 
 
@@ -312,6 +328,28 @@ def build_parser() -> argparse.ArgumentParser:
     rank_parser.add_argument("input", type=Path, help="Ratings JSON file")
     rank_parser.add_argument("output", type=Path, help="Output roster JSON file")
 
+    bridge_parser = subparsers.add_parser(
+        "build-roster-bridge",
+        help="Merge base roster IDs with team_reports attributes and derive free agents",
+    )
+    bridge_parser.add_argument(
+        "league_roster",
+        type=Path,
+        help="Base roster JSON file (usually export/league_roster.json)",
+    )
+    bridge_parser.add_argument(
+        "team_reports",
+        type=Path,
+        help="Directory containing *_hitters.csv and *_pitchers.csv reports",
+    )
+    bridge_parser.add_argument("output", type=Path, help="Output bridge JSON file")
+    bridge_parser.add_argument(
+        "--league-folder",
+        type=Path,
+        default=None,
+        help="Optional SMB4 league folder override path",
+    )
+
     ingest_rate_parser = subparsers.add_parser("ingest-rate", help="Normalize supported source files and rate them")
     ingest_rate_parser.add_argument("manifest", type=Path, help="Ingestion manifest JSON file")
     ingest_rate_parser.add_argument("output", type=Path, nargs="?", default=None, help="Optional output ratings JSON file")
@@ -372,6 +410,13 @@ def main(argv: list[str] | None = None) -> int:
         return run_generate(namespace.input, namespace.output)
     if namespace.command == "rank":
         return run_rank(namespace.input, namespace.output)
+    if namespace.command == "build-roster-bridge":
+        return run_build_roster_bridge(
+            namespace.league_roster,
+            namespace.team_reports,
+            namespace.output,
+            league_folder=namespace.league_folder,
+        )
     if namespace.command == "ingest-rate":
         if namespace.output is None and namespace.structured_output is None:
             parser.error("ingest-rate requires either an output file or --structured-output")

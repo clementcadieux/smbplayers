@@ -9,6 +9,7 @@ from ..models import RatingOutput
 
 
 HITTER_COLUMNS = [
+    "player_id",
     "Name",
     "Age",
     "Throw Hand",
@@ -26,6 +27,7 @@ HITTER_COLUMNS = [
 ]
 
 PITCHER_COLUMNS = [
+    "player_id",
     "Name",
     "Age",
     "Throw Hand",
@@ -85,6 +87,19 @@ def _extract_bat_hand(player: RatingOutput) -> str:
     return _metadata_text(metadata, "bats", "bat_hand", "ingest.bats")
 
 
+def _extract_player_id(player: RatingOutput) -> str:
+    if isinstance(player.player_id, str) and player.player_id.strip():
+        return player.player_id.strip()
+    metadata = player.metadata if isinstance(player.metadata, Mapping) else {}
+    for key in ("player_id", "mlbam_id", "statsapi_id"):
+        value = metadata.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, int):
+            return str(value)
+    return ""
+
+
 def _rating_value(player: RatingOutput, key: str) -> int:
     value = player.ratings.get(key)
     if value is None:
@@ -133,6 +148,7 @@ def build_hitter_row(player: RatingOutput) -> dict[str, object]:
     if not secondary_positions and player.secondary_position:
         secondary_positions = [player.secondary_position]
     return {
+        "player_id": _extract_player_id(player),
         "Age": player.age or "",
         "Name": _clean_text(player.name),
         "Throw Hand": _extract_throw_hand(player),
@@ -152,6 +168,7 @@ def build_hitter_row(player: RatingOutput) -> dict[str, object]:
 
 def build_pitcher_row(player: RatingOutput) -> dict[str, object]:
     return {
+        "player_id": _extract_player_id(player),
         "Age": player.age or "",
         "Name": _clean_text(player.name),
         "Throw Hand": _extract_throw_hand(player),
