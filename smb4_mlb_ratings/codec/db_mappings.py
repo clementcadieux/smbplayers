@@ -274,12 +274,18 @@ TRAIT_ID_TO_NAME: dict[tuple[int, int], str] = {
     for k, v in _TRAIT_MAP_RAW.items()
 }
 
+
+def _trait_display_to_bare_name(display_name: str) -> str:
+    if display_name.endswith(" (+)") or display_name.endswith(" (-)"):
+        return display_name[:-4].strip()
+    return display_name.strip()
+
 # Reverse: bare name (no suffix) AND full display name → (traitId, subtypeId)
 # e.g. "Workhorse" and "Workhorse (+)" both map to (23, 6)
 _TRAIT_NAME_TO_IDS: dict[str, tuple[int, int]] = {}
 for _key, _display in _TRAIT_MAP_RAW.items():
     _ids = tuple(int(x) for x in _key.split("-"))
-    _bare = _display.rstrip(" (+)").rstrip(" (-)").strip()
+    _bare = _trait_display_to_bare_name(_display)
     _TRAIT_NAME_TO_IDS[_display.lower()] = _ids  # type: ignore[assignment]
     _TRAIT_NAME_TO_IDS[_bare.lower()] = _ids      # type: ignore[assignment]
 
