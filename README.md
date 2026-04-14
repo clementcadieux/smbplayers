@@ -209,6 +209,7 @@ python -m smb4_mlb_ratings.cli build-roster-bridge export/league_roster.json tea
 python -m smb4_mlb_ratings.cli build-codec-interface export/league_bridge.json export/codec_import.json
 python -m smb4_mlb_ratings.cli build-encoder-plan export/codec_import.json export/encoder_plan.json
 python -m smb4_mlb_ratings.cli build-dry-run-report export/encoder_plan.json export/encoder_patch_preview.json
+python -m smb4_mlb_ratings.cli build-dry-run-report export/encoder_plan.json export/encoder_patch_preview_with_diff.json --current-snapshot export/current_league_snapshot.json
 python -m smb4_mlb_ratings.cli ingest-rate savant_manifest.json ratings_output.json --normalized-output normalized_players.json
 python -m smb4_mlb_ratings.cli ingest-rate savant_manifest.json ratings_output.json --config-path config.yaml
 python -m smb4_mlb_ratings.cli ingest-rate savant_manifest.json --structured-output team_ratings
@@ -228,7 +229,7 @@ The `build-codec-interface` command consumes `export/league_bridge.json` as the 
 
 The `build-encoder-plan` command converts `export/codec_import.json` into a deterministic set of encoder operations (`upsert_team_slot` and `upsert_free_agent`) ordered for stable patch application against league data.
 
-The `build-dry-run-report` command reads `export/encoder_plan.json` and generates a patch-preview report grouped by virtual league file targets, showing intended mutations without touching SMB4 binary files.
+The `build-dry-run-report` command reads `export/encoder_plan.json` and generates a patch-preview report grouped by virtual league file targets, showing intended mutations without touching SMB4 binary files. When `--current-snapshot` is provided, the command compares each planned mutation against decoded current league state and emits concrete `before_state` plus per-field/per-attribute diffs.
 
 The `ingest` manifest can now target `baseball_savant`, `baseball_reference`, or `mixed`.
 

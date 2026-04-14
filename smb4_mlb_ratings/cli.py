@@ -171,8 +171,13 @@ def run_build_encoder_plan(
 def run_build_dry_run_report(
     encoder_plan_path: Path,
     output_path: Path,
+    current_snapshot_path: Path | None = None,
 ) -> int:
-    build_dry_run_patch_preview_from_file(encoder_plan_path, output_path)
+    build_dry_run_patch_preview_from_file(
+        encoder_plan_path,
+        output_path,
+        current_snapshot_path=current_snapshot_path,
+    )
     return 0
 
 
@@ -434,6 +439,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Output dry-run patch preview JSON",
     )
+    dry_run_parser.add_argument(
+        "--current-snapshot",
+        type=Path,
+        default=None,
+        help="Optional decoded/current league snapshot JSON used for concrete before/after diffs",
+    )
 
     ingest_rate_parser = subparsers.add_parser("ingest-rate", help="Normalize supported source files and rate them")
     ingest_rate_parser.add_argument("manifest", type=Path, help="Ingestion manifest JSON file")
@@ -517,6 +528,7 @@ def main(argv: list[str] | None = None) -> int:
         return run_build_dry_run_report(
             namespace.encoder_plan,
             namespace.output,
+            current_snapshot_path=namespace.current_snapshot,
         )
     if namespace.command == "ingest-rate":
         if namespace.output is None and namespace.structured_output is None:
