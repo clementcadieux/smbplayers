@@ -1469,31 +1469,10 @@ def utility_covered_groups(player: PlayerInput, secondary_positions: list[str]) 
 
 
 def trait_confidence(score: float) -> str:
-    """
-    Map score to confidence level using percentile-based thresholds.
-    
-    Assumes score represents a percentile rank (0-100):
-    - High confidence: top 10% (score >= 90)
-    - Medium confidence: top 33% (score >= 67)
-    - Low confidence: top 50% (score >= 50)
-    - No trait: below 50% (score < 50)
-    
-    For backward compatibility with raw-value scores (which are typically >= 10),
-    also support the legacy scoring where scores >= 30 map to "high", etc.
-    Lower scores (< 50 raw) are treated as potentially legacy raw-value scores.
-    """
-    # Percentile-based thresholds (primary mode)
+    """Map directional percentile score to confidence level."""
     if score >= 90:
         return "high"
     if score >= 67:
-        return "medium"
-    if score >= 50:
-        return "low"
-    # Below 50: if it seems like a percentile, reject it; otherwise try legacy scoring
-    # Legacy scoring for backward compat (scores derived from raw values, typically 10-60 range)
-    if score >= 30:
-        return "high"
-    if score >= 18:
         return "medium"
     return "low"
 
@@ -1604,11 +1583,11 @@ def player_trait_stat(player: PlayerInput, stat_name: str) -> float | list[str] 
 
 
 def build_all_trait_metrics_for_caching() -> dict[str, bool]:
-    """
-    Extract all trait metrics from the config and build a directionality map.
-    
-    Returns:
-        Dict mapping metric_name -> higher_is_better (bool)
+    """Extract all trait metrics from config for percentile caching.
+
+    Percentiles are cached in canonical form (higher_is_better=True) for all
+    metrics. Directionality for ``<=`` trait rules is handled at evaluation
+    time by inverting the confidence score.
     """
     metrics_directionality: dict[str, bool] = {}
     traits = TRAIT_CRITERIA_CONFIG.get("traits", {})
@@ -1635,20 +1614,8 @@ def build_all_trait_metrics_for_caching() -> dict[str, bool]:
                 continue
             metric_name = stat_name.removeprefix("trait_metrics.")
             
-            # Infer directionality from operator
-            # >= operator typically means higher is better
-            # <= operator typically means lower is better (so higher_is_better=False for the raw metric)
-            if operator == ">=":
-                # For a trait like "Mind Gamer" using mind_games >= 65, higher is better
+            if operator in {">=", "<=", "between"}:
                 metrics_directionality[metric_name] = True
-            elif operator == "<=":
-                # For a trait like "Easy Target" using mind_games <= 35, lower is better (so we invert)
-                metrics_directionality[metric_name] = False
-            elif operator == "between":
-                # For between operations, default to higher_is_better=True
-                # (can be customized per metric if needed)
-                metrics_directionality[metric_name] = True
-            # contains operator: not applicable for numeric percentile ranking
     
     return metrics_directionality
 
@@ -1666,6 +1633,7 @@ ELITE_PITCH_QUALITY_METRICS = frozenset(
     }
 )
 ELITE_PITCH_PERCENTILE_MIN_PEERS = 8
+TRAIT_PERCENTILE_MIN_PEERS = 3
 ELITE_FASTBALL_TRAIT_NAMES = frozenset({"Elite 4F", "Elite 2F", "Elite CF"})
 
 
@@ -1781,33 +1749,45 @@ def trait_rule_score(player: PlayerInput, rule: Mapping[str, object]) -> tuple[f
             return score, f"{stat_name} contains {target}"
         return None
     
-    # For trait_metrics, check if percentile data is available
+    # For trait_metrics, check if percentile data is available.
+    # Percentiles are cached in canonical direction (higher-is-better).
     if stat_name.startswith("trait_metrics."):
         metric_name = stat_name.removeprefix("trait_metrics.")
         percentile_value = metadata_number(player.metadata, f"trait_metric_percentiles.{metric_name}")
         percentile_peers = metadata_number(player.metadata, f"trait_metric_percentile_peer_counts.{metric_name}")
         
-        # If percentile data is available, use percentile-based scoring
-        if percentile_value is not None and percentile_peers is not None and percentile_peers >= 1:
+        # If percentile data is available, use percentile-based scoring.
+        # Elite pitch metrics require a larger peer pool before percentile mode.
+        uses_elite_pitch_metric = stat_name.startswith("trait_metrics.pitch_quality_")
+        min_peers_for_percentile = (
+            ELITE_PITCH_PERCENTILE_MIN_PEERS if uses_elite_pitch_metric else TRAIT_PERCENTILE_MIN_PEERS
+        )
+        if (
+            percentile_value is not None
+            and percentile_peers is not None
+            and percentile_peers >= min_peers_for_percentile
+        ):
             target_value = rule.get("value")
             if not isinstance(target_value, (int, float)):
                 return None
             target_percentile = float(target_value)
             
-            # Key insight: For both >= and <= operators, higher percentile in the appropriate direction
-            # should pass the rule. The percentile_rank function already accounts for direction via
-            # higher_is_better flag, so both operator types use >= comparison here.
-            # For <= operator with lower_is_better metrics, percentile_rank returns 100 for min values,
-            # so a threshold of 90 means "in the top 10% of low values" = "in the bottom 10% overall".
-            
-            if operator in (">=", "<="):
-                if percentile_value < target_percentile:
+            if operator == ">=":
+                if percentile_value <= target_percentile:
                     return None
-                # Use percentile as score; apply a small bonus for elite pitches to prioritize them
-                score = percentile_value * weight_value
+                directional_percentile = percentile_value
+                score = directional_percentile * weight_value
                 if stat_name.startswith("trait_metrics.pitch_quality_"):
+                    # Elite pitch traits need to compete with high-confidence pitcher traits after final trimming.
                     score += 20.0 * weight_value
-                return score, f"{metric_name} percentile {percentile_value:.2f} meets threshold {target_percentile}"
+                return score, f"{metric_name} percentile {percentile_value:.2f} >= {target_percentile}"
+            if operator == "<=":
+                if percentile_value >= target_percentile:
+                    return None
+                # Invert for confidence tiering so lower raw percentile means higher confidence.
+                directional_percentile = 100.0 - percentile_value
+                score = directional_percentile * weight_value
+                return score, f"{metric_name} percentile {percentile_value:.2f} <= {target_percentile}"
             elif operator == "between":
                 # For between operations with percentiles
                 if not isinstance(target_value, list) or len(target_value) != 2:
@@ -2645,6 +2625,11 @@ def _rate_players_core(
                     for state in eligible_states:
                         if state.position_group == group:
                             state.review_flags.append(f"{spec.name}: peer group '{group}' is small ({count})")
+
+    # Derive fallback trait metrics before percentile caching so percentile-gated
+    # trait evaluation is deterministic across repeated runs with the same input.
+    for state in states:
+        _derive_missing_trait_metrics(state.player)
 
     # Cache all trait metrics for percentile-based confidence evaluation.
     # This enables percentile-based trait confidence thresholds across all roles.

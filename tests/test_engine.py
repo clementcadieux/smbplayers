@@ -3280,6 +3280,66 @@ class MissingFieldConsumptionTests(unittest.TestCase):
         trait_names = {t.name for t in candidate.assigned_traits}
         self.assertIn("Workhorse", trait_names)
 
+    def test_percentile_confidence_boundaries_for_greater_equal_traits(self) -> None:
+        def build_player(percentile: float) -> PlayerInput:
+            return PlayerInput.from_dict(
+                {
+                    "name": "Percentile Candidate",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "1B",
+                    "metadata": {
+                        "trait_metric_percentiles": {"mind_games": percentile},
+                        "trait_metric_percentile_peer_counts": {"mind_games": 100},
+                    },
+                }
+            )
+
+        high_rule = {"stat": "trait_metrics.mind_games", "operator": ">=", "value": 90, "weight": 1.0}
+        medium_rule = {"stat": "trait_metrics.mind_games", "operator": ">=", "value": 67, "weight": 1.0}
+        low_gate_rule = {"stat": "trait_metrics.mind_games", "operator": ">=", "value": 50, "weight": 1.0}
+
+        high_result = processing_core_module.trait_rule_score(build_player(91.0), high_rule)
+        self.assertIsNotNone(high_result)
+        self.assertEqual(processing_core_module.trait_confidence(high_result[0]), "high")
+
+        medium_result = processing_core_module.trait_rule_score(build_player(68.0), medium_rule)
+        self.assertIsNotNone(medium_result)
+        self.assertEqual(processing_core_module.trait_confidence(medium_result[0]), "medium")
+
+        below_50_result = processing_core_module.trait_rule_score(build_player(49.0), low_gate_rule)
+        self.assertIsNone(below_50_result)
+
+    def test_percentile_confidence_boundaries_for_less_equal_traits(self) -> None:
+        def build_player(percentile: float) -> PlayerInput:
+            return PlayerInput.from_dict(
+                {
+                    "name": "Percentile Candidate",
+                    "role": "hitter",
+                    "team": "NYM",
+                    "primary_position": "1B",
+                    "metadata": {
+                        "trait_metric_percentiles": {"mind_games": percentile},
+                        "trait_metric_percentile_peer_counts": {"mind_games": 100},
+                    },
+                }
+            )
+
+        high_rule = {"stat": "trait_metrics.mind_games", "operator": "<=", "value": 10, "weight": 1.0}
+        medium_rule = {"stat": "trait_metrics.mind_games", "operator": "<=", "value": 33, "weight": 1.0}
+        low_gate_rule = {"stat": "trait_metrics.mind_games", "operator": "<=", "value": 50, "weight": 1.0}
+
+        high_result = processing_core_module.trait_rule_score(build_player(9.0), high_rule)
+        self.assertIsNotNone(high_result)
+        self.assertEqual(processing_core_module.trait_confidence(high_result[0]), "high")
+
+        medium_result = processing_core_module.trait_rule_score(build_player(32.0), medium_rule)
+        self.assertIsNotNone(medium_result)
+        self.assertEqual(processing_core_module.trait_confidence(medium_result[0]), "medium")
+
+        below_50_result = processing_core_module.trait_rule_score(build_player(51.0), low_gate_rule)
+        self.assertIsNone(below_50_result)
+
     def test_durable_assigns_from_multi_season_pa_volumes_without_explicit_trait_metric(self) -> None:
         """A hitter with all seasons above 500 PA derives durability = 100 and should get Durable."""
         # durability = 3/3 * 100 = 100 → ≥ 65 → Durable
