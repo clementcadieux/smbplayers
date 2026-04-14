@@ -1794,23 +1794,20 @@ def trait_rule_score(player: PlayerInput, rule: Mapping[str, object]) -> tuple[f
                 return None
             target_percentile = float(target_value)
             
-            if operator == ">=":
-                # For >= operator: higher percentile should pass
+            # Key insight: For both >= and <= operators, higher percentile in the appropriate direction
+            # should pass the rule. The percentile_rank function already accounts for direction via
+            # higher_is_better flag, so both operator types use >= comparison here.
+            # For <= operator with lower_is_better metrics, percentile_rank returns 100 for min values,
+            # so a threshold of 90 means "in the top 10% of low values" = "in the bottom 10% overall".
+            
+            if operator in (">=", "<="):
                 if percentile_value < target_percentile:
                     return None
                 # Use percentile as score; apply a small bonus for elite pitches to prioritize them
                 score = percentile_value * weight_value
                 if stat_name.startswith("trait_metrics.pitch_quality_"):
                     score += 20.0 * weight_value
-                return score, f"{metric_name} percentile {percentile_value:.2f} >= {target_percentile}"
-            elif operator == "<=":
-                # For <= operator: lower percentile should pass (inverted scenario)
-                # In this case, the percentile was already computed with higher_is_better=False,
-                # so a percentile of 10 means "in the bottom 10%", which is what we want for "Easy Target"
-                if percentile_value > target_percentile:
-                    return None
-                score = percentile_value * weight_value
-                return score, f"{metric_name} percentile {percentile_value:.2f} <= {target_percentile}"
+                return score, f"{metric_name} percentile {percentile_value:.2f} meets threshold {target_percentile}"
             elif operator == "between":
                 # For between operations with percentiles
                 if not isinstance(target_value, list) or len(target_value) != 2:
