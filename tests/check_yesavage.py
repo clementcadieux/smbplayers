@@ -1,6 +1,8 @@
 import json
+from pathlib import Path
 
-with open('examples/exports/tor_det_combined_report.json') as f:
+report_path = Path(__file__).resolve().parents[1] / "examples" / "exports" / "tor_det_combined_report.json"
+with report_path.open(encoding="utf-8") as f:
     data = json.load(f)
 
 yesavage = [p for p in data if 'Yesavage' in p.get('name', '')]

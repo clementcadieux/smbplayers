@@ -13,13 +13,13 @@ Phases
 Usage
 -----
 Run all phases (default):
-    python regenerate_tor_det_report.py
+    python -m smb4_mlb_ratings.generation.regenerate_tor_det_report
 
 Skip ingestion (reuse existing CSVs):
-    python regenerate_tor_det_report.py --skip-ingest
+    python -m smb4_mlb_ratings.generation.regenerate_tor_det_report --skip-ingest
 
 Skip ingestion and aggregation (reuse existing normalized JSON):
-    python regenerate_tor_det_report.py --skip-aggregate
+    python -m smb4_mlb_ratings.generation.regenerate_tor_det_report --skip-aggregate
 """
 import argparse
 import json
@@ -41,7 +41,8 @@ from smb4_mlb_ratings.ingest.live_team_data import (
 CURRENT_STAT_SEASON = 2026
 PREVIOUS_STAT_SEASON = 2025
 ROSTER_SEASON = 2026
-EXPORT_ROOT = Path("examples/exports")
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+EXPORT_ROOT = PROJECT_ROOT / "examples" / "exports"
 
 
 def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
@@ -133,14 +134,14 @@ def main() -> None:
         print("Phase 2 – Aggregate: normalizing source CSVs into player JSON...")
         _cli(
             "aggregate",
-            "examples/exports/bluejays_live_manifest.json",
-            "examples/exports/bluejays_live_normalized.json",
+            str(EXPORT_ROOT / "bluejays_live_manifest.json"),
+            str(EXPORT_ROOT / "bluejays_live_normalized.json"),
         )
         print("  ✓ bluejays_live_normalized.json written")
         _cli(
             "aggregate",
-            "examples/exports/tigers_live_manifest.json",
-            "examples/exports/tigers_live_normalized.json",
+            str(EXPORT_ROOT / "tigers_live_manifest.json"),
+            str(EXPORT_ROOT / "tigers_live_normalized.json"),
         )
         print("  ✓ tigers_live_normalized.json written")
     else:
@@ -150,31 +151,31 @@ def main() -> None:
     print("Phase 3 – Process: rating normalized players...")
     _cli(
         "process",
-        "examples/exports/bluejays_live_normalized.json",
-        "examples/exports/bluejays_live_ratings_new.json",
+        str(EXPORT_ROOT / "bluejays_live_normalized.json"),
+        str(EXPORT_ROOT / "bluejays_live_ratings_new.json"),
         "--team", "TOR",
     )
     print("  ✓ bluejays_live_ratings_new.json written")
     _cli(
         "process",
-        "examples/exports/tigers_live_normalized.json",
-        "examples/exports/tigers_live_ratings_new.json",
+        str(EXPORT_ROOT / "tigers_live_normalized.json"),
+        str(EXPORT_ROOT / "tigers_live_ratings_new.json"),
         "--team", "DET",
     )
     print("  ✓ tigers_live_ratings_new.json written")
 
     # ── Phase 4: Generate ────────────────────────────────────────────────────
     print("Phase 4 – Generate: merging into combined report...")
-    with open("examples/exports/bluejays_live_ratings_new.json") as f:
+    with (EXPORT_ROOT / "bluejays_live_ratings_new.json").open() as f:
         tor_data = json.load(f)
-    with open("examples/exports/tigers_live_ratings_new.json") as f:
+    with (EXPORT_ROOT / "tigers_live_ratings_new.json").open() as f:
         det_data = json.load(f)
 
     tor_players = tor_data if isinstance(tor_data, list) else tor_data.get("players", [])
     det_players = det_data if isinstance(det_data, list) else det_data.get("players", [])
     combined = tor_players + det_players
 
-    with open("examples/exports/tor_det_combined_report.json", "w") as f:
+    with (EXPORT_ROOT / "tor_det_combined_report.json").open("w", encoding="utf-8") as f:
         json.dump(combined, f, indent=2)
 
     print(f"  ✓ tor_det_combined_report.json written")

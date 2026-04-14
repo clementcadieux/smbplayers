@@ -20,7 +20,7 @@ from smb4_mlb_ratings.ingest.live_team_data import (
 from smb4_mlb_ratings.cli import write_csv, write_json
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 EXPORT_DIR = PROJECT_ROOT / "export"
 RAW_EXPORT_DIR = EXPORT_DIR / "raw"
 

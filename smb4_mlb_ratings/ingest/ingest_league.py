@@ -42,9 +42,9 @@ TEAMS = {
     "SF": "giants",
 }
 
-EXPORT_DIR = Path(__file__).parent / "export"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+EXPORT_DIR = PROJECT_ROOT / "export"
 RAW_EXPORT_DIR = EXPORT_DIR / "raw"
-PROJECT_ROOT = Path(__file__).parent
 
 
 def build_team_manifest(team_abbrev: str, team_name: str) -> dict:

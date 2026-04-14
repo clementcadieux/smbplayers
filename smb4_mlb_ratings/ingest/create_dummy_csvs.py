@@ -5,7 +5,7 @@ Create minimal dummy CSV files for all 30 teams to enable ingest to run.
 
 from pathlib import Path
 
-EXPORT_DIR = Path(__file__).parent / "export"
+EXPORT_DIR = Path(__file__).resolve().parents[2] / "export"
 RAW_EXPORT_DIR = EXPORT_DIR / "raw"
 RAW_EXPORT_DIR.mkdir(parents=True, exist_ok=True)
 
