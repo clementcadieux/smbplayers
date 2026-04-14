@@ -1,0 +1,1065 @@
+{
+  "source": "mixed",
+  "seasons": {
+    "current": {
+      "year": 2026,
+      "teams": {
+        "BAL": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/orioles_live_bref_hitters_2026.csv",
+                "pitchers": "export/orioles_live_bref_pitchers_2026.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "roster": "export/orioles_live_roster_2026.csv",
+                "hitters": "export/orioles_live_savant_hitters_2026.csv",
+                "pitchers": "export/orioles_live_savant_pitchers_2026.csv",
+                "fielding": "export/orioles_live_savant_fielding_2026.csv"
+              }
+            }
+          }
+        },
+        "BOS": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/redsox_live_bref_hitters_2026.csv",
+                "pitchers": "export/redsox_live_bref_pitchers_2026.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "roster": "export/redsox_live_roster_2026.csv",
+                "hitters": "export/redsox_live_savant_hitters_2026.csv",
+                "pitchers": "export/redsox_live_savant_pitchers_2026.csv",
+                "fielding": "export/redsox_live_savant_fielding_2026.csv"
+              }
+            }
+          }
+        },
+        "NYY": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/yankees_live_bref_hitters_2026.csv",
+                "pitchers": "export/yankees_live_bref_pitchers_2026.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "roster": "export/yankees_live_roster_2026.csv",
+                "hitters": "export/yankees_live_savant_hitters_2026.csv",
+                "pitchers": "export/yankees_live_savant_pitchers_2026.csv",
+                "fielding": "export/yankees_live_savant_fielding_2026.csv"
+              }
+            }
+          }
+        },
+        "TB": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/rays_live_bref_hitters_2026.csv",
+                "pitchers": "export/rays_live_bref_pitchers_2026.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "roster": "export/rays_live_roster_2026.csv",
+                "hitters": "export/rays_live_savant_hitters_2026.csv",
+                "pitchers": "export/rays_live_savant_pitchers_2026.csv",
+                "fielding": "export/rays_live_savant_fielding_2026.csv"
+              }
+            }
+          }
+        },
+        "TOR": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/bluejays_live_bref_hitters_2026.csv",
+                "pitchers": "export/bluejays_live_bref_pitchers_2026.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "roster": "export/bluejays_live_roster_2026.csv",
+                "hitters": "export/bluejays_live_savant_hitters_2026.csv",
+                "pitchers": "export/bluejays_live_savant_pitchers_2026.csv",
+                "fielding": "export/bluejays_live_savant_fielding_2026.csv"
+              }
+            }
+          }
+        },
+        "CWS": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/whitesox_live_bref_hitters_2026.csv",
+                "pitchers": "export/whitesox_live_bref_pitchers_2026.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "roster": "export/whitesox_live_roster_2026.csv",
+                "hitters": "export/whitesox_live_savant_hitters_2026.csv",
+                "pitchers": "export/whitesox_live_savant_pitchers_2026.csv",
+                "fielding": "export/whitesox_live_savant_fielding_2026.csv"
+              }
+            }
+          }
+        },
+        "CLE": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/guardians_live_bref_hitters_2026.csv",
+                "pitchers": "export/guardians_live_bref_pitchers_2026.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "roster": "export/guardians_live_roster_2026.csv",
+                "hitters": "export/guardians_live_savant_hitters_2026.csv",
+                "pitchers": "export/guardians_live_savant_pitchers_2026.csv",
+                "fielding": "export/guardians_live_savant_fielding_2026.csv"
+              }
+            }
+          }
+        },
+        "DET": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/tigers_live_bref_hitters_2026.csv",
+                "pitchers": "export/tigers_live_bref_pitchers_2026.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "roster": "export/tigers_live_roster_2026.csv",
+                "hitters": "export/tigers_live_savant_hitters_2026.csv",
+                "pitchers": "export/tigers_live_savant_pitchers_2026.csv",
+                "fielding": "export/tigers_live_savant_fielding_2026.csv"
+              }
+            }
+          }
+        },
+        "KC": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/royals_live_bref_hitters_2026.csv",
+                "pitchers": "export/royals_live_bref_pitchers_2026.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "roster": "export/royals_live_roster_2026.csv",
+                "hitters": "export/royals_live_savant_hitters_2026.csv",
+                "pitchers": "export/royals_live_savant_pitchers_2026.csv",
+                "fielding": "export/royals_live_savant_fielding_2026.csv"
+              }
+            }
+          }
+        },
+        "MIN": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/twins_live_bref_hitters_2026.csv",
+                "pitchers": "export/twins_live_bref_pitchers_2026.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "roster": "export/twins_live_roster_2026.csv",
+                "hitters": "export/twins_live_savant_hitters_2026.csv",
+                "pitchers": "export/twins_live_savant_pitchers_2026.csv",
+                "fielding": "export/twins_live_savant_fielding_2026.csv"
+              }
+            }
+          }
+        },
+        "HOU": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/astros_live_bref_hitters_2026.csv",
+                "pitchers": "export/astros_live_bref_pitchers_2026.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "roster": "export/astros_live_roster_2026.csv",
+                "hitters": "export/astros_live_savant_hitters_2026.csv",
+                "pitchers": "export/astros_live_savant_pitchers_2026.csv",
+                "fielding": "export/astros_live_savant_fielding_2026.csv"
+              }
+            }
+          }
+        },
+        "LAA": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/angels_live_bref_hitters_2026.csv",
+                "pitchers": "export/angels_live_bref_pitchers_2026.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "roster": "export/angels_live_roster_2026.csv",
+                "hitters": "export/angels_live_savant_hitters_2026.csv",
+                "pitchers": "export/angels_live_savant_pitchers_2026.csv",
+                "fielding": "export/angels_live_savant_fielding_2026.csv"
+              }
+            }
+          }
+        },
+        "OAK": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/athletics_live_bref_hitters_2026.csv",
+                "pitchers": "export/athletics_live_bref_pitchers_2026.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "roster": "export/athletics_live_roster_2026.csv",
+                "hitters": "export/athletics_live_savant_hitters_2026.csv",
+                "pitchers": "export/athletics_live_savant_pitchers_2026.csv",
+                "fielding": "export/athletics_live_savant_fielding_2026.csv"
+              }
+            }
+          }
+        },
+        "SEA": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/mariners_live_bref_hitters_2026.csv",
+                "pitchers": "export/mariners_live_bref_pitchers_2026.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "roster": "export/mariners_live_roster_2026.csv",
+                "hitters": "export/mariners_live_savant_hitters_2026.csv",
+                "pitchers": "export/mariners_live_savant_pitchers_2026.csv",
+                "fielding": "export/mariners_live_savant_fielding_2026.csv"
+              }
+            }
+          }
+        },
+        "TEX": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/rangers_live_bref_hitters_2026.csv",
+                "pitchers": "export/rangers_live_bref_pitchers_2026.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "roster": "export/rangers_live_roster_2026.csv",
+                "hitters": "export/rangers_live_savant_hitters_2026.csv",
+                "pitchers": "export/rangers_live_savant_pitchers_2026.csv",
+                "fielding": "export/rangers_live_savant_fielding_2026.csv"
+              }
+            }
+          }
+        },
+        "ATL": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/braves_live_bref_hitters_2026.csv",
+                "pitchers": "export/braves_live_bref_pitchers_2026.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "roster": "export/braves_live_roster_2026.csv",
+                "hitters": "export/braves_live_savant_hitters_2026.csv",
+                "pitchers": "export/braves_live_savant_pitchers_2026.csv",
+                "fielding": "export/braves_live_savant_fielding_2026.csv"
+              }
+            }
+          }
+        },
+        "MIA": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/marlins_live_bref_hitters_2026.csv",
+                "pitchers": "export/marlins_live_bref_pitchers_2026.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "roster": "export/marlins_live_roster_2026.csv",
+                "hitters": "export/marlins_live_savant_hitters_2026.csv",
+                "pitchers": "export/marlins_live_savant_pitchers_2026.csv",
+                "fielding": "export/marlins_live_savant_fielding_2026.csv"
+              }
+            }
+          }
+        },
+        "NYM": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/mets_live_bref_hitters_2026.csv",
+                "pitchers": "export/mets_live_bref_pitchers_2026.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "roster": "export/mets_live_roster_2026.csv",
+                "hitters": "export/mets_live_savant_hitters_2026.csv",
+                "pitchers": "export/mets_live_savant_pitchers_2026.csv",
+                "fielding": "export/mets_live_savant_fielding_2026.csv"
+              }
+            }
+          }
+        },
+        "PHI": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/phillies_live_bref_hitters_2026.csv",
+                "pitchers": "export/phillies_live_bref_pitchers_2026.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "roster": "export/phillies_live_roster_2026.csv",
+                "hitters": "export/phillies_live_savant_hitters_2026.csv",
+                "pitchers": "export/phillies_live_savant_pitchers_2026.csv",
+                "fielding": "export/phillies_live_savant_fielding_2026.csv"
+              }
+            }
+          }
+        },
+        "WSH": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/nationals_live_bref_hitters_2026.csv",
+                "pitchers": "export/nationals_live_bref_pitchers_2026.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "roster": "export/nationals_live_roster_2026.csv",
+                "hitters": "export/nationals_live_savant_hitters_2026.csv",
+                "pitchers": "export/nationals_live_savant_pitchers_2026.csv",
+                "fielding": "export/nationals_live_savant_fielding_2026.csv"
+              }
+            }
+          }
+        },
+        "CHC": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/cubs_live_bref_hitters_2026.csv",
+                "pitchers": "export/cubs_live_bref_pitchers_2026.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "roster": "export/cubs_live_roster_2026.csv",
+                "hitters": "export/cubs_live_savant_hitters_2026.csv",
+                "pitchers": "export/cubs_live_savant_pitchers_2026.csv",
+                "fielding": "export/cubs_live_savant_fielding_2026.csv"
+              }
+            }
+          }
+        },
+        "CIN": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/reds_live_bref_hitters_2026.csv",
+                "pitchers": "export/reds_live_bref_pitchers_2026.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "roster": "export/reds_live_roster_2026.csv",
+                "hitters": "export/reds_live_savant_hitters_2026.csv",
+                "pitchers": "export/reds_live_savant_pitchers_2026.csv",
+                "fielding": "export/reds_live_savant_fielding_2026.csv"
+              }
+            }
+          }
+        },
+        "MIL": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/brewers_live_bref_hitters_2026.csv",
+                "pitchers": "export/brewers_live_bref_pitchers_2026.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "roster": "export/brewers_live_roster_2026.csv",
+                "hitters": "export/brewers_live_savant_hitters_2026.csv",
+                "pitchers": "export/brewers_live_savant_pitchers_2026.csv",
+                "fielding": "export/brewers_live_savant_fielding_2026.csv"
+              }
+            }
+          }
+        },
+        "PIT": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/pirates_live_bref_hitters_2026.csv",
+                "pitchers": "export/pirates_live_bref_pitchers_2026.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "roster": "export/pirates_live_roster_2026.csv",
+                "hitters": "export/pirates_live_savant_hitters_2026.csv",
+                "pitchers": "export/pirates_live_savant_pitchers_2026.csv",
+                "fielding": "export/pirates_live_savant_fielding_2026.csv"
+              }
+            }
+          }
+        },
+        "STL": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/cardinals_live_bref_hitters_2026.csv",
+                "pitchers": "export/cardinals_live_bref_pitchers_2026.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "roster": "export/cardinals_live_roster_2026.csv",
+                "hitters": "export/cardinals_live_savant_hitters_2026.csv",
+                "pitchers": "export/cardinals_live_savant_pitchers_2026.csv",
+                "fielding": "export/cardinals_live_savant_fielding_2026.csv"
+              }
+            }
+          }
+        },
+        "ARI": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/diamondbacks_live_bref_hitters_2026.csv",
+                "pitchers": "export/diamondbacks_live_bref_pitchers_2026.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "roster": "export/diamondbacks_live_roster_2026.csv",
+                "hitters": "export/diamondbacks_live_savant_hitters_2026.csv",
+                "pitchers": "export/diamondbacks_live_savant_pitchers_2026.csv",
+                "fielding": "export/diamondbacks_live_savant_fielding_2026.csv"
+              }
+            }
+          }
+        },
+        "COL": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/rockies_live_bref_hitters_2026.csv",
+                "pitchers": "export/rockies_live_bref_pitchers_2026.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "roster": "export/rockies_live_roster_2026.csv",
+                "hitters": "export/rockies_live_savant_hitters_2026.csv",
+                "pitchers": "export/rockies_live_savant_pitchers_2026.csv",
+                "fielding": "export/rockies_live_savant_fielding_2026.csv"
+              }
+            }
+          }
+        },
+        "LAD": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/dodgers_live_bref_hitters_2026.csv",
+                "pitchers": "export/dodgers_live_bref_pitchers_2026.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "roster": "export/dodgers_live_roster_2026.csv",
+                "hitters": "export/dodgers_live_savant_hitters_2026.csv",
+                "pitchers": "export/dodgers_live_savant_pitchers_2026.csv",
+                "fielding": "export/dodgers_live_savant_fielding_2026.csv"
+              }
+            }
+          }
+        },
+        "SD": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/padres_live_bref_hitters_2026.csv",
+                "pitchers": "export/padres_live_bref_pitchers_2026.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "roster": "export/padres_live_roster_2026.csv",
+                "hitters": "export/padres_live_savant_hitters_2026.csv",
+                "pitchers": "export/padres_live_savant_pitchers_2026.csv",
+                "fielding": "export/padres_live_savant_fielding_2026.csv"
+              }
+            }
+          }
+        },
+        "SF": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/giants_live_bref_hitters_2026.csv",
+                "pitchers": "export/giants_live_bref_pitchers_2026.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "roster": "export/giants_live_roster_2026.csv",
+                "hitters": "export/giants_live_savant_hitters_2026.csv",
+                "pitchers": "export/giants_live_savant_pitchers_2026.csv",
+                "fielding": "export/giants_live_savant_fielding_2026.csv"
+              }
+            }
+          }
+        }
+      }
+    },
+    "previous": {
+      "year": 2025,
+      "teams": {
+        "BAL": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/orioles_live_bref_hitters_2025.csv",
+                "pitchers": "export/orioles_live_bref_pitchers_2025.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "hitters": "export/orioles_live_savant_hitters_2025.csv",
+                "pitchers": "export/orioles_live_savant_pitchers_2025.csv",
+                "fielding": "export/orioles_live_savant_fielding_2025.csv"
+              }
+            }
+          }
+        },
+        "BOS": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/redsox_live_bref_hitters_2025.csv",
+                "pitchers": "export/redsox_live_bref_pitchers_2025.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "hitters": "export/redsox_live_savant_hitters_2025.csv",
+                "pitchers": "export/redsox_live_savant_pitchers_2025.csv",
+                "fielding": "export/redsox_live_savant_fielding_2025.csv"
+              }
+            }
+          }
+        },
+        "NYY": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/yankees_live_bref_hitters_2025.csv",
+                "pitchers": "export/yankees_live_bref_pitchers_2025.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "hitters": "export/yankees_live_savant_hitters_2025.csv",
+                "pitchers": "export/yankees_live_savant_pitchers_2025.csv",
+                "fielding": "export/yankees_live_savant_fielding_2025.csv"
+              }
+            }
+          }
+        },
+        "TB": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/rays_live_bref_hitters_2025.csv",
+                "pitchers": "export/rays_live_bref_pitchers_2025.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "hitters": "export/rays_live_savant_hitters_2025.csv",
+                "pitchers": "export/rays_live_savant_pitchers_2025.csv",
+                "fielding": "export/rays_live_savant_fielding_2025.csv"
+              }
+            }
+          }
+        },
+        "TOR": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/bluejays_live_bref_hitters_2025.csv",
+                "pitchers": "export/bluejays_live_bref_pitchers_2025.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "hitters": "export/bluejays_live_savant_hitters_2025.csv",
+                "pitchers": "export/bluejays_live_savant_pitchers_2025.csv",
+                "fielding": "export/bluejays_live_savant_fielding_2025.csv"
+              }
+            }
+          }
+        },
+        "CWS": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/whitesox_live_bref_hitters_2025.csv",
+                "pitchers": "export/whitesox_live_bref_pitchers_2025.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "hitters": "export/whitesox_live_savant_hitters_2025.csv",
+                "pitchers": "export/whitesox_live_savant_pitchers_2025.csv",
+                "fielding": "export/whitesox_live_savant_fielding_2025.csv"
+              }
+            }
+          }
+        },
+        "CLE": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/guardians_live_bref_hitters_2025.csv",
+                "pitchers": "export/guardians_live_bref_pitchers_2025.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "hitters": "export/guardians_live_savant_hitters_2025.csv",
+                "pitchers": "export/guardians_live_savant_pitchers_2025.csv",
+                "fielding": "export/guardians_live_savant_fielding_2025.csv"
+              }
+            }
+          }
+        },
+        "DET": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/tigers_live_bref_hitters_2025.csv",
+                "pitchers": "export/tigers_live_bref_pitchers_2025.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "hitters": "export/tigers_live_savant_hitters_2025.csv",
+                "pitchers": "export/tigers_live_savant_pitchers_2025.csv",
+                "fielding": "export/tigers_live_savant_fielding_2025.csv"
+              }
+            }
+          }
+        },
+        "KC": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/royals_live_bref_hitters_2025.csv",
+                "pitchers": "export/royals_live_bref_pitchers_2025.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "hitters": "export/royals_live_savant_hitters_2025.csv",
+                "pitchers": "export/royals_live_savant_pitchers_2025.csv",
+                "fielding": "export/royals_live_savant_fielding_2025.csv"
+              }
+            }
+          }
+        },
+        "MIN": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/twins_live_bref_hitters_2025.csv",
+                "pitchers": "export/twins_live_bref_pitchers_2025.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "hitters": "export/twins_live_savant_hitters_2025.csv",
+                "pitchers": "export/twins_live_savant_pitchers_2025.csv",
+                "fielding": "export/twins_live_savant_fielding_2025.csv"
+              }
+            }
+          }
+        },
+        "HOU": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/astros_live_bref_hitters_2025.csv",
+                "pitchers": "export/astros_live_bref_pitchers_2025.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "hitters": "export/astros_live_savant_hitters_2025.csv",
+                "pitchers": "export/astros_live_savant_pitchers_2025.csv",
+                "fielding": "export/astros_live_savant_fielding_2025.csv"
+              }
+            }
+          }
+        },
+        "LAA": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/angels_live_bref_hitters_2025.csv",
+                "pitchers": "export/angels_live_bref_pitchers_2025.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "hitters": "export/angels_live_savant_hitters_2025.csv",
+                "pitchers": "export/angels_live_savant_pitchers_2025.csv",
+                "fielding": "export/angels_live_savant_fielding_2025.csv"
+              }
+            }
+          }
+        },
+        "OAK": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/athletics_live_bref_hitters_2025.csv",
+                "pitchers": "export/athletics_live_bref_pitchers_2025.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "hitters": "export/athletics_live_savant_hitters_2025.csv",
+                "pitchers": "export/athletics_live_savant_pitchers_2025.csv",
+                "fielding": "export/athletics_live_savant_fielding_2025.csv"
+              }
+            }
+          }
+        },
+        "SEA": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/mariners_live_bref_hitters_2025.csv",
+                "pitchers": "export/mariners_live_bref_pitchers_2025.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "hitters": "export/mariners_live_savant_hitters_2025.csv",
+                "pitchers": "export/mariners_live_savant_pitchers_2025.csv",
+                "fielding": "export/mariners_live_savant_fielding_2025.csv"
+              }
+            }
+          }
+        },
+        "TEX": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/rangers_live_bref_hitters_2025.csv",
+                "pitchers": "export/rangers_live_bref_pitchers_2025.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "hitters": "export/rangers_live_savant_hitters_2025.csv",
+                "pitchers": "export/rangers_live_savant_pitchers_2025.csv",
+                "fielding": "export/rangers_live_savant_fielding_2025.csv"
+              }
+            }
+          }
+        },
+        "ATL": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/braves_live_bref_hitters_2025.csv",
+                "pitchers": "export/braves_live_bref_pitchers_2025.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "hitters": "export/braves_live_savant_hitters_2025.csv",
+                "pitchers": "export/braves_live_savant_pitchers_2025.csv",
+                "fielding": "export/braves_live_savant_fielding_2025.csv"
+              }
+            }
+          }
+        },
+        "MIA": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/marlins_live_bref_hitters_2025.csv",
+                "pitchers": "export/marlins_live_bref_pitchers_2025.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "hitters": "export/marlins_live_savant_hitters_2025.csv",
+                "pitchers": "export/marlins_live_savant_pitchers_2025.csv",
+                "fielding": "export/marlins_live_savant_fielding_2025.csv"
+              }
+            }
+          }
+        },
+        "NYM": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/mets_live_bref_hitters_2025.csv",
+                "pitchers": "export/mets_live_bref_pitchers_2025.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "hitters": "export/mets_live_savant_hitters_2025.csv",
+                "pitchers": "export/mets_live_savant_pitchers_2025.csv",
+                "fielding": "export/mets_live_savant_fielding_2025.csv"
+              }
+            }
+          }
+        },
+        "PHI": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/phillies_live_bref_hitters_2025.csv",
+                "pitchers": "export/phillies_live_bref_pitchers_2025.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "hitters": "export/phillies_live_savant_hitters_2025.csv",
+                "pitchers": "export/phillies_live_savant_pitchers_2025.csv",
+                "fielding": "export/phillies_live_savant_fielding_2025.csv"
+              }
+            }
+          }
+        },
+        "WSH": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/nationals_live_bref_hitters_2025.csv",
+                "pitchers": "export/nationals_live_bref_pitchers_2025.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "hitters": "export/nationals_live_savant_hitters_2025.csv",
+                "pitchers": "export/nationals_live_savant_pitchers_2025.csv",
+                "fielding": "export/nationals_live_savant_fielding_2025.csv"
+              }
+            }
+          }
+        },
+        "CHC": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/cubs_live_bref_hitters_2025.csv",
+                "pitchers": "export/cubs_live_bref_pitchers_2025.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "hitters": "export/cubs_live_savant_hitters_2025.csv",
+                "pitchers": "export/cubs_live_savant_pitchers_2025.csv",
+                "fielding": "export/cubs_live_savant_fielding_2025.csv"
+              }
+            }
+          }
+        },
+        "CIN": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/reds_live_bref_hitters_2025.csv",
+                "pitchers": "export/reds_live_bref_pitchers_2025.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "hitters": "export/reds_live_savant_hitters_2025.csv",
+                "pitchers": "export/reds_live_savant_pitchers_2025.csv",
+                "fielding": "export/reds_live_savant_fielding_2025.csv"
+              }
+            }
+          }
+        },
+        "MIL": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/brewers_live_bref_hitters_2025.csv",
+                "pitchers": "export/brewers_live_bref_pitchers_2025.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "hitters": "export/brewers_live_savant_hitters_2025.csv",
+                "pitchers": "export/brewers_live_savant_pitchers_2025.csv",
+                "fielding": "export/brewers_live_savant_fielding_2025.csv"
+              }
+            }
+          }
+        },
+        "PIT": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/pirates_live_bref_hitters_2025.csv",
+                "pitchers": "export/pirates_live_bref_pitchers_2025.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "hitters": "export/pirates_live_savant_hitters_2025.csv",
+                "pitchers": "export/pirates_live_savant_pitchers_2025.csv",
+                "fielding": "export/pirates_live_savant_fielding_2025.csv"
+              }
+            }
+          }
+        },
+        "STL": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/cardinals_live_bref_hitters_2025.csv",
+                "pitchers": "export/cardinals_live_bref_pitchers_2025.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "hitters": "export/cardinals_live_savant_hitters_2025.csv",
+                "pitchers": "export/cardinals_live_savant_pitchers_2025.csv",
+                "fielding": "export/cardinals_live_savant_fielding_2025.csv"
+              }
+            }
+          }
+        },
+        "ARI": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/diamondbacks_live_bref_hitters_2025.csv",
+                "pitchers": "export/diamondbacks_live_bref_pitchers_2025.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "hitters": "export/diamondbacks_live_savant_hitters_2025.csv",
+                "pitchers": "export/diamondbacks_live_savant_pitchers_2025.csv",
+                "fielding": "export/diamondbacks_live_savant_fielding_2025.csv"
+              }
+            }
+          }
+        },
+        "COL": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/rockies_live_bref_hitters_2025.csv",
+                "pitchers": "export/rockies_live_bref_pitchers_2025.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "hitters": "export/rockies_live_savant_hitters_2025.csv",
+                "pitchers": "export/rockies_live_savant_pitchers_2025.csv",
+                "fielding": "export/rockies_live_savant_fielding_2025.csv"
+              }
+            }
+          }
+        },
+        "LAD": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/dodgers_live_bref_hitters_2025.csv",
+                "pitchers": "export/dodgers_live_bref_pitchers_2025.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "hitters": "export/dodgers_live_savant_hitters_2025.csv",
+                "pitchers": "export/dodgers_live_savant_pitchers_2025.csv",
+                "fielding": "export/dodgers_live_savant_fielding_2025.csv"
+              }
+            }
+          }
+        },
+        "SD": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/padres_live_bref_hitters_2025.csv",
+                "pitchers": "export/padres_live_bref_pitchers_2025.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "hitters": "export/padres_live_savant_hitters_2025.csv",
+                "pitchers": "export/padres_live_savant_pitchers_2025.csv",
+                "fielding": "export/padres_live_savant_fielding_2025.csv"
+              }
+            }
+          }
+        },
+        "SF": {
+          "sources": {
+            "baseball_reference": {
+              "files": {
+                "hitters": "export/giants_live_bref_hitters_2025.csv",
+                "pitchers": "export/giants_live_bref_pitchers_2025.csv"
+              }
+            },
+            "baseball_savant": {
+              "files": {
+                "hitters": "export/giants_live_savant_hitters_2025.csv",
+                "pitchers": "export/giants_live_savant_pitchers_2025.csv",
+                "fielding": "export/giants_live_savant_fielding_2025.csv"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
