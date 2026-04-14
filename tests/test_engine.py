@@ -3257,8 +3257,12 @@ class SurfaceBlendTests(unittest.TestCase):
         assigned_trait_names = {trait.name for trait in ohtani.assigned_traits}
 
         self.assertIn("Two Way (OF)", assigned_trait_names)
-        self.assertGreater(ohtani.ratings.get("velocity", 0), 0)
-        self.assertGreater(ohtani.ratings.get("junk", 0), 0)
+        self.assertEqual(ohtani.ratings.get("velocity"), 90)
+        self.assertEqual(ohtani.ratings.get("junk"), 84)
+        self.assertEqual(ohtani.ratings.get("accuracy"), 68)
+        self.assertEqual(ohtani.ratings.get("fielding"), 40)
+        self.assertEqual(ohtani.ratings.get("arm"), 50)
+        self.assertEqual(ohtani.recommended_pitches, ["4F", "SL", "CH", "2F"])
 
     def _build_average_hitter_band(self) -> list[dict[str, object]]:
         players = [
