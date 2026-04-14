@@ -300,6 +300,9 @@ class IngestFrameworkTests(unittest.TestCase):
                     "HR": 19,
                     "H": 149,
                     "IP": "184.2",
+                    "WHIP": 1.13,
+                    "ERA Minus": 78,
+                    "FIP Minus": 83,
                     "Pitches": 2875,
                     "Strikes": 1896,
                     "Pressure Pitching": 71,
@@ -510,6 +513,9 @@ class IngestFrameworkTests(unittest.TestCase):
                     "HR": 18,
                     "H": 141,
                     "IP": "181.1",
+                    "WHIP": 1.08,
+                    "ERA Minus": 74,
+                    "FIP Minus": 81,
                     "Pitches": 2798,
                     "Strikes": 1855,
                     "Pressure Pitching": 69,
@@ -1425,6 +1431,12 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertEqual(pitcher["metadata"]["source"], "baseball_reference")
         self.assertEqual(pitcher["days_on_roster"]["current"], 172.0)
         self.assertAlmostEqual(pitcher["metrics"]["walk_rate"]["current"], 58 / 701, places=6)
+        self.assertAlmostEqual(pitcher["metrics"]["bb_pct"]["current"], 58 / 701, places=6)
+        self.assertAlmostEqual(pitcher["metrics"]["strikeout_rate"]["current"], 192 / 701, places=6)
+        self.assertAlmostEqual(pitcher["metrics"]["k_pct"]["current"], 192 / 701, places=6)
+        self.assertAlmostEqual(pitcher["metrics"]["whip"]["current"], 1.13)
+        self.assertAlmostEqual(pitcher["metrics"]["era_minus"]["current"], 78.0)
+        self.assertAlmostEqual(pitcher["metrics"]["fip_minus"]["current"], 83.0)
         self.assertEqual(pitcher["trait_metrics"]["pressure_pitching"]["current"], 71.0)
         self.assertEqual(pitcher["trait_metrics"]["same_handed_pitching"]["current"], 69.0)
         self.assertEqual(pitcher["trait_metrics"]["same_handed_pitching_gap"]["current"], 11.0)
@@ -1460,6 +1472,12 @@ class IngestFrameworkTests(unittest.TestCase):
 
         self.assertEqual(pitcher["metadata"]["source"], "mixed")
         self.assertAlmostEqual(pitcher["metrics"]["walk_rate"]["current"], 54 / 684, places=6)
+        self.assertAlmostEqual(pitcher["metrics"]["bb_pct"]["current"], 54 / 684, places=6)
+        self.assertAlmostEqual(pitcher["metrics"]["strikeout_rate"]["current"], 205 / 684, places=6)
+        self.assertAlmostEqual(pitcher["metrics"]["k_pct"]["current"], 205 / 684, places=6)
+        self.assertAlmostEqual(pitcher["metrics"]["whip"]["current"], 1.08)
+        self.assertAlmostEqual(pitcher["metrics"]["era_minus"]["current"], 74.0)
+        self.assertAlmostEqual(pitcher["metrics"]["fip_minus"]["current"], 81.0)
         self.assertAlmostEqual(pitcher["metrics"]["avg_fastball_velocity"]["current"], 97.1)
         self.assertAlmostEqual(pitcher["metrics"]["swinging_strike_rate"]["current"], 0.144)
         self.assertAlmostEqual(pitcher["metrics"]["chase_rate"]["current"], 0.331)

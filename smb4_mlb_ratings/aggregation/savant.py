@@ -1096,6 +1096,25 @@ def _apply_pitcher_row(player: PlayerAccumulator, season_key: str, row: dict[str
     pitch_mix = _row_pitch_mix(row)
     tracked_pitches = _pick_number(row, "pitches", "tracked_pitches", "pitch_count", "total_pitches")
     batters_faced = _pick_number(row, "bf", "batters_faced")
+    walks = _pick_number(row, "bb", "walks")
+    strikeouts = _pick_number(row, "so", "k", "strikeouts")
+    hits = _pick_number(row, "h", "hits")
+    innings_outs = _pick_number(row, "ip_outs", "innings_outs")
+    if innings_outs is None:
+        innings_raw = _pick_first(row, "ip", "innings_pitched")
+        if isinstance(innings_raw, str):
+            cleaned = innings_raw.strip()
+            if cleaned:
+                if "." in cleaned:
+                    innings_part, outs_part = cleaned.split(".", 1)
+                    innings_whole = _as_float(innings_part)
+                    outs_fraction = _as_float(outs_part)
+                    if innings_whole is not None and outs_fraction is not None:
+                        innings_outs = (innings_whole * 3.0) + outs_fraction
+                else:
+                    innings_value = _as_float(cleaned)
+                    if innings_value is not None:
+                        innings_outs = innings_value * 3.0
     fastball_usage = _pick_number(row, "fastball_usage", "fastball_pct", "ff_pct", rate=True)
     tracked_fastballs = _pick_number(row, "tracked_fastballs", "fastballs", "ff")
     if tracked_fastballs is None and tracked_pitches is not None and fastball_usage is not None:
@@ -1195,11 +1214,37 @@ def _apply_pitcher_row(player: PlayerAccumulator, season_key: str, row: dict[str
         "arsenal_diversity": (arsenal_diversity, arsenal_estimated),
         "weak_contact_rate": (weak_contact_rate, weak_contact_estimated),
         "walk_rate": (_pick_number(row, "walk_rate", "bb_pct", "bb_percent", rate=True), False),
+        "bb_pct": (_pick_number(row, "bb_pct", "bb_percent", "walk_rate", "walk_pct", rate=True), False),
+        "strikeout_rate": (
+            _pick_number(row, "k_pct", "k_percent", "strikeout_rate", "strikeout_pct", rate=True),
+            False,
+        ),
+        "k_pct": (
+            _pick_number(row, "k_pct", "k_percent", "strikeout_rate", "strikeout_pct", rate=True),
+            False,
+        ),
+        "whip": (_pick_number(row, "whip"), False),
+        "era": (_pick_number(row, "era", "earned_run_average"), False),
+        "fip": (_pick_number(row, "fip"), False),
+        "era_minus": (_pick_number(row, "era_minus", "era-"), False),
+        "fip_minus": (_pick_number(row, "fip_minus", "fip-"), False),
         "strike_pct": (strike_pct, False),
         "zone_pct": (zone_pct, zone_pct_estimated),
         "first_pitch_strike_pct": (first_pitch_strike_pct, first_pitch_strike_pct_estimated),
         "command_error_rate": (command_error_rate, command_error_estimated),
     }
+
+    if metric_specs["walk_rate"][0] is None and walks is not None and batters_faced not in (None, 0):
+        metric_specs["walk_rate"] = (walks / batters_faced, True)
+    if metric_specs["bb_pct"][0] is None and metric_specs["walk_rate"][0] is not None:
+        metric_specs["bb_pct"] = (metric_specs["walk_rate"][0], True)
+    if metric_specs["strikeout_rate"][0] is None and strikeouts is not None and batters_faced not in (None, 0):
+        metric_specs["strikeout_rate"] = (strikeouts / batters_faced, True)
+    if metric_specs["k_pct"][0] is None and metric_specs["strikeout_rate"][0] is not None:
+        metric_specs["k_pct"] = (metric_specs["strikeout_rate"][0], True)
+    if metric_specs["whip"][0] is None and innings_outs not in (None, 0) and (walks is not None or hits is not None):
+        metric_specs["whip"] = ((((walks or 0.0) + (hits or 0.0)) * 3.0) / float(innings_outs), True)
+
     for metric_name, (value, estimated) in metric_specs.items():
         player.set_metric(metric_name, season_key, value, estimated=estimated)
 

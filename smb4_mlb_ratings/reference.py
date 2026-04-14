@@ -165,11 +165,10 @@ DEFAULT_PROCESSING_TUNING = {
             "power": 0.14,
             "contact": 0.14,
             "speed": 0.10,
-            "fielding": 0.07,
-            "arm": 0.05,
+            "fielding": 0.08,
             "velocity": 0.18,
             "junk": 0.18,
-            "accuracy": 0.14,
+            "accuracy": 0.18,
         },
     },
     "secondary_positions": {

@@ -100,7 +100,15 @@ class GenerationTests(unittest.TestCase):
                                 "reason": "test",
                             }
                         ],
-                        "recommended_personalities": [],
+                        "recommended_personalities": [
+                            {
+                                "chemistry_type": "Crafty",
+                                "score": 88.0,
+                                "personal_score": 90.0,
+                                "team_score": 82.0,
+                                "reason": "test",
+                            }
+                        ],
                         "recommended_pitches": ["4F", "SL", "CH"],
                         "metadata": {"bats": "L", "throws": "R"},
                     },
@@ -152,7 +160,15 @@ class GenerationTests(unittest.TestCase):
                         "reason": "test",
                     }
                 ],
-                "recommended_personalities": [],
+                "recommended_personalities": [
+                    {
+                        "chemistry_type": "Competitive",
+                        "score": 77.0,
+                        "personal_score": 80.0,
+                        "team_score": 70.0,
+                        "reason": "test",
+                    }
+                ],
                 "metadata": {"bats": "R", "throws": "R"},
             }
         )
@@ -187,7 +203,15 @@ class GenerationTests(unittest.TestCase):
                         "reason": "test",
                     }
                 ],
-                "recommended_personalities": [],
+                "recommended_personalities": [
+                    {
+                        "chemistry_type": "Crafty",
+                        "score": 86.0,
+                        "personal_score": 88.0,
+                        "team_score": 81.0,
+                        "reason": "test",
+                    }
+                ],
                 "recommended_pitches": ["4F", "SL", "CH"],
                 "metadata": {"bats": "L", "throws": "R"},
             }
@@ -209,7 +233,7 @@ class GenerationTests(unittest.TestCase):
         self.assertEqual(hitter_rows[0]["Bat Hand"], "R")
         self.assertEqual(hitter_rows[0]["Primary Position"], "CF")
         self.assertEqual(hitter_rows[0]["Secondary Positions"], "LF, RF")
-        self.assertEqual(hitter_rows[0]["Letter Grade"], "B+")
+        self.assertEqual(hitter_rows[0]["Personality Type Recommendation"], "Competitive")
         self.assertEqual(hitter_rows[0]["Trait 1"], "Bad Ball Hitter")
         self.assertEqual(hitter_rows[0]["Trait 2"], "")
 
@@ -217,12 +241,13 @@ class GenerationTests(unittest.TestCase):
         self.assertEqual(pitcher_rows[0]["Throw Hand"], "R")
         self.assertEqual(pitcher_rows[0]["Bat Hand"], "L")
         self.assertEqual(pitcher_rows[0]["Arsenal"], "4F, SL, CH")
-        self.assertEqual(pitcher_rows[0]["Letter Grade"], "A-")
+        self.assertEqual(pitcher_rows[0]["Personality Type Recommendation"], "Crafty")
         self.assertEqual(pitcher_rows[0]["Velocity"], "88")
         self.assertEqual(pitcher_rows[0]["Junk"], "91")
         self.assertEqual(pitcher_rows[0]["Accuracy"], "84")
         self.assertEqual(pitcher_rows[0]["Trait 1"], "Elite 4F")
         self.assertEqual(pitcher_rows[0]["Trait 2"], "")
+        self.assertNotIn("Arm", pitcher_rows[0])
 
     def test_cli_generate_creates_team_csv_files(self) -> None:
         input_path = self.root / "ratings.json"
@@ -367,3 +392,88 @@ class GenerationTests(unittest.TestCase):
         self.assertEqual(two_way_pitcher_row["Contact"], "78")
         self.assertEqual(two_way_pitcher_row["Power"], "82")
         self.assertEqual(two_way_pitcher_row["Speed"], "69")
+        self.assertNotIn("Arm", two_way_pitcher_row)
+
+    def test_generate_output_uses_top_personality_recommendation_and_blank_when_missing(self) -> None:
+        input_path = self.root / "ratings_personality.json"
+        output_dir = self.root / "reports_personality"
+        input_path.write_text(
+            json.dumps(
+                [
+                    {
+                        "name": "Top Chemistry Hitter",
+                        "role": "hitter",
+                        "team": "TOR",
+                        "primary_position": "SS",
+                        "ratings": {
+                            "contact": 75,
+                            "power": 68,
+                            "speed": 72,
+                            "fielding": 74,
+                            "arm": 71
+                        },
+                        "percentiles": {},
+                        "overall_numeric": 76,
+                        "overall_grade": "B",
+                        "confidence": "high",
+                        "review_flags": [],
+                        "suggested_traits": [],
+                        "assigned_traits": [],
+                        "recommended_personalities": [
+                            {
+                                "chemistry_type": "Disciplined",
+                                "score": 84.0,
+                                "personal_score": 88.0,
+                                "team_score": 75.0,
+                                "reason": "test"
+                            },
+                            {
+                                "chemistry_type": "Competitive",
+                                "score": 72.0,
+                                "personal_score": 70.0,
+                                "team_score": 76.0,
+                                "reason": "test"
+                            }
+                        ],
+                        "metadata": {"bats": "R", "throws": "R"}
+                    },
+                    {
+                        "name": "No Chemistry Pitcher",
+                        "role": "pitcher",
+                        "team": "TOR",
+                        "primary_position": "P",
+                        "ratings": {
+                            "velocity": 82,
+                            "junk": 79,
+                            "accuracy": 77,
+                            "contact": 18,
+                            "power": 14,
+                            "speed": 30,
+                            "fielding": 40
+                        },
+                        "percentiles": {},
+                        "overall_numeric": 74,
+                        "overall_grade": "B-",
+                        "confidence": "medium",
+                        "review_flags": [],
+                        "suggested_traits": [],
+                        "assigned_traits": [],
+                        "recommended_personalities": [],
+                        "recommended_pitches": ["4F", "CH"],
+                        "metadata": {"bats": "L", "throws": "R"}
+                    }
+                ],
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        result = main(["generate", str(input_path), str(output_dir)])
+
+        self.assertEqual(result, 0)
+
+        _, hitter_rows = self._read_csv_rows(output_dir / "TOR_hitters.csv")
+        _, pitcher_rows = self._read_csv_rows(output_dir / "TOR_pitchers.csv")
+
+        self.assertEqual(hitter_rows[0]["Personality Type Recommendation"], "Disciplined")
+        self.assertEqual(pitcher_rows[0]["Personality Type Recommendation"], "")

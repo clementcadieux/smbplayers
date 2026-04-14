@@ -151,6 +151,11 @@ class LiveTeamDataTests(unittest.TestCase):
             "strikeouts": 180,
             "home_runs": 18,
             "hits": 132,
+            "era": 2.87,
+            "fip": 3.18,
+            "whip": 1.06,
+            "era_minus": 74.0,
+            "fip_minus": 82.0,
             "stolen_bases_allowed": 12,
             "caught_stealing": 7,
             "pickoffs": 3,
@@ -218,7 +223,20 @@ class LiveTeamDataTests(unittest.TestCase):
         self.assertEqual(savant_fielding_rows[0]["Fielding %"], 0.982)
         self.assertEqual(savant_fielding_rows[0]["PO"], 120.0)
         self.assertGreater(bref_pitcher_rows[0]["Same Handed Pitching"], bref_pitcher_rows[0]["Opposite Handed Pitching"])
+        self.assertEqual(bref_pitcher_rows[0]["ERA"], 2.87)
+        self.assertEqual(bref_pitcher_rows[0]["FIP"], 3.18)
+        self.assertEqual(bref_pitcher_rows[0]["WHIP"], 1.06)
+        self.assertEqual(bref_pitcher_rows[0]["ERA Minus"], 74.0)
+        self.assertEqual(bref_pitcher_rows[0]["FIP Minus"], 82.0)
+        self.assertAlmostEqual(bref_pitcher_rows[0]["K %"], 30.0)
+        self.assertAlmostEqual(bref_pitcher_rows[0]["BB %"], 8.0, places=3)
         self.assertIn("Pitch Quality SL", savant_pitcher_rows[0])
+        self.assertEqual(savant_pitcher_rows[0]["ERA"], 2.87)
+        self.assertEqual(savant_pitcher_rows[0]["FIP"], 3.18)
+        self.assertEqual(savant_pitcher_rows[0]["WHIP"], 1.06)
+        self.assertEqual(savant_pitcher_rows[0]["ERA Minus"], 74.0)
+        self.assertEqual(savant_pitcher_rows[0]["FIP Minus"], 82.0)
+        self.assertAlmostEqual(savant_pitcher_rows[0]["K %"], 30.0)
         self.assertEqual(savant_pitcher_rows[0]["Strike %"], 65.4)
         self.assertEqual(savant_pitcher_rows[0]["Chase %"], 32.1)
         self.assertEqual(savant_pitcher_rows[0]["Zone %"], 48.6)

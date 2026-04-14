@@ -2729,6 +2729,12 @@ class SurfaceBlendTests(unittest.TestCase):
         self.assertIsNotNone(weighted)
         self.assertGreater(weighted or 0, equal_weighted)
 
+        no_arm_weighted = role_weighted_overall_numeric(
+            "two_way",
+            {key: value for key, value in ratings.items() if key != "arm"},
+        )
+        self.assertEqual(weighted, no_arm_weighted)
+
     def test_pitcher_elite_component_mix_gets_elite_overall_boost(self) -> None:
         ratings = {
             "velocity": 87,
@@ -3619,7 +3625,7 @@ class SurfaceBlendTests(unittest.TestCase):
 
         self.assertEqual(pure_pitcher.ratings.get("speed"), 30)
         self.assertEqual(pure_pitcher.ratings.get("fielding"), 40)
-        self.assertEqual(pure_pitcher.ratings.get("arm"), 50)
+        self.assertIsNone(pure_pitcher.ratings.get("arm"))
 
         self.assertNotEqual(two_way.ratings.get("speed"), 30)
         self.assertNotEqual(two_way.ratings.get("fielding"), 40)
@@ -3643,7 +3649,7 @@ class SurfaceBlendTests(unittest.TestCase):
 
         self.assertEqual(output.ratings.get("speed"), 61)
         self.assertEqual(output.ratings.get("fielding"), 40)
-        self.assertEqual(output.ratings.get("arm"), 50)
+        self.assertIsNone(output.ratings.get("arm"))
 
     def test_pitcher_defaults_do_not_apply_to_two_way_players(self) -> None:
         output = RatingOutput.from_dict(

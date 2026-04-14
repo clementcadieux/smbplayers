@@ -402,7 +402,6 @@ def refresh_runtime_tuning() -> None:
     parsed_pitcher_defaults = {
         "speed": 30,
         "fielding": 40,
-        "arm": 50,
     }
 
     if isinstance(raw_pitcher_defaults, Mapping):
