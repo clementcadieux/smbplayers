@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from .aggregation import aggregate_from_manifest
-from .codec import build_codec_import_from_file
+from .codec import build_codec_import_from_file, build_encoder_operation_plan_from_file
 from .generation import generate_output
 from .ingest import load_manifest
 from .league_bridge import build_roster_attribute_bridge
@@ -153,6 +153,14 @@ def run_build_codec_interface(
         output_path,
         league_folder_override=league_folder,
     )
+    return 0
+
+
+def run_build_encoder_plan(
+    codec_import_path: Path,
+    output_path: Path,
+) -> int:
+    build_encoder_operation_plan_from_file(codec_import_path, output_path)
     return 0
 
 
@@ -385,6 +393,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional SMB4 league folder override path",
     )
 
+    encoder_plan_parser = subparsers.add_parser(
+        "build-encoder-plan",
+        help="Build deterministic encoder operation plan from codec import JSON",
+    )
+    encoder_plan_parser.add_argument(
+        "codec_import",
+        type=Path,
+        help="Codec import payload JSON (usually export/codec_import.json)",
+    )
+    encoder_plan_parser.add_argument(
+        "output",
+        type=Path,
+        help="Output encoder operation plan JSON",
+    )
+
     ingest_rate_parser = subparsers.add_parser("ingest-rate", help="Normalize supported source files and rate them")
     ingest_rate_parser.add_argument("manifest", type=Path, help="Ingestion manifest JSON file")
     ingest_rate_parser.add_argument("output", type=Path, nargs="?", default=None, help="Optional output ratings JSON file")
@@ -457,6 +480,11 @@ def main(argv: list[str] | None = None) -> int:
             namespace.bridge_payload,
             namespace.output,
             league_folder=namespace.league_folder,
+        )
+    if namespace.command == "build-encoder-plan":
+        return run_build_encoder_plan(
+            namespace.codec_import,
+            namespace.output,
         )
     if namespace.command == "ingest-rate":
         if namespace.output is None and namespace.structured_output is None:

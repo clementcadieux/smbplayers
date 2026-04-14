@@ -1,6 +1,12 @@
 from .generation import build_hitter_row, build_pitcher_row, generate_output
 from .ingest import IngestManifest, ingest_from_manifest, load_manifest
-from .codec import build_codec_import_from_file, build_codec_import_payload, load_bridge_payload
+from .codec import (
+	build_codec_import_from_file,
+	build_codec_import_payload,
+	build_encoder_operation_plan,
+	build_encoder_operation_plan_from_file,
+	load_bridge_payload,
+)
 from .models import PersonalityRecommendation, PlayerInput, RatingOutput, TraitSuggestion
 from .output import TEAM_DIVISIONS, write_structured_output
 from .pitch_selector import select_pitch_mix
@@ -18,6 +24,8 @@ __all__ = [
 	"load_bridge_payload",
 	"build_codec_import_payload",
 	"build_codec_import_from_file",
+	"build_encoder_operation_plan",
+	"build_encoder_operation_plan_from_file",
 	"process_players",
 	"generate_output",
 	"build_hitter_row",
