@@ -170,5 +170,76 @@
   },
   "pitcher_adjustments": {
     "sp_overall_bonus": 4.0
+  },
+  "overall_group_normalization": {
+    "enabled": true,
+    "blend_weight": 0.6,
+    "minimum_group_size": 5
+  },
+  "pitcher_outcome_adjustment": {
+    "enabled": true,
+    "minimum_peer_count": 4,
+    "min_ip_for_outcome_weight": {
+      "SP": 80.0,
+      "RP": 30.0,
+      "default": 50.0
+    },
+    "role_profiles": {
+      "SP": {
+        "raw_weight": 0.3,
+        "outcome_weight": 0.7
+      },
+      "RP": {
+        "raw_weight": 0.45,
+        "outcome_weight": 0.55
+      },
+      "default": {
+        "raw_weight": 0.4,
+        "outcome_weight": 0.6
+      }
+    },
+    "metrics": {
+      "era_minus": {
+        "weight": 1.1,
+        "higher_is_better": false
+      },
+      "fip_minus": {
+        "weight": 1.0,
+        "higher_is_better": false
+      },
+      "whip": {
+        "weight": 0.9,
+        "higher_is_better": false
+      },
+      "k_pct": {
+        "weight": 0.7,
+        "higher_is_better": true
+      },
+      "strikeout_rate": {
+        "weight": 0.7,
+        "higher_is_better": true
+      },
+      "bb_pct": {
+        "weight": 0.7,
+        "higher_is_better": false
+      },
+      "walk_rate": {
+        "weight": 0.9,
+        "higher_is_better": false
+      },
+      "chase_rate": {
+        "weight": 0.45,
+        "higher_is_better": true
+      },
+      "weak_contact_rate": {
+        "weight": 0.6,
+        "higher_is_better": true
+      }
+    }
+  },
+  "pitcher_defaults": {
+    "speed": 30,
+    "fielding": 40,
+    "arm": 50
   }
 }

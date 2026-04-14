@@ -291,3 +291,79 @@ class GenerationTests(unittest.TestCase):
         self.assertTrue((output_dir / "TOR_pitchers.csv").exists())
         self.assertTrue((output_dir / "NYY_hitters.csv").exists())
         self.assertTrue((output_dir / "NYY_pitchers.csv").exists())
+
+    def test_two_way_player_only_appears_in_pitcher_output_with_batting_attributes(self) -> None:
+        hitter = RatingOutput.from_dict(
+            {
+                "name": "Corner Bat",
+                "role": "hitter",
+                "team": "LAA",
+                "primary_position": "RF",
+                "ratings": {
+                    "contact": 72,
+                    "power": 76,
+                    "speed": 62,
+                    "fielding": 58,
+                    "arm": 64,
+                },
+                "percentiles": {"contact": 64.0},
+                "overall_numeric": 74,
+                "overall_grade": "B",
+                "confidence": "high",
+                "review_flags": [],
+                "suggested_traits": [],
+                "assigned_traits": [],
+                "recommended_personalities": [],
+                "metadata": {"bats": "L", "throws": "L"},
+            }
+        )
+        two_way = RatingOutput.from_dict(
+            {
+                "name": "Two-Way Ace",
+                "role": "two_way",
+                "team": "LAA",
+                "primary_position": "DH",
+                "ratings": {
+                    "velocity": 96,
+                    "junk": 92,
+                    "accuracy": 88,
+                    "contact": 78,
+                    "power": 82,
+                    "speed": 69,
+                    "fielding": 57,
+                    "arm": 71,
+                },
+                "percentiles": {"velocity": 95.0, "contact": 75.0},
+                "overall_numeric": 93,
+                "overall_grade": "A+",
+                "confidence": "high",
+                "review_flags": [],
+                "suggested_traits": [],
+                "assigned_traits": [],
+                "recommended_personalities": [],
+                "recommended_pitches": ["4F", "SL", "CH"],
+                "metadata": {"bats": "L", "throws": "R"},
+            }
+        )
+
+        input_path = self.root / "ratings_two_way.json"
+        output_dir = self.root / "reports_two_way"
+        input_path.write_text(json.dumps([hitter.to_dict(), two_way.to_dict()], indent=2), encoding="utf-8")
+
+        result = main(["generate", str(input_path), str(output_dir)])
+
+        self.assertEqual(result, 0)
+
+        _, hitter_rows = self._read_csv_rows(output_dir / "LAA_hitters.csv")
+        _, pitcher_rows = self._read_csv_rows(output_dir / "LAA_pitchers.csv")
+
+        self.assertEqual([row["Name"] for row in hitter_rows], ["Corner Bat"])
+        self.assertIn("Two-Way Ace", [row["Name"] for row in pitcher_rows])
+
+        two_way_pitcher_row = next(row for row in pitcher_rows if row["Name"] == "Two-Way Ace")
+        self.assertEqual(two_way_pitcher_row["Velocity"], "96")
+        self.assertEqual(two_way_pitcher_row["Junk"], "92")
+        self.assertEqual(two_way_pitcher_row["Accuracy"], "88")
+        self.assertEqual(two_way_pitcher_row["Contact"], "78")
+        self.assertEqual(two_way_pitcher_row["Power"], "82")
+        self.assertEqual(two_way_pitcher_row["Speed"], "69")

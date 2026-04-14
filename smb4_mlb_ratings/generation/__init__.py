@@ -103,6 +103,8 @@ def _join_values(values: list[str]) -> str:
 
 def _is_pitcher(player: RatingOutput) -> bool:
     role = _clean_text(player.role).lower()
+    if role == "two_way":
+        return True
     if role in PITCHER_ROLES:
         return True
     if player.recommended_pitches:

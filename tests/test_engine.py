@@ -2891,6 +2891,333 @@ class SurfaceBlendTests(unittest.TestCase):
         )
         return players
 
+    def test_group_normalization_keeps_elite_hitter_and_starter_above_average_reliever(self) -> None:
+        players: list[dict[str, object]] = [
+            {
+                "name": "Elite Hitter",
+                "role": "hitter",
+                "team": "NYM",
+                "primary_position": "CF",
+                "metrics": {
+                    "iso": 0.275,
+                    "hr_per_pa": 0.061,
+                    "barrel_rate": 0.162,
+                    "slugging": 0.612,
+                    "avg_exit_velocity": 95.4,
+                    "strikeout_rate": 0.142,
+                    "contact_rate": 0.842,
+                    "batting_average": 0.321,
+                    "adjusted_obp": 0.426,
+                    "sprint_speed": 29.0,
+                    "baserunning_value": 5.7,
+                    "sb_attempt_rate": 0.11,
+                    "sb_success_rate": 0.86,
+                    "triple_double_rate": 0.08,
+                    "oaa": 8.0,
+                    "drs": 7.0,
+                    "uzr": 4.8,
+                    "fielding_pct_proxy": 0.991,
+                    "position_difficulty": 0.82,
+                    "arm_strength": 86.0,
+                    "outfield_arm_runs": 3.2,
+                    "arm_position_baseline": 0.68,
+                },
+                "samples": {"weighted_pa": 610, "baserunning_opportunities": 168, "defensive_innings": 1180},
+            },
+            {
+                "name": "Elite Starter",
+                "role": "pitcher",
+                "team": "NYM",
+                "primary_position": "P",
+                "metadata": {"pitching_role": "starter"},
+                "pitch_mix": {"ff": 0.55, "sl": 0.25, "ch": 0.20},
+                "metrics": {
+                    "avg_fastball_velocity": 94.5,
+                    "peak_fastball_velocity": 96.5,
+                    "fastball_usage": 0.55,
+                    "swinging_strike_rate": 0.160,
+                    "chase_rate": 0.340,
+                    "movement_quality": 30.0,
+                    "stuff_metric": 150.0,
+                    "arsenal_diversity": 0.88,
+                    "weak_contact_rate": 0.73,
+                    "walk_rate": 0.043,
+                    "strike_pct": 0.720,
+                    "zone_pct": 0.550,
+                    "first_pitch_strike_pct": 0.700,
+                    "command_error_rate": 0.180,
+                },
+                "samples": {"tracked_pitches": 3100, "tracked_fastballs": 1600, "weighted_bf": 860},
+            },
+            self._pitcher_peer("Average Reliever", 94.5, 0.122, 0.288, 0.082, role_hint="reliever", weighted_bf=320),
+        ]
+        players.extend(
+            {
+                "name": f"Hitter Peer {index}",
+                "role": "hitter",
+                "team": "NYM",
+                "primary_position": "CF",
+                "metrics": {
+                    "iso": 0.145 + (index * 0.006),
+                    "hr_per_pa": 0.023 + (index * 0.001),
+                    "barrel_rate": 0.060 + (index * 0.004),
+                    "slugging": 0.418 + (index * 0.012),
+                    "avg_exit_velocity": 87.5 + (index * 0.35),
+                    "strikeout_rate": 0.228 - (index * 0.004),
+                    "contact_rate": 0.736 + (index * 0.008),
+                    "batting_average": 0.246 + (index * 0.005),
+                    "adjusted_obp": 0.314 + (index * 0.005),
+                    "sprint_speed": 26.4 + (index * 0.14),
+                    "baserunning_value": 0.8 + (index * 0.45),
+                    "sb_attempt_rate": 0.04 + (index * 0.004),
+                    "sb_success_rate": 0.70 + (index * 0.008),
+                    "triple_double_rate": 0.03 + (index * 0.003),
+                    "oaa": -1.0 + (index * 0.8),
+                    "drs": -2.0 + (index * 0.9),
+                    "uzr": -1.6 + (index * 0.55),
+                    "fielding_pct_proxy": 0.975 + (index * 0.0014),
+                    "position_difficulty": 0.82,
+                    "arm_strength": 78.0 + (index * 0.7),
+                    "outfield_arm_runs": -1.2 + (index * 0.45),
+                    "arm_position_baseline": 0.68,
+                },
+                "samples": {
+                    "weighted_pa": 510 + (index * 9),
+                    "baserunning_opportunities": 142 + (index * 4),
+                    "defensive_innings": 980 + (index * 16),
+                },
+            }
+            for index in range(1, 10)
+        )
+        players.extend(
+            self._pitcher_peer(
+                f"Starter Peer {index}",
+                91.0 + (index * 0.25),
+                0.104 + (index * 0.002),
+                0.258 + (index * 0.004),
+                0.094 - (index * 0.002),
+                role_hint="starter",
+                weighted_bf=760 + (index * 14),
+            )
+            for index in range(1, 8)
+        )
+        players.extend(
+            self._pitcher_peer(
+                f"Reliever Peer {index}",
+                95.3 + (index * 0.18),
+                0.126 + (index * 0.002),
+                0.296 + (index * 0.004),
+                0.079 - (index * 0.001),
+                role_hint="reliever",
+                weighted_bf=280 + (index * 12),
+            )
+            for index in range(1, 8)
+        )
+
+        outputs = rate_players(players)
+        elite_hitter = next(output for output in outputs if output.name == "Elite Hitter")
+        elite_starter = next(output for output in outputs if output.name == "Elite Starter")
+        average_reliever = next(output for output in outputs if output.name == "Average Reliever")
+
+        self.assertGreaterEqual(elite_hitter.overall_numeric or 0, 95)
+        self.assertGreaterEqual(elite_starter.overall_numeric or 0, 95)
+        self.assertLess(average_reliever.overall_numeric or 0, elite_hitter.overall_numeric or 0)
+        self.assertLess(average_reliever.overall_numeric or 0, elite_starter.overall_numeric or 0)
+
+    def test_outcome_adjustment_penalizes_elite_stuff_with_poor_results(self) -> None:
+        players: list[dict[str, object]] = [
+            {
+                "name": "Stuff But Poor Results",
+                "role": "pitcher",
+                "team": "NYM",
+                "primary_position": "P",
+                "metadata": {"pitching_role": "starter"},
+                "pitch_mix": {"ff": 0.56, "sl": 0.28, "ch": 0.16},
+                "metrics": {
+                    "avg_fastball_velocity": 98.0,
+                    "peak_fastball_velocity": 99.8,
+                    "fastball_usage": 0.56,
+                    "swinging_strike_rate": 0.154,
+                    "chase_rate": 0.334,
+                    "movement_quality": 27.8,
+                    "stuff_metric": 146.0,
+                    "arsenal_diversity": 0.86,
+                    "weak_contact_rate": 0.49,
+                    "walk_rate": 0.112,
+                    "strikeout_rate": 0.230,
+                    "k_pct": 0.230,
+                    "bb_pct": 0.112,
+                    "era_minus": 132.0,
+                    "fip_minus": 126.0,
+                    "whip": 1.47,
+                    "strike_pct": 0.627,
+                    "zone_pct": 0.451,
+                    "first_pitch_strike_pct": 0.571,
+                    "command_error_rate": 0.382,
+                },
+                "samples": {"weighted_bf": 840, "tracked_pitches": 3050, "tracked_fastballs": 1708},
+            },
+            {
+                "name": "Average Results Starter",
+                "role": "pitcher",
+                "team": "NYM",
+                "primary_position": "P",
+                "metadata": {"pitching_role": "starter"},
+                "pitch_mix": {"ff": 0.52, "sl": 0.29, "ch": 0.19},
+                "metrics": {
+                    "avg_fastball_velocity": 93.9,
+                    "peak_fastball_velocity": 95.9,
+                    "fastball_usage": 0.52,
+                    "swinging_strike_rate": 0.116,
+                    "chase_rate": 0.284,
+                    "movement_quality": 22.4,
+                    "stuff_metric": 121.0,
+                    "arsenal_diversity": 0.77,
+                    "weak_contact_rate": 0.61,
+                    "walk_rate": 0.079,
+                    "strikeout_rate": 0.236,
+                    "k_pct": 0.236,
+                    "bb_pct": 0.079,
+                    "era_minus": 102.0,
+                    "fip_minus": 101.0,
+                    "whip": 1.24,
+                    "strike_pct": 0.647,
+                    "zone_pct": 0.482,
+                    "first_pitch_strike_pct": 0.614,
+                    "command_error_rate": 0.353,
+                },
+                "samples": {"weighted_bf": 835, "tracked_pitches": 2940, "tracked_fastballs": 1529},
+            },
+        ]
+
+        players.extend(
+            {
+                "name": f"Outcome Peer {index}",
+                "role": "pitcher",
+                "team": "NYM",
+                "primary_position": "P",
+                "metadata": {"pitching_role": "starter"},
+                "pitch_mix": {"ff": 0.53, "sl": 0.27, "ch": 0.20},
+                "metrics": {
+                    "avg_fastball_velocity": 92.8 + (index * 0.2),
+                    "peak_fastball_velocity": 94.8 + (index * 0.2),
+                    "fastball_usage": 0.53,
+                    "swinging_strike_rate": 0.110 + (index * 0.002),
+                    "chase_rate": 0.279 + (index * 0.003),
+                    "movement_quality": 21.8 + (index * 0.4),
+                    "stuff_metric": 118.0 + index,
+                    "arsenal_diversity": 0.75,
+                    "weak_contact_rate": 0.62 + (index * 0.005),
+                    "walk_rate": 0.074 - (index * 0.001),
+                    "strikeout_rate": 0.242 + (index * 0.002),
+                    "k_pct": 0.242 + (index * 0.002),
+                    "bb_pct": 0.074 - (index * 0.001),
+                    "era_minus": 91.0 - (index * 1.5),
+                    "fip_minus": 93.0 - (index * 1.4),
+                    "whip": 1.12 - (index * 0.015),
+                    "strike_pct": 0.654,
+                    "zone_pct": 0.487,
+                    "first_pitch_strike_pct": 0.619,
+                    "command_error_rate": 0.346,
+                },
+                "samples": {
+                    "weighted_bf": 780 + (index * 12),
+                    "tracked_pitches": 2800 + (index * 20),
+                    "tracked_fastballs": 1484 + (index * 12),
+                },
+            }
+            for index in range(1, 7)
+        )
+
+        outputs = rate_players(players)
+        poor_results = next(output for output in outputs if output.name == "Stuff But Poor Results")
+        average_results = next(output for output in outputs if output.name == "Average Results Starter")
+
+        self.assertGreater(poor_results.ratings.get("velocity", 0), average_results.ratings.get("velocity", 0))
+        self.assertLessEqual(poor_results.overall_numeric or 0, average_results.overall_numeric or 0)
+        self.assertLessEqual(poor_results.overall_numeric or 0, 84)
+
+    def test_pitcher_defaults_apply_only_to_pure_pitchers(self) -> None:
+        outputs = rate_players(
+            [
+                self._pitcher_peer(
+                    "Defaulted Pitcher",
+                    94.6,
+                    0.123,
+                    0.292,
+                    0.081,
+                    role_hint="reliever",
+                    weighted_bf=320,
+                ),
+                {
+                    "name": "Two-Way Profile",
+                    "role": "two_way",
+                    "team": "LAA",
+                    "primary_position": "DH",
+                    "metrics": {
+                        "iso": 0.205,
+                        "hr_per_pa": 0.047,
+                        "barrel_rate": 0.128,
+                        "slugging": 0.542,
+                        "avg_exit_velocity": 92.2,
+                        "strikeout_rate": 0.214,
+                        "contact_rate": 0.758,
+                        "batting_average": 0.286,
+                        "adjusted_obp": 0.364,
+                        "sprint_speed": 28.8,
+                        "baserunning_value": 3.8,
+                        "sb_attempt_rate": 0.07,
+                        "sb_success_rate": 0.85,
+                        "triple_double_rate": 0.05,
+                        "oaa": 3.0,
+                        "drs": 2.0,
+                        "uzr": 1.3,
+                        "fielding_pct_proxy": 0.986,
+                        "position_difficulty": 0.75,
+                        "arm_strength": 81.0,
+                        "arm_position_baseline": 0.52,
+                        "avg_fastball_velocity": 97.1,
+                        "peak_fastball_velocity": 99.2,
+                        "fastball_usage": 0.52,
+                        "swinging_strike_rate": 0.146,
+                        "chase_rate": 0.321,
+                        "movement_quality": 26.1,
+                        "stuff_metric": 138.0,
+                        "arsenal_diversity": 0.84,
+                        "weak_contact_rate": 0.68,
+                        "walk_rate": 0.071,
+                        "strike_pct": 0.661,
+                        "zone_pct": 0.492,
+                        "first_pitch_strike_pct": 0.629,
+                        "command_error_rate": 0.338,
+                    },
+                    "samples": {
+                        "weighted_pa": 560,
+                        "baserunning_opportunities": 160,
+                        "defensive_innings": 940,
+                        "weighted_bf": 760,
+                        "tracked_pitches": 2980,
+                        "tracked_fastballs": 1550,
+                    },
+                },
+                self._pitcher_peer("Pitcher Peer 1", 95.0, 0.13, 0.30, 0.075),
+                self._pitcher_peer("Pitcher Peer 2", 93.5, 0.11, 0.28, 0.085),
+                self._player("Hitter Peer 1", 0.500, 425, iso=0.220, hr_per_pa=0.045, barrel_rate=0.110, avg_exit_velocity=91.0),
+                self._player("Hitter Peer 2", 0.360, 425, iso=0.120, hr_per_pa=0.025, barrel_rate=0.060, avg_exit_velocity=87.5),
+            ]
+        )
+
+        pure_pitcher = next(output for output in outputs if output.name == "Defaulted Pitcher")
+        two_way = next(output for output in outputs if output.name == "Two-Way Profile")
+
+        self.assertEqual(pure_pitcher.ratings.get("speed"), 30)
+        self.assertEqual(pure_pitcher.ratings.get("fielding"), 40)
+        self.assertEqual(pure_pitcher.ratings.get("arm"), 50)
+
+        self.assertNotEqual(two_way.ratings.get("speed"), 30)
+        self.assertNotEqual(two_way.ratings.get("fielding"), 40)
+        self.assertNotEqual(two_way.ratings.get("arm"), 50)
+
     def _build_average_hitter_band(self) -> list[dict[str, object]]:
         players = [
             {
