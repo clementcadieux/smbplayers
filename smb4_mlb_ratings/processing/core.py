@@ -1538,6 +1538,23 @@ def _state_sample_ip(state: PlayerState) -> float | None:
     return None
 
 
+def _state_current_sample_ip(state: PlayerState) -> float | None:
+    defensive_innings = season_dict(state.player.samples.get("defensive_innings"))
+    if defensive_innings is not None:
+        current_innings = defensive_innings.get("current")
+        if current_innings is not None and current_innings > 0:
+            return float(current_innings)
+
+    weighted_bf = season_dict(state.player.samples.get("weighted_bf"))
+    if weighted_bf is None:
+        return None
+
+    current_bf = weighted_bf.get("current")
+    if current_bf is None or current_bf <= 0:
+        return None
+    return float(current_bf) / 4.25
+
+
 def apply_pitcher_outcome_adjustments(
     outputs: list[RatingOutput],
     states_by_identity: Mapping[str, PlayerState],
@@ -1639,7 +1656,7 @@ def apply_pitcher_outcome_adjustments(
             except (TypeError, ValueError):
                 min_ip_threshold = 0.0
 
-        sample_ip = _state_sample_ip(state)
+        sample_ip = _state_current_sample_ip(state)
         if min_ip_threshold > 0.0:
             if sample_ip is None or sample_ip <= 0:
                 outcome_gate = 0.0
