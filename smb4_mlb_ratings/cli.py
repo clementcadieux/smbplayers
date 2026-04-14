@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .aggregation import aggregate_from_manifest
 from .codec import (
+    build_canonical_snapshot_from_file,
     build_codec_import_from_file,
     build_dry_run_patch_preview_from_file,
     build_encoder_operation_plan_from_file,
@@ -160,6 +161,14 @@ def run_build_codec_interface(
     return 0
 
 
+def run_build_canonical_snapshot(
+    decoded_snapshot_path: Path,
+    output_path: Path,
+) -> int:
+    build_canonical_snapshot_from_file(decoded_snapshot_path, output_path)
+    return 0
+
+
 def run_build_encoder_plan(
     codec_import_path: Path,
     output_path: Path,
@@ -172,11 +181,13 @@ def run_build_dry_run_report(
     encoder_plan_path: Path,
     output_path: Path,
     current_snapshot_path: Path | None = None,
+    decoded_snapshot_path: Path | None = None,
 ) -> int:
     build_dry_run_patch_preview_from_file(
         encoder_plan_path,
         output_path,
         current_snapshot_path=current_snapshot_path,
+        decoded_snapshot_path=decoded_snapshot_path,
     )
     return 0
 
@@ -410,6 +421,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional SMB4 league folder override path",
     )
 
+    snapshot_parser = subparsers.add_parser(
+        "build-canonical-snapshot",
+        help="Normalize decoded league snapshot payload into canonical comparator schema",
+    )
+    snapshot_parser.add_argument(
+        "decoded_snapshot",
+        type=Path,
+        help="Decoded/current league snapshot JSON from decoder output",
+    )
+    snapshot_parser.add_argument(
+        "output",
+        type=Path,
+        help="Output canonical snapshot JSON",
+    )
+
     encoder_plan_parser = subparsers.add_parser(
         "build-encoder-plan",
         help="Build deterministic encoder operation plan from codec import JSON",
@@ -444,6 +470,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help="Optional decoded/current league snapshot JSON used for concrete before/after diffs",
+    )
+    dry_run_parser.add_argument(
+        "--decoded-snapshot",
+        type=Path,
+        default=None,
+        help="Optional raw decoded snapshot JSON; will be normalized to canonical schema before diffing",
     )
 
     ingest_rate_parser = subparsers.add_parser("ingest-rate", help="Normalize supported source files and rate them")
@@ -519,6 +551,11 @@ def main(argv: list[str] | None = None) -> int:
             namespace.output,
             league_folder=namespace.league_folder,
         )
+    if namespace.command == "build-canonical-snapshot":
+        return run_build_canonical_snapshot(
+            namespace.decoded_snapshot,
+            namespace.output,
+        )
     if namespace.command == "build-encoder-plan":
         return run_build_encoder_plan(
             namespace.codec_import,
@@ -529,6 +566,7 @@ def main(argv: list[str] | None = None) -> int:
             namespace.encoder_plan,
             namespace.output,
             current_snapshot_path=namespace.current_snapshot,
+            decoded_snapshot_path=namespace.decoded_snapshot,
         )
     if namespace.command == "ingest-rate":
         if namespace.output is None and namespace.structured_output is None:

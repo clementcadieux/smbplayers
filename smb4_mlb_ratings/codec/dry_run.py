@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .snapshot import load_canonical_snapshot_from_decoded
+
 
 def _ensure_object(value: object, path: str) -> dict[str, Any]:
     if not isinstance(value, dict):
@@ -252,11 +254,16 @@ def build_dry_run_patch_preview_from_file(
     output_path: Path,
     *,
     current_snapshot_path: Path | None = None,
+    decoded_snapshot_path: Path | None = None,
 ) -> dict[str, Any]:
+    if current_snapshot_path is not None and decoded_snapshot_path is not None:
+        raise ValueError("Provide only one of current_snapshot_path or decoded_snapshot_path")
     payload = _read_json_file(encoder_plan_path)
     current_snapshot_payload: dict[str, Any] | None = None
     if current_snapshot_path is not None:
         current_snapshot_payload = _ensure_object(_read_json_file(current_snapshot_path), "current_snapshot")
+    elif decoded_snapshot_path is not None:
+        current_snapshot_payload = load_canonical_snapshot_from_decoded(decoded_snapshot_path)
     report = build_dry_run_patch_preview(payload, current_snapshot_payload=current_snapshot_payload)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(report, indent=2), encoding="utf-8")

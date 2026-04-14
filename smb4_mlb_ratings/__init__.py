@@ -3,10 +3,13 @@ from .ingest import IngestManifest, ingest_from_manifest, load_manifest
 from .codec import (
 	build_codec_import_from_file,
 	build_codec_import_payload,
+	build_canonical_snapshot_from_file,
+	build_canonical_snapshot_payload,
 	build_dry_run_patch_preview,
 	build_dry_run_patch_preview_from_file,
 	build_encoder_operation_plan,
 	build_encoder_operation_plan_from_file,
+	load_canonical_snapshot_from_decoded,
 	load_bridge_payload,
 )
 from .models import PersonalityRecommendation, PlayerInput, RatingOutput, TraitSuggestion
@@ -26,6 +29,9 @@ __all__ = [
 	"load_bridge_payload",
 	"build_codec_import_payload",
 	"build_codec_import_from_file",
+	"build_canonical_snapshot_payload",
+	"build_canonical_snapshot_from_file",
+	"load_canonical_snapshot_from_decoded",
 	"build_dry_run_patch_preview",
 	"build_dry_run_patch_preview_from_file",
 	"build_encoder_operation_plan",

@@ -297,6 +297,86 @@ class CodecDryRunTests(unittest.TestCase):
             self.assertEqual(payload["summary"]["concrete_before_states"], 1)
             self.assertEqual(payload["summary"]["changed_operations"], 1)
 
+    def test_cli_build_dry_run_report_with_decoded_snapshot_writes_concrete_before_states(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            root = Path(tempdir)
+            plan_path = root / "encoder_plan.json"
+            decoded_path = root / "decoded_snapshot.json"
+            output_path = root / "dry_run_report.json"
+
+            plan_path.write_text(
+                json.dumps(
+                    {
+                        "plan_version": "v1",
+                        "codec_version": "v1",
+                        "league_folder": "C:/game/league",
+                        "source": {},
+                        "operations": [
+                            {
+                                "operation_type": "upsert_team_slot",
+                                "operation_id": "team:TOR:sp1:101",
+                                "target": {
+                                    "pool": "team",
+                                    "team": "TOR",
+                                    "slot_type": "sp1",
+                                    "position_group": "SP",
+                                },
+                                "player": {
+                                    "player_id": "101",
+                                    "player_name": "Starter A",
+                                    "role": "pitcher",
+                                },
+                                "attributes": {"velocity": 90},
+                                "attribute_source": "TOR_pitchers.csv",
+                            }
+                        ],
+                        "warnings": [],
+                    },
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+            decoded_path.write_text(
+                json.dumps(
+                    {
+                        "teams": [
+                            {
+                                "team": "TOR",
+                                "roster": [
+                                    {
+                                        "slot_type": "sp1",
+                                        "player": {
+                                            "player_id": "101",
+                                            "name": "Starter A",
+                                            "role": "pitcher",
+                                            "ratings": {"velocity": 80},
+                                        },
+                                    }
+                                ],
+                            }
+                        ],
+                        "free_agents": [],
+                    },
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+
+            result = main(
+                [
+                    "build-dry-run-report",
+                    str(plan_path),
+                    str(output_path),
+                    "--decoded-snapshot",
+                    str(decoded_path),
+                ]
+            )
+
+            self.assertEqual(result, 0)
+            payload = json.loads(output_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["summary"]["concrete_before_states"], 1)
+            self.assertEqual(payload["summary"]["changed_operations"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()
