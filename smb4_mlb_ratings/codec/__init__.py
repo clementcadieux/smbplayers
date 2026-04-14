@@ -11,6 +11,9 @@ from .snapshot import (
     build_canonical_snapshot_payload,
     load_canonical_snapshot_from_decoded,
 )
+from .decoder import decode_sav, decode_sav_to_file
+from .encoder import EncoderResult, apply_encoder_plan, apply_encoder_plan_from_file
+from .sav_io import compress_sav, decompress_sav
 
 __all__ = [
     "CodecImportRecord",
@@ -24,4 +27,11 @@ __all__ = [
     "build_canonical_snapshot_payload",
     "build_canonical_snapshot_from_file",
     "load_canonical_snapshot_from_decoded",
+    "decode_sav",
+    "decode_sav_to_file",
+    "EncoderResult",
+    "apply_encoder_plan",
+    "apply_encoder_plan_from_file",
+    "compress_sav",
+    "decompress_sav",
 ]

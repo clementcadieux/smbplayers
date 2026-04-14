@@ -14,6 +14,8 @@ from .codec import (
     build_dry_run_patch_preview_from_file,
     build_encoder_operation_plan_from_file,
 )
+from .codec.decoder import decode_sav_to_file
+from .codec.encoder import apply_encoder_plan_from_file
 from .generation import generate_output
 from .ingest import load_manifest
 from .league_bridge import build_roster_attribute_bridge
@@ -174,6 +176,29 @@ def run_build_encoder_plan(
     output_path: Path,
 ) -> int:
     build_encoder_operation_plan_from_file(codec_import_path, output_path)
+    return 0
+
+
+def run_decode_sav(
+    sav_path: Path,
+    output_path: Path,
+) -> int:
+    decode_sav_to_file(sav_path, output_path)
+    return 0
+
+
+def run_encode_sav(
+    plan_path: Path,
+    sav_path: Path,
+    *,
+    dry_run: bool = False,
+) -> int:
+    result = apply_encoder_plan_from_file(plan_path, sav_path, dry_run=dry_run)
+    summary = result.to_dict()
+    print(json.dumps(summary, indent=2))
+    if result.warnings:
+        for w in result.warnings:
+            print(f"[warn] {w}", file=sys.stderr)
     return 0
 
 
@@ -478,6 +503,41 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional raw decoded snapshot JSON; will be normalized to canonical schema before diffing",
     )
 
+    decode_sav_parser = subparsers.add_parser(
+        "decode-sav",
+        help="Decompress a SMB4 .sav file and write a canonical snapshot JSON",
+    )
+    decode_sav_parser.add_argument(
+        "sav_file",
+        type=Path,
+        help="Path to the SMB4 .sav league file",
+    )
+    decode_sav_parser.add_argument(
+        "output",
+        type=Path,
+        help="Output canonical snapshot JSON",
+    )
+
+    encode_sav_parser = subparsers.add_parser(
+        "encode-sav",
+        help="Apply an encoder operation plan to a SMB4 .sav file",
+    )
+    encode_sav_parser.add_argument(
+        "encoder_plan",
+        type=Path,
+        help="Encoder operation plan JSON (usually export/encoder_plan.json)",
+    )
+    encode_sav_parser.add_argument(
+        "sav_file",
+        type=Path,
+        help="Path to the SMB4 .sav league file to patch",
+    )
+    encode_sav_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Perform all DB work but do not write back to the .sav file",
+    )
+
     ingest_rate_parser = subparsers.add_parser("ingest-rate", help="Normalize supported source files and rate them")
     ingest_rate_parser.add_argument("manifest", type=Path, help="Ingestion manifest JSON file")
     ingest_rate_parser.add_argument("output", type=Path, nargs="?", default=None, help="Optional output ratings JSON file")
@@ -579,6 +639,10 @@ def main(argv: list[str] | None = None) -> int:
             namespace.team,
             namespace.config_path,
         )
+    if namespace.command == "decode-sav":
+        return run_decode_sav(namespace.sav_file, namespace.output)
+    if namespace.command == "encode-sav":
+        return run_encode_sav(namespace.encoder_plan, namespace.sav_file, dry_run=namespace.dry_run)
     if namespace.command == "refresh-bluejays-example":
         return run_refresh_bluejays_example(namespace.example_root, insecure_ssl=namespace.insecure)
 
