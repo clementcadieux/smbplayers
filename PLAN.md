@@ -85,3 +85,35 @@
 3. **Document usage** in `README.md` (or a dedicated `RUNNING.md`) with one-line examples for each layer trigger.
 
 4. **Add a smoke test** that invokes each trigger script/target with a minimal synthetic fixture and asserts zero exit code.
+
+---
+
+## Issue #116 – Elite Players Ratings Too Low
+
+**Problem:** Elite players' overall ratings are still not extreme enough. Top-tier pitchers like Skubal should floor at A+ and very likely reach S; the current curve does not push truly elite stat lines into the highest rating bands.
+
+### Steps
+
+1. **Audit the percentile-to-rating curve** in `config.json` to identify where elite percentile scores are being capped below the S/A+ band.
+
+2. **Widen the upper tail** of the non-linear rating curve so that the top 5 % of performers map to 95–99 and the top 10 % map to at least 90; store updated curve parameters in `config.json`.
+
+3. **Add or update named-player regression tests** asserting that a Skubal-level stat line produces an overall SP rating ≥ 90 (A+) and almost certainly ≥ 95 (S).
+
+4. **Verify no general inflation** – confirm that average-tier players do not drift above their expected mid-range bands.
+
+---
+
+## Issue #117 – Prioritize Positive Traits Over Negative Traits
+
+**Problem:** When a player qualifies for both positive and negative traits and the 2-trait cap forces a tie-break, negative traits are sometimes chosen over positive ones, which unfairly punishes players.
+
+### Steps
+
+1. **Classify all traits** in `smb4_player_reference.json` (or `config.json`) as `positive`, `negative`, or `neutral`.
+
+2. **Update trait selection logic** in `engine.py` so that, after scoring, positive traits are ranked above negative traits of equal confidence score before applying the 2-trait cap.
+
+3. **Preserve the elite-pitch priority rule** – elite-pitch traits (already boosted) should still outrank ordinary positive traits.
+
+4. **Add unit tests** for a player who qualifies for one positive and one negative trait at equal confidence, asserting only the positive trait is kept, and for a player with two positives and one negative, asserting both positives are kept.
