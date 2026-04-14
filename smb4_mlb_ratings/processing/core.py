@@ -60,6 +60,7 @@ ROLE_OVERALL_WEIGHTS: dict[str, dict[str, float]] = {}
 PLATOON_ADJUSTMENT_CONFIG: dict[str, object] = {}
 SURFACE_WEIGHT_CAPS: dict[str, float] = {}
 SP_OVERALL_BONUS: float = 7.0
+STARTER_VOLUME_STUFF_BOOST_CONFIG: dict[str, object] = {}
 OVERALL_GROUP_NORMALIZATION_CONFIG: dict[str, float | bool] = {}
 PITCHER_OUTCOME_ADJUSTMENT_CONFIG: dict[str, object] = {}
 PITCHER_DEFAULT_RATINGS: dict[str, int] = {}
@@ -105,6 +106,7 @@ def refresh_runtime_tuning() -> None:
     global PLATOON_ADJUSTMENT_CONFIG
     global SURFACE_WEIGHT_CAPS
     global SP_OVERALL_BONUS
+    global STARTER_VOLUME_STUFF_BOOST_CONFIG
     global OVERALL_GROUP_NORMALIZATION_CONFIG
     global PITCHER_OUTCOME_ADJUSTMENT_CONFIG
     global PITCHER_DEFAULT_RATINGS
@@ -227,6 +229,52 @@ def refresh_runtime_tuning() -> None:
         )
     except (TypeError, ValueError):
         SP_OVERALL_BONUS = 7.0
+
+    parsed_starter_volume_stuff_boost: dict[str, object] = {
+        "enabled": True,
+        "min_projected_ip": 80.0,
+        "max_projected_ip": 190.0,
+        "max_velocity_bonus": 8.0,
+        "max_junk_bonus": 12.0,
+    }
+    if isinstance(raw_pitcher_adjustments, Mapping):
+        raw_starter_boost = raw_pitcher_adjustments.get("starter_volume_stuff_boost")
+        if isinstance(raw_starter_boost, Mapping):
+            raw_enabled = raw_starter_boost.get("enabled")
+            if isinstance(raw_enabled, bool):
+                parsed_starter_volume_stuff_boost["enabled"] = raw_enabled
+
+            for key in (
+                "min_projected_ip",
+                "max_projected_ip",
+                "max_velocity_bonus",
+                "max_junk_bonus",
+            ):
+                raw_value = raw_starter_boost.get(key)
+                if raw_value is None:
+                    continue
+                try:
+                    parsed_starter_volume_stuff_boost[key] = float(raw_value)
+                except (TypeError, ValueError):
+                    continue
+
+    parsed_starter_volume_stuff_boost["min_projected_ip"] = max(
+        0.0,
+        float(parsed_starter_volume_stuff_boost["min_projected_ip"]),
+    )
+    parsed_starter_volume_stuff_boost["max_projected_ip"] = max(
+        float(parsed_starter_volume_stuff_boost["min_projected_ip"]),
+        float(parsed_starter_volume_stuff_boost["max_projected_ip"]),
+    )
+    parsed_starter_volume_stuff_boost["max_velocity_bonus"] = max(
+        0.0,
+        float(parsed_starter_volume_stuff_boost["max_velocity_bonus"]),
+    )
+    parsed_starter_volume_stuff_boost["max_junk_bonus"] = max(
+        0.0,
+        float(parsed_starter_volume_stuff_boost["max_junk_bonus"]),
+    )
+    STARTER_VOLUME_STUFF_BOOST_CONFIG = parsed_starter_volume_stuff_boost
 
     raw_overall_group_norm = tuning.get("overall_group_normalization", {})
     parsed_overall_group_norm: dict[str, float | bool] = {
@@ -574,33 +622,32 @@ RATING_SPECS = (
         name="velocity",
         roles=frozenset({"pitcher", "two_way"}),
         sample_key="tracked_fastballs",
-        stabilization_threshold=175,
+        stabilization_threshold=140,
         review_threshold=80,
         peer_mode="pitcher_role",
         volume_exponent=0.50,
         raw_tools_bias=True,
         components=(
-            ComponentSpec("avg_fastball_velocity", 0.70),
-            ComponentSpec("peak_fastball_velocity", 0.20),
-            ComponentSpec("fastball_usage", 0.10),
+            ComponentSpec("avg_fastball_velocity", 0.82),
+            ComponentSpec("peak_fastball_velocity", 0.18),
         ),
     ),
     RatingSpec(
         name="junk",
         roles=frozenset({"pitcher", "two_way"}),
         sample_key="tracked_pitches",
-        stabilization_threshold=275,
+        stabilization_threshold=220,
         review_threshold=120,
         peer_mode="pitcher_role",
         volume_exponent=0.60,
         raw_tools_bias=True,
         components=(
-            ComponentSpec("swinging_strike_rate", 0.25),
-            ComponentSpec("chase_rate", 0.15),
-            ComponentSpec("movement_quality", 0.20),
-            ComponentSpec("stuff_metric", 0.20),
-            ComponentSpec("arsenal_diversity", 0.10),
-            ComponentSpec("weak_contact_rate", 0.10, is_surface_stat=True),
+            ComponentSpec("swinging_strike_rate", 0.30),
+            ComponentSpec("chase_rate", 0.18),
+            ComponentSpec("movement_quality", 0.16),
+            ComponentSpec("stuff_metric", 0.24),
+            ComponentSpec("arsenal_diversity", 0.07),
+            ComponentSpec("weak_contact_rate", 0.05, is_surface_stat=True),
         ),
     ),
     RatingSpec(
@@ -1650,6 +1697,77 @@ def apply_pitcher_defensive_defaults(outputs: list[RatingOutput]) -> None:
             current_value = output.ratings.get(rating_name)
             if current_value is None or int(current_value) <= 0:
                 output.ratings[rating_name] = int(default_value)
+
+
+def apply_starter_volume_stuff_boost(
+    outputs: list[RatingOutput],
+    states_by_identity: Mapping[str, PlayerState],
+) -> None:
+    if not outputs:
+        return
+    if not bool(STARTER_VOLUME_STUFF_BOOST_CONFIG.get("enabled", True)):
+        return
+
+    min_projected_ip = max(0.0, float(STARTER_VOLUME_STUFF_BOOST_CONFIG.get("min_projected_ip", 80.0)))
+    max_projected_ip = max(
+        min_projected_ip,
+        float(STARTER_VOLUME_STUFF_BOOST_CONFIG.get("max_projected_ip", 190.0)),
+    )
+    max_velocity_bonus = max(0.0, float(STARTER_VOLUME_STUFF_BOOST_CONFIG.get("max_velocity_bonus", 8.0)))
+    max_junk_bonus = max(0.0, float(STARTER_VOLUME_STUFF_BOOST_CONFIG.get("max_junk_bonus", 12.0)))
+
+    if max_velocity_bonus <= 0.0 and max_junk_bonus <= 0.0:
+        return
+
+    for output in outputs:
+        if output.role not in {"pitcher", "two_way"}:
+            continue
+        if output.ratings.get("velocity") is None and output.ratings.get("junk") is None:
+            continue
+
+        state = states_by_identity.get(_output_identity_key(output))
+        if state is None:
+            continue
+        if pitcher_role_bucket_for_state(state) != "SP":
+            continue
+
+        projected_ip = resolved_projected_ip(state.player)
+        if projected_ip is None or projected_ip <= 0.0:
+            projected_ip = _state_sample_ip(state)
+        if projected_ip is None or projected_ip <= 0.0:
+            continue
+
+        if max_projected_ip > min_projected_ip:
+            volume_scale = clamp(
+                (float(projected_ip) - min_projected_ip) / (max_projected_ip - min_projected_ip),
+                0.0,
+                1.0,
+            )
+        else:
+            volume_scale = 1.0 if float(projected_ip) >= min_projected_ip else 0.0
+        if volume_scale <= 0.0:
+            continue
+
+        rating_changed = False
+        if output.ratings.get("velocity") is not None and max_velocity_bonus > 0.0:
+            boosted_velocity = int(
+                round(clamp(float(output.ratings["velocity"]) + (max_velocity_bonus * volume_scale), 1.0, 99.0))
+            )
+            if boosted_velocity != int(output.ratings["velocity"]):
+                output.ratings["velocity"] = boosted_velocity
+                rating_changed = True
+
+        if output.ratings.get("junk") is not None and max_junk_bonus > 0.0:
+            boosted_junk = int(round(clamp(float(output.ratings["junk"]) + (max_junk_bonus * volume_scale), 1.0, 99.0)))
+            if boosted_junk != int(output.ratings["junk"]):
+                output.ratings["junk"] = boosted_junk
+                rating_changed = True
+
+        if not rating_changed:
+            continue
+
+        output.overall_numeric = role_weighted_overall_numeric(output.role, output.ratings, pitcher_role="SP")
+        output.overall_grade = overall_grade(output.overall_numeric)
 
 
 def apply_known_two_way_player_overrides(
@@ -3139,6 +3257,7 @@ def _rate_players_core(
         output.overall_grade = overall_grade(output.overall_numeric)
 
     apply_pitcher_defensive_defaults(outputs)
+    apply_starter_volume_stuff_boost(outputs, states_by_identity)
     apply_pitcher_outcome_adjustments(outputs, states_by_identity)
     apply_known_two_way_player_overrides(outputs, states_by_identity)
     apply_overall_group_normalization(outputs, states_by_identity)

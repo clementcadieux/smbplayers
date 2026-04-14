@@ -3665,6 +3665,110 @@ class SurfaceBlendTests(unittest.TestCase):
         self.assertEqual(output.ratings.get("fielding"), 0)
         self.assertEqual(output.ratings.get("arm"), 0)
 
+    def test_starter_volume_stuff_boost_scales_with_projected_ip(self) -> None:
+        high_volume_player = PlayerInput.from_dict(
+            {
+                "name": "High Volume Starter",
+                "role": "pitcher",
+                "team": "NYM",
+                "primary_position": "P",
+                "projected_ip": 200,
+                "metadata": {"pitching_role": "starter"},
+                "samples": {"weighted_bf": 850},
+            }
+        )
+        low_volume_player = PlayerInput.from_dict(
+            {
+                "name": "Low Volume Starter",
+                "role": "pitcher",
+                "team": "NYM",
+                "primary_position": "P",
+                "projected_ip": 90,
+                "metadata": {"pitching_role": "starter"},
+                "samples": {"weighted_bf": 850},
+            }
+        )
+
+        high_output = RatingOutput.from_dict(
+            {
+                "name": "High Volume Starter",
+                "role": "pitcher",
+                "team": "NYM",
+                "primary_position": "P",
+                "bats": None,
+                "throws": "R",
+                "ratings": {"velocity": 80, "junk": 78, "accuracy": 80},
+                "percentiles": {},
+                "overall_numeric": 80,
+                "overall_grade": "B+",
+            }
+        )
+        low_output = RatingOutput.from_dict(
+            {
+                "name": "Low Volume Starter",
+                "role": "pitcher",
+                "team": "NYM",
+                "primary_position": "P",
+                "bats": None,
+                "throws": "R",
+                "ratings": {"velocity": 80, "junk": 78, "accuracy": 80},
+                "percentiles": {},
+                "overall_numeric": 80,
+                "overall_grade": "B+",
+            }
+        )
+
+        high_state = processing_core_module.state_from_player(high_volume_player)
+        low_state = processing_core_module.state_from_player(low_volume_player)
+        states_by_identity = {
+            processing_core_module._output_identity_key(high_output): high_state,
+            processing_core_module._output_identity_key(low_output): low_state,
+        }
+
+        processing_core_module.apply_starter_volume_stuff_boost([high_output, low_output], states_by_identity)
+
+        self.assertGreater(high_output.ratings.get("velocity", 0), low_output.ratings.get("velocity", 0))
+        self.assertGreater(high_output.ratings.get("junk", 0), low_output.ratings.get("junk", 0))
+        self.assertGreater(high_output.overall_numeric or 0, low_output.overall_numeric or 0)
+
+    def test_starter_volume_stuff_boost_does_not_apply_to_relievers(self) -> None:
+        reliever_player = PlayerInput.from_dict(
+            {
+                "name": "High Volume Reliever",
+                "role": "pitcher",
+                "team": "NYM",
+                "primary_position": "P",
+                "projected_ip": 200,
+                "metadata": {"pitching_role": "reliever"},
+                "samples": {"weighted_bf": 850},
+            }
+        )
+        reliever_output = RatingOutput.from_dict(
+            {
+                "name": "High Volume Reliever",
+                "role": "pitcher",
+                "team": "NYM",
+                "primary_position": "P",
+                "bats": None,
+                "throws": "R",
+                "ratings": {"velocity": 80, "junk": 78, "accuracy": 80},
+                "percentiles": {},
+                "overall_numeric": 80,
+                "overall_grade": "B+",
+            }
+        )
+
+        reliever_state = processing_core_module.state_from_player(reliever_player)
+        states_by_identity = {
+            processing_core_module._output_identity_key(reliever_output): reliever_state,
+        }
+
+        processing_core_module.apply_starter_volume_stuff_boost([reliever_output], states_by_identity)
+
+        self.assertEqual(reliever_output.ratings.get("velocity"), 80)
+        self.assertEqual(reliever_output.ratings.get("junk"), 78)
+        self.assertEqual(reliever_output.overall_numeric, 80)
+
     def test_shohei_ohtani_gets_mandatory_two_way_trait_without_synthetic_pitching_defaults(self) -> None:
         outputs = rate_players(
             [

@@ -171,7 +171,14 @@
     "utility_bonus_weight": 1.0
   },
   "pitcher_adjustments": {
-    "sp_overall_bonus": 7.0
+    "sp_overall_bonus": 7.0,
+    "starter_volume_stuff_boost": {
+      "enabled": true,
+      "min_projected_ip": 80.0,
+      "max_projected_ip": 190.0,
+      "max_velocity_bonus": 8.0,
+      "max_junk_bonus": 12.0
+    }
   },
   "overall_group_normalization": {
     "enabled": true,
@@ -188,8 +195,8 @@
     },
     "role_profiles": {
       "SP": {
-        "raw_weight": 0.25,
-        "outcome_weight": 0.75
+        "raw_weight": 0.30,
+        "outcome_weight": 0.70
       },
       "RP": {
         "raw_weight": 0.5,
@@ -214,11 +221,11 @@
         "higher_is_better": false
       },
       "k_pct": {
-        "weight": 0.6,
+        "weight": 1.0,
         "higher_is_better": true
       },
       "strikeout_rate": {
-        "weight": 0.6,
+        "weight": 1.0,
         "higher_is_better": true
       },
       "bb_pct": {
@@ -230,11 +237,11 @@
         "higher_is_better": false
       },
       "chase_rate": {
-        "weight": 0.3,
+        "weight": 0.7,
         "higher_is_better": true
       },
       "weak_contact_rate": {
-        "weight": 0.45,
+        "weight": 0.5,
         "higher_is_better": true
       }
     }
