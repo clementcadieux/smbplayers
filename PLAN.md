@@ -56,7 +56,52 @@
 
 ## Open Issues
 
-*(No open issues)*
+### Issue #122 – Elite Hitters and Starters Are Still Too Low Rated
+
+**Problem:** Relievers appear overrated relative to hitters and starters. The very best 1–2 players in each large position group (Hitters, Starters, Relievers) should be S-rated, with ratings scaling downward from there. Performance stats (OPS, wRC+, HR/AB, ERA, FIP, etc.) likely need more weight.
+
+**Plan:**
+1. **Intra-group percentile normalisation** – In `processing/core.py`, after computing raw composite scores, rank each player within their group (Hitters, Starters, Relievers) separately and re-map to percentiles before applying `percentile_to_rating`. This ensures each group has its own S-tier ceiling, independent of inter-group scale differences.
+2. **Increase performance-stat weights** – In `config.yaml` (or `config.json`), raise the weight of real-performance composites (e.g. `wrc_plus`, `ops`, `era_minus`, `fip_minus`) relative to raw-stuff metrics. Start with +20 % on real-performance composites for hitters and starters.
+3. **Reliever normalisation guard** – Ensure RP composites are not inadvertently boosted by the `sp_overall_bonus`; confirm the bonus applies only to SP role.
+4. **Regression tests** – Add assertions that the top hitter in a synthetic population reaches ≥ 95 overall, and that the top starter also reaches ≥ 95, while an average reliever scores below both.
+
+---
+
+### Issue #123 – Pitchers with Good Raw Stuff but Poor Results Are Overrated
+
+**Problem:** Players like Jacob Misiorowski score near the top despite weak real-world results; raw stuff (velocity, spin, movement) carries too much weight compared to actual outcome metrics.
+
+**Plan:**
+1. **Rebalance pitcher composite weights** – In `config.yaml` under `pitcher_weights` (or equivalent), reduce the weight of raw-stuff composites (`velocity`, `movement_quality`, `spin_rate`) and increase the weight of outcome composites (`era_minus`, `fip_minus`, `whip`, `k_pct`, `bb_pct`, `chase_rate`). A ratio of roughly 30 % raw stuff / 70 % outcomes for starters is the target.
+2. **Minimum-sample outcome gate** – If a pitcher has fewer than a configurable `min_ip_for_outcome_weight` innings, fall back to a higher raw-stuff weighting (since outcomes are noisy). Store the threshold in `smb4_player_reference.json` or `config.yaml`.
+3. **Starter vs. reliever weight profiles** – Outcome reliability differs between roles; allow separate weight profiles for SP and RP in config.
+4. **Tests** – Add a test with a synthetic pitcher whose raw stuff is elite but ERA/FIP are poor; assert their overall rating does not exceed the "average" tier.
+
+---
+
+### Issue #124 – Pitchers Need Default Fielding Values
+
+**Problem:** Non-two-way pitchers currently have no speed, fielding, or arm values. The game requires these slots to be filled; defaults should be 30 speed, 40 fielding, 50 arm.
+
+**Plan:**
+1. **Apply defaults in output layer** – In `processing/core.py` (or the Generation layer), after rating calculation, for any player whose `role` is `"pitcher"` (not `"two_way"`), set `speed = 30`, `fielding = 40`, and `arm = 50` if those fields are absent or zero.
+2. **Store defaults in config** – Add `pitcher_default_speed`, `pitcher_default_fielding`, and `pitcher_default_arm` keys to `config.yaml` (defaulting to 30, 40, 50 respectively) so they can be tuned without code changes.
+3. **Guard against overwriting real data** – Only apply defaults when the computed value is `None` or 0 (indicating no data), not when an actual fielding metric is present.
+4. **Tests** – Add a unit test confirming a pitcher with no fielding data receives exactly the three default values, and a two-way pitcher does not have the defaults applied.
+
+---
+
+### Issue #125 – Shohei Ohtani Appears Only as a Hitter
+
+**Problem:** Ohtani is a two-way player but currently only appears in hitter output. He should appear in the pitchers section as well, with his batting stats present.
+
+**Plan:**
+1. **Two-way player duplication in output** – In the Generation layer (`generation/`), detect players with `role == "two_way"` and emit two output records: one in the hitter file (with batting composites) and one in the pitcher file (with pitching composites + batting stats carried over).
+2. **Preserve batting fields on pitcher record** – Extend the pitcher CSV/JSON schema to include a subset of batting stats (`contact`, `power`, `speed`) for two-way players, reflecting their dual value.
+3. **Ingestion deduplication guard** – Ensure ingestion does not accidentally create two separate players when a two-way player appears in both Statcast batting and pitching exports. Use the existing composite merge key (player_id / name+team+season) to merge both export rows onto a single `PlayerInput` record with `role = "two_way"`.
+4. **Roster selector** – Confirm `roster_selector.py` can recommend a two-way player for both a batting slot and a pitching slot simultaneously (or at minimum, for whichever slot best fits team needs).
+5. **Tests** – Add a test with a synthetic two-way player fixture; assert they appear in both hitter and pitcher output sections and that their batting stats are non-zero in the pitcher record.
 
 ---
 
