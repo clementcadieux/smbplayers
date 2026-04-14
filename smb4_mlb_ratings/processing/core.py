@@ -59,7 +59,7 @@ TRAIT_CONFLICT_GROUPS: tuple[frozenset[str], ...] = ()
 ROLE_OVERALL_WEIGHTS: dict[str, dict[str, float]] = {}
 PLATOON_ADJUSTMENT_CONFIG: dict[str, object] = {}
 SURFACE_WEIGHT_CAPS: dict[str, float] = {}
-SP_OVERALL_BONUS: float = 4.0
+SP_OVERALL_BONUS: float = 7.0
 OVERALL_GROUP_NORMALIZATION_CONFIG: dict[str, float | bool] = {}
 PITCHER_OUTCOME_ADJUSTMENT_CONFIG: dict[str, object] = {}
 PITCHER_DEFAULT_RATINGS: dict[str, int] = {}
@@ -221,12 +221,12 @@ def refresh_runtime_tuning() -> None:
     raw_pitcher_adjustments = tuning.get("pitcher_adjustments", {})
     try:
         SP_OVERALL_BONUS = float(
-            raw_pitcher_adjustments.get("sp_overall_bonus", 4.0)
+            raw_pitcher_adjustments.get("sp_overall_bonus", 7.0)
             if isinstance(raw_pitcher_adjustments, Mapping)
-            else 4.0
+            else 7.0
         )
     except (TypeError, ValueError):
-        SP_OVERALL_BONUS = 4.0
+        SP_OVERALL_BONUS = 7.0
 
     raw_overall_group_norm = tuning.get("overall_group_normalization", {})
     parsed_overall_group_norm: dict[str, float | bool] = {
@@ -254,20 +254,20 @@ def refresh_runtime_tuning() -> None:
     parsed_pitcher_outcome_adjustment: dict[str, object] = {
         "enabled": True,
         "metrics": {
-            "era_minus": {"weight": 1.1, "higher_is_better": False},
-            "fip_minus": {"weight": 1.0, "higher_is_better": False},
-            "whip": {"weight": 0.9, "higher_is_better": False},
-            "k_pct": {"weight": 0.7, "higher_is_better": True},
-            "strikeout_rate": {"weight": 0.7, "higher_is_better": True},
-            "bb_pct": {"weight": 0.7, "higher_is_better": False},
-            "walk_rate": {"weight": 0.9, "higher_is_better": False},
-            "chase_rate": {"weight": 0.45, "higher_is_better": True},
-            "weak_contact_rate": {"weight": 0.6, "higher_is_better": True},
+            "era_minus": {"weight": 1.35, "higher_is_better": False},
+            "fip_minus": {"weight": 1.2, "higher_is_better": False},
+            "whip": {"weight": 1.15, "higher_is_better": False},
+            "k_pct": {"weight": 0.6, "higher_is_better": True},
+            "strikeout_rate": {"weight": 0.6, "higher_is_better": True},
+            "bb_pct": {"weight": 0.95, "higher_is_better": False},
+            "walk_rate": {"weight": 1.0, "higher_is_better": False},
+            "chase_rate": {"weight": 0.3, "higher_is_better": True},
+            "weak_contact_rate": {"weight": 0.45, "higher_is_better": True},
         },
         "role_profiles": {
-            "SP": {"raw_weight": 0.30, "outcome_weight": 0.70},
-            "RP": {"raw_weight": 0.45, "outcome_weight": 0.55},
-            "default": {"raw_weight": 0.40, "outcome_weight": 0.60},
+            "SP": {"raw_weight": 0.25, "outcome_weight": 0.75},
+            "RP": {"raw_weight": 0.50, "outcome_weight": 0.50},
+            "default": {"raw_weight": 0.35, "outcome_weight": 0.65},
         },
         "min_ip_for_outcome_weight": {
             "SP": 80.0,
@@ -1618,7 +1618,7 @@ def apply_pitcher_outcome_adjustments(
 
 def apply_pitcher_defensive_defaults(outputs: list[RatingOutput]) -> None:
     for output in outputs:
-        if output.role not in ("pitcher", "two_way"):
+        if output.role != "pitcher":
             continue
         for rating_name, default_value in PITCHER_DEFAULT_RATINGS.items():
             current_value = output.ratings.get(rating_name)
@@ -2822,6 +2822,10 @@ def pitcher_role_bucket_for_state(state: PlayerState) -> str | None:
 
     if state.player.projected_ip is not None:
         return "SP" if state.player.projected_ip >= 80 else "RP"
+
+    resolved_ip = resolved_projected_ip(state.player)
+    if resolved_ip is not None:
+        return "SP" if resolved_ip >= 80 else "RP"
 
     weighted_bf = state.samples.get("weighted_bf")
     if weighted_bf is not None:

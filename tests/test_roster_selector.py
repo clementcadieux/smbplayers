@@ -135,6 +135,8 @@ class RosterSelectorTests(unittest.TestCase):
             role=role,
             team=team,
             primary_position=primary_position,
+            bats=None,
+            throws=None,
             ratings={"overall": overall},
             percentiles={"overall": float(overall)},
             overall_numeric=overall,

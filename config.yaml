@@ -169,7 +169,7 @@
     "utility_bonus_weight": 1.0
   },
   "pitcher_adjustments": {
-    "sp_overall_bonus": 4.0
+    "sp_overall_bonus": 7.0
   },
   "overall_group_normalization": {
     "enabled": true,
@@ -186,53 +186,53 @@
     },
     "role_profiles": {
       "SP": {
-        "raw_weight": 0.3,
-        "outcome_weight": 0.7
+        "raw_weight": 0.25,
+        "outcome_weight": 0.75
       },
       "RP": {
-        "raw_weight": 0.45,
-        "outcome_weight": 0.55
+        "raw_weight": 0.5,
+        "outcome_weight": 0.5
       },
       "default": {
-        "raw_weight": 0.4,
-        "outcome_weight": 0.6
+        "raw_weight": 0.35,
+        "outcome_weight": 0.65
       }
     },
     "metrics": {
       "era_minus": {
-        "weight": 1.1,
+        "weight": 1.35,
         "higher_is_better": false
       },
       "fip_minus": {
-        "weight": 1.0,
+        "weight": 1.2,
         "higher_is_better": false
       },
       "whip": {
-        "weight": 0.9,
+        "weight": 1.15,
         "higher_is_better": false
       },
       "k_pct": {
-        "weight": 0.7,
+        "weight": 0.6,
         "higher_is_better": true
       },
       "strikeout_rate": {
-        "weight": 0.7,
+        "weight": 0.6,
         "higher_is_better": true
       },
       "bb_pct": {
-        "weight": 0.7,
+        "weight": 0.95,
         "higher_is_better": false
       },
       "walk_rate": {
-        "weight": 0.9,
+        "weight": 1.0,
         "higher_is_better": false
       },
       "chase_rate": {
-        "weight": 0.45,
+        "weight": 0.3,
         "higher_is_better": true
       },
       "weak_contact_rate": {
-        "weight": 0.6,
+        "weight": 0.45,
         "higher_is_better": true
       }
     }
