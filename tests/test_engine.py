@@ -2575,7 +2575,7 @@ class SurfaceBlendTests(unittest.TestCase):
         weighted = role_weighted_overall_numeric("pitcher", ratings)
         self.assertGreaterEqual(weighted or 0, 95)
 
-    def test_sp_overall_bonus_makes_starter_rate_higher_than_equal_reliever(self) -> None:
+    def test_sp_rates_higher_than_equal_rp(self) -> None:
         # An SP and RP with identical raw stats should produce different overall ratings
         # because starting pitchers sustain their performance across more innings.
         sp_peers = [
@@ -2596,8 +2596,8 @@ class SurfaceBlendTests(unittest.TestCase):
 
         self.assertGreater(sp_out.overall_numeric or 0, rp_out.overall_numeric or 0)
 
-    def test_skubal_tier_sp_reaches_at_least_a_plus(self) -> None:
-        # A Skubal-calibre ace SP should floor at A+ (≥ 93) overall.
+    def test_elite_sp_reaches_a_plus_overall(self) -> None:
+        # An ace-calibre SP should floor at A+ (≥ 93) overall.
         sp_peers = [
             self._pitcher_peer(f"SP Peer {i}", 91.0 + i * 0.1, 0.100 + i * 0.001, 0.265 + i * 0.001, 0.085 - i * 0.0005, role_hint="starter", weighted_bf=820 + i * 5)
             for i in range(1, 20)
