@@ -139,6 +139,7 @@ class IngestFrameworkTests(unittest.TestCase):
                     "Arm Strength": 89.4,
                     "Pop Time": 1.92,
                     "Framing Runs": 8.1,
+                    "Blocking Runs": 1.4,
                     "Outfield Arm Runs": 2.9,
                 }
             ],
@@ -587,6 +588,7 @@ class IngestFrameworkTests(unittest.TestCase):
         self.assertAlmostEqual(hitter["metrics"]["walk_rate"]["current"], 0.087)
         self.assertAlmostEqual(hitter["metrics"]["pop_time"]["current"], 1.92)
         self.assertAlmostEqual(hitter["metrics"]["framing_runs"]["current"], 8.1)
+        self.assertAlmostEqual(hitter["metrics"]["blocking_runs"]["current"], 1.4)
         self.assertAlmostEqual(hitter["positional_games"]["CF"], 1115.0)
 
         self.assertEqual(pitcher["role"], "pitcher")

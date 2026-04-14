@@ -386,7 +386,8 @@ RATING_SPECS = (
             ComponentSpec("uzr", 0.12),
             ComponentSpec("fielding_pct_proxy", 0.08),
             ComponentSpec("position_difficulty", 0.08),
-            ComponentSpec("framing_runs", 0.15, position_groups=frozenset({"catcher"})),
+            ComponentSpec("framing_runs", 0.12, position_groups=frozenset({"catcher"})),
+            ComponentSpec("blocking_runs", 0.08, position_groups=frozenset({"catcher"})),
         ),
     ),
     RatingSpec(
@@ -650,6 +651,47 @@ def metric_season_weights(
     return weights
 
 
+def prior_metric_fallback_weights(
+    metric_seasons: Mapping[str, float],
+    sample_seasons: Mapping[str, float] | None,
+    *,
+    sample_key: str | None,
+    player: PlayerInput | None,
+    volume_exponent: float,
+) -> dict[str, float]:
+    weights: dict[str, float] = {}
+    recency_weights = season_recency_weights()
+
+    for season_key in SEASON_KEYS:
+        if season_key == "current":
+            continue
+
+        metric_value = metric_seasons.get(season_key)
+        recency_weight = recency_weights.get(season_key, 0.0)
+        if metric_value is None or recency_weight <= 0:
+            continue
+
+        volume_weight = 1.0
+        if sample_seasons is not None:
+            season_volume = sample_seasons.get(season_key)
+            if season_volume is not None:
+                if season_volume <= 0:
+                    continue
+                volume_weight = season_progress(
+                    season_volume,
+                    sample_key=sample_key,
+                    sample_seasons=sample_seasons,
+                    player=player,
+                    volume_exponent=volume_exponent,
+                )
+                if volume_weight <= 0:
+                    continue
+
+        weights[season_key] = recency_weight * volume_weight
+
+    return weights
+
+
 def prior_season_baseline(metric_seasons: Mapping[str, float]) -> float | None:
     recency_weights = season_recency_weights()
     total_weight = 0.0
@@ -737,6 +779,19 @@ def weighted_metric_value(
         return None
 
     sample_seasons = season_dict(sample_value)
+    if metric_seasons.get("current") is None:
+        season_weights = prior_metric_fallback_weights(
+            metric_seasons,
+            sample_seasons,
+            sample_key=sample_key,
+            player=player,
+            volume_exponent=volume_exponent,
+        )
+        total_weight = sum(season_weights.values())
+        if total_weight == 0:
+            return None
+        return sum(metric_seasons[season_key] * weight for season_key, weight in season_weights.items()) / total_weight
+
     season_weights = metric_season_weights(
         metric_seasons,
         sample_seasons,

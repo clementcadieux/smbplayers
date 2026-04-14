@@ -1209,6 +1209,7 @@ def _apply_fielding_row(player: PlayerAccumulator, season_key: str, row: dict[st
     outfield_arm_runs = _pick_number(row, "outfield_arm_runs", "arm_value", "outfielder_jump_runs")
     pop_time = _pick_number(row, "pop_time", "pop_2b_sba", "exchange_2b_sba", "pop_time_2b", "avg_pop_time_2b")
     framing_runs = _pick_number(row, "framing_runs", "framing", "framing_run_value", "catcher_framing_runs")
+    blocking_runs = _pick_number(row, "blocking_runs", "catcher_blocking_runs", "blocks_above_avg", "blocks_above_average")
 
     player.set_metric("oaa", season_key, oaa)
     player.set_metric("drs", season_key, drs)
@@ -1220,6 +1221,7 @@ def _apply_fielding_row(player: PlayerAccumulator, season_key: str, row: dict[st
     player.set_metric("outfield_arm_runs", season_key, outfield_arm_runs)
     player.set_metric("pop_time", season_key, pop_time)
     player.set_metric("framing_runs", season_key, framing_runs)
+    player.set_metric("blocking_runs", season_key, blocking_runs)
     player.set_metric("arm_position_baseline", season_key, _position_metric(position, ARM_POSITION_BASELINE, 0.50), estimated=True)
     player.set_sample("defensive_innings", season_key, innings)
     if row_positions:

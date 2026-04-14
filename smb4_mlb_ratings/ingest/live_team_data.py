@@ -371,7 +371,8 @@ def build_savant_fielding_rows(
                 "Catcher Throw Value": _as_float(fielding.get("catcherThrowValue")) or _as_float(fielding.get("caughtStealingAboveAverage")),
                 "Outfield Arm Runs": _as_float(fielding.get("outfieldArmRuns")) or _as_float(fielding.get("armRuns")),
                 "Pop Time": _as_float(fielding.get("popTime")) or _as_float(fielding.get("avgPopTime2B")),
-                "Framing Runs": _as_float(fielding.get("framingRuns")) or _as_float(fielding.get("catcherFramingRuns")),
+                "Framing Runs": _as_float(fielding.get("framingRuns")) if fielding.get("framingRuns") is not None else _as_float(fielding.get("catcherFramingRuns")),
+                "Blocking Runs": _as_float(fielding.get("blockingRuns")) if fielding.get("blockingRuns") is not None else _as_float(fielding.get("catcherBlockingRuns")),
             }
         )
 
@@ -416,7 +417,7 @@ def build_savant_fielding_rows(
             continue
         if existing.get("Defensive Innings") is None and fallback.get("Defensive Innings") is not None:
             existing["Defensive Innings"] = fallback.get("Defensive Innings")
-        for metric_key in ("OAA", "DRS", "UZR", "Outfield Arm Runs", "Catcher Throw Value", "Framing Runs"):
+        for metric_key in ("OAA", "DRS", "UZR", "Outfield Arm Runs", "Catcher Throw Value", "Framing Runs", "Blocking Runs"):
             if fallback.get(metric_key) is not None:
                 existing[metric_key] = fallback.get(metric_key)
 
@@ -479,13 +480,21 @@ def parse_savant_fielding_run_value_csv(payload: str) -> list[dict[str, Any]]:
         range_runs = _as_float(row.get("Range") or row.get("range") or row.get("range_runs"))
         arm_runs = _as_float(row.get("Arm") or row.get("arm") or row.get("arm_runs"))
         framing_runs = _as_float(row.get("Framing") or row.get("framing") or row.get("framing_runs"))
+        blocking_runs = _as_float(
+            row.get("Blocking")
+            or row.get("blocking")
+            or row.get("blocking_runs")
+            or row.get("catcher_blocking_runs")
+            or row.get("blocks_above_avg")
+            or row.get("blocks_above_average")
+        )
         throwing_runs = _as_float(row.get("Throwing") or row.get("throwing") or row.get("throwing_runs"))
         positional_outs: dict[str, float] = {}
         for outs_column, parsed_position in _POSITION_OUTS_COLUMN_MAP.items():
             outs_value = _as_float(row.get(outs_column))
             if outs_value is not None and outs_value > 0:
                 positional_outs[parsed_position] = outs_value
-        if all(value is None for value in (fielding_run_value, range_runs, arm_runs, framing_runs, throwing_runs)):
+        if all(value is None for value in (fielding_run_value, range_runs, arm_runs, framing_runs, blocking_runs, throwing_runs)):
             continue
         parsed_rows.append(
             {
@@ -497,6 +506,7 @@ def parse_savant_fielding_run_value_csv(payload: str) -> list[dict[str, Any]]:
                 "range_runs": range_runs,
                 "arm_runs": arm_runs,
                 "framing_runs": framing_runs,
+                "blocking_runs": blocking_runs,
                 "throwing_runs": throwing_runs,
                 "positional_outs": positional_outs,
             }
@@ -616,6 +626,53 @@ def parse_savant_catcher_throwing_csv(payload: str) -> list[dict[str, Any]]:
                 "catcher_throw_value": catcher_throw_value,
                 "pop_time": pop_time,
                 "arm_strength": arm_strength,
+            }
+        )
+    return parsed_rows
+
+
+def parse_savant_catcher_framing_csv(payload: str) -> list[dict[str, Any]]:
+    reader = csv.DictReader(io.StringIO(payload.lstrip("\ufeff")))
+    parsed_rows: list[dict[str, Any]] = []
+    for row in reader:
+        if not isinstance(row, dict):
+            continue
+        name = _player_name_from_row(row)
+        if not name:
+            continue
+        player_id = _as_int(row.get("player_id") or row.get("id") or row.get("mlbam_id"))
+        team = _as_str(row.get("team_name") or row.get("Team") or row.get("Tm") or row.get("team") or row.get("display_team_name"))
+        framing_runs = _as_float(
+            row.get("Catcher Framing Runs")
+            or row.get("catcher_framing_runs")
+            or row.get("framing_runs")
+            or row.get("framing_run_value")
+            or row.get("rv_tot")
+        )
+        blocking_runs = _as_float(
+            row.get("Blocking Runs")
+            or row.get("catcher_blocking_runs")
+            or row.get("blocking_runs")
+            or row.get("blocks_above_avg")
+            or row.get("blocks_above_average")
+        )
+        pitches = _as_float(
+            row.get("Pitches")
+            or row.get("pitches")
+            or row.get("called_pitches")
+            or row.get("shadow_pitches")
+            or row.get("n")
+        )
+        if framing_runs is None and blocking_runs is None:
+            continue
+        parsed_rows.append(
+            {
+                "name": name,
+                "player_id": player_id,
+                "team": team.upper() if team else None,
+                "framing_runs": framing_runs,
+                "blocking_runs": blocking_runs,
+                "pitches": pitches,
             }
         )
     return parsed_rows
@@ -813,6 +870,7 @@ def _build_savant_defensive_fallback_rows(
             range_runs = _as_float(frv.get("range_runs")) if isinstance(frv, Mapping) else None
             arm_runs = _as_float(frv.get("arm_runs")) if isinstance(frv, Mapping) else None
             framing_runs = _as_float(frv.get("framing_runs")) if isinstance(frv, Mapping) else None
+            blocking_runs = _as_float(frv.get("blocking_runs")) if isinstance(frv, Mapping) else None
             throwing_runs = _as_float(frv.get("throwing_runs")) if isinstance(frv, Mapping) else None
             oaa = _as_float(oaa_row.get("oaa")) if isinstance(oaa_row, Mapping) else None
             runs_prevented = _as_float(oaa_row.get("runs_prevented")) if isinstance(oaa_row, Mapping) else None
@@ -850,6 +908,7 @@ def _build_savant_defensive_fallback_rows(
                     "Outfield Arm Runs": arm_runs,
                     "Catcher Throw Value": throwing_runs,
                     "Framing Runs": framing_runs,
+                    "Blocking Runs": blocking_runs,
                 }
             )
 
@@ -1713,6 +1772,112 @@ def _fetch_savant_catcher_throwing_csv(
     )
 
 
+def _fetch_savant_catcher_framing_csv(
+    *,
+    season: int,
+    ssl_context: SSLContext | None,
+    baseball_savant: str,
+) -> str | None:
+    candidate_urls = (
+        (
+            f"{baseball_savant}/leaderboard/catcher-framing"
+            f"?type=catcher&seasonStart={season}&seasonEnd={season}&team=&min=0"
+            "&sortColumn=rv_tot&sortDirection=desc&csv=true"
+        ),
+        (
+            f"{baseball_savant}/leaderboard/catcher-framing"
+            f"?type=catcher&seasonStart={season}&seasonEnd={season}&team=&min=q"
+            "&sortColumn=rv_tot&sortDirection=desc&csv=true"
+        ),
+        (
+            f"{baseball_savant}/leaderboard/catcher_framing"
+            f"?year={season}&csv=true"
+        ),
+    )
+    for url in candidate_urls:
+        try:
+            payload = _fetch_text(url, ssl_context=ssl_context, headers={"User-Agent": "Mozilla/5.0"})
+        except (HTTPError, URLError, TimeoutError, OSError):
+            continue
+        if parse_savant_catcher_framing_csv(payload):
+            return payload
+    return None
+
+
+def _fetch_savant_catcher_blocking_csv(
+    *,
+    season: int,
+    ssl_context: SSLContext | None,
+    baseball_savant: str,
+) -> str | None:
+    candidate_urls = (
+        f"{baseball_savant}/leaderboard/catcher-blocking?year={season}&csv=true",
+        f"{baseball_savant}/leaderboard/catcher-blocking?year={season}&min=0&csv=true",
+    )
+    return _fetch_first_valid_csv(
+        candidate_urls,
+        required_headers=("player_id", "catcher_blocking_runs"),
+        ssl_context=ssl_context,
+    )
+
+
+def parse_savant_catcher_blocking_csv(payload: str) -> list[dict[str, Any]]:
+    reader = csv.DictReader(io.StringIO(payload.lstrip("\ufeff")))
+    parsed_rows: list[dict[str, Any]] = []
+    for row in reader:
+        if not isinstance(row, dict):
+            continue
+        name = _player_name_from_row(row)
+        if not name:
+            continue
+        player_id = _as_int(row.get("player_id") or row.get("id") or row.get("mlbam_id"))
+        team = _as_str(row.get("team_name") or row.get("Team") or row.get("team"))
+        blocking_runs = _as_float(
+            row.get("catcher_blocking_runs")
+            or row.get("blocking_runs")
+            or row.get("blocks_above_average")
+            or row.get("blocks_above_avg")
+        )
+        if blocking_runs is None:
+            continue
+        parsed_rows.append(
+            {
+                "name": name,
+                "player_id": player_id,
+                "team": team.upper() if team else None,
+                "blocking_runs": blocking_runs,
+            }
+        )
+    return parsed_rows
+
+
+def _merge_metric_values(
+    existing: dict[str, float] | None,
+    new_metrics: Mapping[str, float],
+) -> dict[str, float]:
+    merged = dict(existing or {})
+    for key, value in new_metrics.items():
+        if value is None or key in merged:
+            continue
+        merged[key] = value
+    return merged
+
+
+def _lookup_metric_values(
+    *,
+    player_id: int | None,
+    normalized_name: str | None,
+    metrics_by_id: Mapping[int, dict[str, float]],
+    metrics_by_name: Mapping[str, dict[str, float]],
+) -> dict[str, float] | None:
+    merged: dict[str, float] = {}
+    if player_id is not None:
+        merged = _merge_metric_values(merged, metrics_by_id.get(player_id, {}))
+    if normalized_name:
+        merged = _merge_metric_values(merged, metrics_by_name.get(normalized_name, {}))
+    return merged or None
+
+
 def _apply_savant_arm_strength(
     players: list[dict[str, Any]],
     *,
@@ -1775,7 +1940,12 @@ def _apply_savant_catcher_defense(
 ) -> None:
     catcher_by_id: dict[int, dict[str, float]] = {}
     catcher_by_name: dict[str, dict[str, float]] = {}
+    frv_by_id: dict[int, dict[str, float]] = {}
     frv_by_name: dict[str, dict[str, float]] = {}
+    framing_by_id: dict[int, dict[str, float]] = {}
+    framing_by_name: dict[str, dict[str, float]] = {}
+    blocking_by_id: dict[int, dict[str, float]] = {}
+    blocking_by_name: dict[str, dict[str, float]] = {}
 
     for season in seasons:
         catcher_payload = _fetch_savant_catcher_throwing_csv(
@@ -1798,12 +1968,12 @@ def _apply_savant_catcher_defense(
                 }
                 if not metrics:
                     continue
-                if player_id is not None and player_id not in catcher_by_id:
-                    catcher_by_id[player_id] = metrics
+                if player_id is not None:
+                    catcher_by_id[player_id] = _merge_metric_values(catcher_by_id.get(player_id), metrics)
                 if row_name:
                     normalized = _normalized_name(row_name)
-                    if normalized and normalized not in catcher_by_name:
-                        catcher_by_name[normalized] = metrics
+                    if normalized:
+                        catcher_by_name[normalized] = _merge_metric_values(catcher_by_name.get(normalized), metrics)
 
         frv_payload = _fetch_savant_fielding_run_value_csv(
             season=season,
@@ -1819,19 +1989,69 @@ def _apply_savant_catcher_defense(
                     key: value
                     for key, value in {
                         "framing_runs": _as_float(row.get("framing_runs")),
+                        "blocking_runs": _as_float(row.get("blocking_runs")),
                         "catcher_throw_value": _as_float(row.get("throwing_runs")),
                     }.items()
                     if value is not None
                 }
                 if not metrics:
                     continue
-                # FRV does not currently expose player_id in our parsed row,
-                # so name-based matching is the primary lookup for this table.
+                player_id = _as_int(row.get("player_id"))
                 normalized = _normalized_name(player_name)
-                if normalized and normalized not in frv_by_name:
-                    frv_by_name[normalized] = metrics
+                if player_id is not None:
+                    frv_by_id[player_id] = _merge_metric_values(frv_by_id.get(player_id), metrics)
+                if normalized:
+                    frv_by_name[normalized] = _merge_metric_values(frv_by_name.get(normalized), metrics)
 
-    if not catcher_by_id and not catcher_by_name and not frv_by_name:
+        framing_payload = _fetch_savant_catcher_framing_csv(
+            season=season,
+            ssl_context=ssl_context,
+            baseball_savant=baseball_savant,
+        )
+        if framing_payload:
+            for row in parse_savant_catcher_framing_csv(framing_payload):
+                framing_runs = _as_float(row.get("framing_runs"))
+                blocking_runs = _as_float(row.get("blocking_runs"))
+                if framing_runs is None and blocking_runs is None:
+                    continue
+                metrics = {
+                    key: value
+                    for key, value in {
+                        "framing_runs": framing_runs,
+                        "blocking_runs": blocking_runs,
+                    }.items()
+                    if value is not None
+                }
+                player_id = _as_int(row.get("player_id"))
+                player_name = _as_str(row.get("name"))
+                if player_id is not None:
+                    framing_by_id[player_id] = _merge_metric_values(framing_by_id.get(player_id), metrics)
+                if player_name:
+                    normalized = _normalized_name(player_name)
+                    if normalized:
+                        framing_by_name[normalized] = _merge_metric_values(framing_by_name.get(normalized), metrics)
+
+        blocking_payload = _fetch_savant_catcher_blocking_csv(
+            season=season,
+            ssl_context=ssl_context,
+            baseball_savant=baseball_savant,
+        )
+        if blocking_payload:
+            for row in parse_savant_catcher_blocking_csv(blocking_payload):
+                blocking_runs = _as_float(row.get("blocking_runs"))
+                if blocking_runs is None:
+                    continue
+                player_id = _as_int(row.get("player_id"))
+                player_name = _as_str(row.get("name"))
+                metrics = {"blocking_runs": blocking_runs}
+                if player_id is not None:
+                    blocking_by_id[player_id] = _merge_metric_values(blocking_by_id.get(player_id), metrics)
+                if player_name:
+                    normalized = _normalized_name(player_name)
+                    if normalized:
+                        blocking_by_name[normalized] = _merge_metric_values(blocking_by_name.get(normalized), metrics)
+
+    if not catcher_by_id and not catcher_by_name and not frv_by_id and not frv_by_name and not framing_by_id and not framing_by_name and not blocking_by_id and not blocking_by_name:
         return
 
     for player in players:
@@ -1842,11 +2062,30 @@ def _apply_savant_catcher_defense(
         player_name = _as_str(player.get("name"))
         normalized_name = _normalized_name(player_name) if player_name else None
 
-        catcher_metrics = catcher_by_id.get(player_id) if player_id is not None else None
-        if catcher_metrics is None and normalized_name:
-            catcher_metrics = catcher_by_name.get(normalized_name)
-
-        frv_metrics = frv_by_name.get(normalized_name) if normalized_name else None
+        catcher_metrics = _lookup_metric_values(
+            player_id=player_id,
+            normalized_name=normalized_name,
+            metrics_by_id=catcher_by_id,
+            metrics_by_name=catcher_by_name,
+        )
+        frv_metrics = _lookup_metric_values(
+            player_id=player_id,
+            normalized_name=normalized_name,
+            metrics_by_id=frv_by_id,
+            metrics_by_name=frv_by_name,
+        )
+        framing_metrics = _lookup_metric_values(
+            player_id=player_id,
+            normalized_name=normalized_name,
+            metrics_by_id=framing_by_id,
+            metrics_by_name=framing_by_name,
+        )
+        blocking_metrics = _lookup_metric_values(
+            player_id=player_id,
+            normalized_name=normalized_name,
+            metrics_by_id=blocking_by_id,
+            metrics_by_name=blocking_by_name,
+        )
 
         if catcher_metrics:
             if _as_float(fielding.get("caughtStealingAboveAverage")) is None and _as_float(fielding.get("catcherThrowValue")) is None:
@@ -1862,10 +2101,19 @@ def _apply_savant_catcher_defense(
                 if arm is not None:
                     fielding["armStrength"] = arm
 
-        if frv_metrics and _as_float(fielding.get("framingRuns")) is None and _as_float(fielding.get("catcherFramingRuns")) is None:
-            framing = _as_float(frv_metrics.get("framing_runs"))
+        framing_source = framing_metrics or frv_metrics
+        if framing_source and _as_float(fielding.get("framingRuns")) is None and _as_float(fielding.get("catcherFramingRuns")) is None:
+            framing = _as_float(framing_source.get("framing_runs"))
             if framing is not None:
                 fielding["framingRuns"] = framing
+
+        # blocking_metrics (catcher-blocking leaderboard) takes priority, then framing/frv fallback
+        blocking_source = blocking_metrics or framing_source
+        if blocking_source and _as_float(fielding.get("blockingRuns")) is None and _as_float(fielding.get("catcherBlockingRuns")) is None:
+            blocking = _as_float(blocking_source.get("blocking_runs"))
+            if blocking is not None:
+                fielding["blockingRuns"] = blocking
+
         if frv_metrics and _as_float(fielding.get("caughtStealingAboveAverage")) is None and _as_float(fielding.get("catcherThrowValue")) is None:
             ctv = _as_float(frv_metrics.get("catcher_throw_value"))
             if ctv is not None:
