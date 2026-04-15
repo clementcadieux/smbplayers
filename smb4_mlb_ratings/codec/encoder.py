@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -86,6 +87,14 @@ _UPSERT_OPTION_SQL = """
     ON CONFLICT (baseballPlayerLocalID, optionKey)
     DO UPDATE SET optionValue = excluded.optionValue,
                   optionType  = excluded.optionType
+"""
+
+_DELETE_OPTION_SQL = """
+    DELETE FROM t_baseball_player_options
+     WHERE baseballPlayerLocalID = (
+         SELECT localID FROM t_baseball_player_local_ids WHERE GUID = ?
+     )
+       AND optionKey = ?
 """
 
 _UPDATE_PLAYER_SQL = """
@@ -156,6 +165,7 @@ def _find_player_guid(
     player_id: str,
     player_name: str,
     result: EncoderResult,
+    normalized_name_index: dict[str, list[bytes]] | None = None,
 ) -> bytes | None:
     """
     Return the 16-byte GUID blob for the player, or None if not found.
@@ -170,6 +180,23 @@ def _find_player_guid(
 
     # Name fallback
     rows = conn.execute(_FIND_BY_NAME_SQL, (player_name.strip(),)).fetchall()
+    if len(rows) == 0:
+        normalized_name = _normalize_player_name(player_name)
+        if normalized_name_index is not None:
+            cached = normalized_name_index.get(normalized_name, [])
+            if len(cached) == 1:
+                return cached[0]
+            if len(cached) > 1:
+                result.warnings.append(
+                    f"Ambiguous normalized name match for {player_name!r} (id={player_id!r}): "
+                    f"{len(cached)} rows found; skipped"
+                )
+                return None
+
+        # Last fallback without index: try folded name against SQL lookup.
+        if normalized_name and normalized_name != player_name.strip().lower():
+            rows = conn.execute(_FIND_BY_NAME_SQL, (normalized_name,)).fetchall()
+
     if len(rows) == 1:
         return bytes(rows[0][0])
     if len(rows) == 0:
@@ -197,6 +224,49 @@ def _int_attr(attrs: dict[str, Any], key: str, default: int = 0) -> int:
         return default
 
 
+def _first_position_token(value: Any) -> str:
+    """Extract the first position token from strings like 'LF, RF' or 'IF/OF'."""
+    if not isinstance(value, str):
+        return ""
+    return value.split(",", 1)[0].strip()
+
+
+def _concrete_primary_position(position_value: int) -> int:
+    """Map grouped positions to concrete fielding spots to avoid ambiguous primaries."""
+    grouped_to_specific = {
+        10: 5,  # IF -> 3B
+        11: 7,  # OF -> LF
+        12: 3,  # 1B/OF -> 1B
+        13: 5,  # IF/OF -> 3B
+    }
+    return grouped_to_specific.get(position_value, position_value)
+
+
+def _normalize_player_name(value: str) -> str:
+    text = (value or "").strip()
+    if not text:
+        return ""
+    folded = unicodedata.normalize("NFKD", text)
+    return "".join(ch for ch in folded if not unicodedata.combining(ch)).lower().strip()
+
+
+def _build_normalized_name_index(conn: sqlite3.Connection) -> dict[str, list[bytes]]:
+    rows = conn.execute(
+        """
+        SELECT lid.GUID, vbpi.firstName || ' ' || vbpi.lastName AS full_name
+        FROM t_baseball_player_local_ids lid
+        JOIN v_baseball_player_info vbpi ON vbpi.baseballPlayerGUID = lid.GUID
+        """
+    ).fetchall()
+    index: dict[str, list[bytes]] = {}
+    for guid_blob, full_name in rows:
+        normalized = _normalize_player_name(str(full_name or ""))
+        if not normalized:
+            continue
+        index.setdefault(normalized, []).append(bytes(guid_blob))
+    return index
+
+
 def _apply_player(
     conn: sqlite3.Connection,
     guid_blob: bytes,
@@ -209,7 +279,8 @@ def _apply_player(
     Write all attributes for one player to the open SQLite connection.
     Returns True on success, False on failure.
     """
-    pitcher = is_pitcher_role(position_group or role or "")
+    raw_role = (position_group or role or "").strip()
+    pitcher = is_pitcher_role(raw_role) or raw_role.lower() == "pitcher"
 
     # --- Core rating columns ---
     power    = _int_attr(attrs, "power")
@@ -239,6 +310,9 @@ def _apply_player(
             (guid_blob, option_key, value, option_type_for_key(option_key)),
         )
 
+    def delete_option(option_key: int) -> None:
+        conn.execute(_DELETE_OPTION_SQL, (guid_blob, option_key))
+
     upsert_option(OPTION_KEYS["BATTING_HAND"], batting_hand_to_int(attrs.get("bat_hand", "R")))
     upsert_option(OPTION_KEYS["THROWING_HAND"], throwing_hand_to_int(attrs.get("throw_hand", "R")))
     upsert_option(OPTION_KEYS["CHEMISTRY"], chemistry_to_int(attrs.get("personality_type_recommendation", "")))
@@ -253,10 +327,23 @@ def _apply_player(
         if pitch_role:
             upsert_option(OPTION_KEYS["PITCH_POSITION"], pitch_role)
     else:
-        primary_pos = attrs.get("primary_position") or position_group or ""
-        upsert_option(OPTION_KEYS["PRIMARY_POSITION"], position_to_int(primary_pos))
-        secondary_pos = attrs.get("secondary_position") or ""
-        upsert_option(OPTION_KEYS["SECONDARY_POSITION"], position_to_int(secondary_pos))
+        primary_pos = _first_position_token(attrs.get("primary_position")) or position_group or ""
+        primary_pos_int = _concrete_primary_position(position_to_int(primary_pos))
+        # Fall back to position_group if primary_pos string is unrecognised (e.g. "DH")
+        if primary_pos_int == 0 and primary_pos not in ("", None) and position_group:
+            primary_pos_int = _concrete_primary_position(position_to_int(position_group))
+        # Last-resort fallback for hitters with no position data
+        if primary_pos_int == 0:
+            primary_pos_int = 7  # LF
+        upsert_option(OPTION_KEYS["PRIMARY_POSITION"], primary_pos_int)
+        # Hitter rows should not carry pitcher-role option entries.
+        delete_option(OPTION_KEYS["PITCH_POSITION"])
+        secondary_pos = _first_position_token(attrs.get("secondary_position") or attrs.get("secondary_positions"))
+        secondary_int = position_to_int(secondary_pos)
+        if secondary_int:
+            upsert_option(OPTION_KEYS["SECONDARY_POSITION"], secondary_int)
+        else:
+            delete_option(OPTION_KEYS["SECONDARY_POSITION"])
 
     # Pitch types (all cleared to 0 first, then enabled pitches set to 1)
     arsenal_keys = parse_arsenal(attrs.get("arsenal") or "")
@@ -319,6 +406,7 @@ def apply_encoder_plan(
     try:
         conn = sqlite3.connect(str(tmp_path))
         try:
+            normalized_name_index = _build_normalized_name_index(conn)
             for op in operations:
                 player_info = op.get("player") or {}
                 attrs = op.get("attributes") or {}
@@ -334,7 +422,13 @@ def apply_encoder_plan(
                     result.skipped += 1
                     continue
 
-                guid_blob = _find_player_guid(conn, player_id, player_name, result)
+                guid_blob = _find_player_guid(
+                    conn,
+                    player_id,
+                    player_name,
+                    result,
+                    normalized_name_index=normalized_name_index,
+                )
                 if guid_blob is None:
                     result.skipped += 1
                     continue

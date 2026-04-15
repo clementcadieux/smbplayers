@@ -145,7 +145,12 @@ def _pitcher_bucket(player: RatingOutput) -> str | None:
         for hint, bucket in PITCHER_ROLE_HINTS.items():
             if hint in normalized:
                 return bucket
-    if player.projected_ip is not None and player.projected_ip >= 120:
+    projected_ip = float(player.projected_ip or 0.0)
+    if projected_ip >= 120:
+        return "SP"
+    # Treat injured-list starters with meaningful workloads as SP so IL does not
+    # collapse them into bullpen buckets during roster selection.
+    if bool(player.on_il) and projected_ip >= 100:
         return "SP"
     if player.role == "pitcher":
         return "RP"

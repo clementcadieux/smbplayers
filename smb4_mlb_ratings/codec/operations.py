@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,15 @@ def _ensure_list(value: object, path: str) -> list[Any]:
 
 def _string(value: object) -> str:
     return str(value or "").strip()
+
+
+def _ascii_name(value: object) -> str:
+    """Fold diacritics to ASCII equivalents (e.g., José -> Jose)."""
+    text = _string(value)
+    if not text:
+        return ""
+    folded = unicodedata.normalize("NFKD", text)
+    return "".join(ch for ch in folded if not unicodedata.combining(ch)).strip()
 
 
 def _team_slot_sort_key(slot_type: str) -> tuple[int, str, int]:
@@ -67,11 +77,17 @@ def build_encoder_operation_plan(codec_import_payload: dict[str, Any]) -> dict[s
         record_obj = _ensure_object(record, f"records[{index}]")
         target_pool = _string(record_obj.get("target_pool"))
         player_id = _string(record_obj.get("player_id"))
-        player_name = _string(record_obj.get("player_name"))
+        player_name = _ascii_name(record_obj.get("player_name"))
         if not player_id:
             raise ValueError(f"records[{index}] is missing player_id")
         if not player_name:
             player_name = f"player_{player_id}"
+
+        attrs = record_obj.get("attributes") if isinstance(record_obj.get("attributes"), dict) else None
+        if attrs is not None:
+            attrs = dict(attrs)
+            if attrs.get("name"):
+                attrs["name"] = _ascii_name(attrs.get("name"))
 
         base_operation = {
             "player": {
@@ -79,7 +95,7 @@ def build_encoder_operation_plan(codec_import_payload: dict[str, Any]) -> dict[s
                 "player_name": player_name,
                 "role": _string(record_obj.get("role")) or None,
             },
-            "attributes": record_obj.get("attributes") if isinstance(record_obj.get("attributes"), dict) else None,
+            "attributes": attrs,
             "attribute_source": _string(record_obj.get("attribute_source")) or None,
         }
 
