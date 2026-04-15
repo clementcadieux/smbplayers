@@ -100,8 +100,8 @@
     ["Big Hack", "Little Hack"],
     ["Tough Out", "Whiffer"],
     ["Two Way (C)", "Two Way (IF)", "Two Way (OF)"],
-    ["Outside Pitch", "Inside Pitch"],
-    ["High Pitch", "Low Pitch"]
+    ["Outside Pitch", "Inside Pitch", "High Pitch", "Low Pitch"],
+    ["Fastball Hitter", "Off-Speed Hitter"]
   ],
   "role_overall_weights": {
     "hitter": {

@@ -35,6 +35,7 @@ class GenerationTests(unittest.TestCase):
                     {
                         "name": "Test Hitter",
                         "role": "hitter",
+                        "player_id": "1001",
                         "team": "TOR",
                         "primary_position": "CF",
                         "secondary_positions": ["LF", "RF"],
@@ -73,6 +74,7 @@ class GenerationTests(unittest.TestCase):
                     {
                         "name": "Test Pitcher",
                         "role": "pitcher",
+                        "player_id": "2002",
                         "team": "TOR",
                         "primary_position": "SP",
                         "ratings": {
@@ -129,12 +131,15 @@ class GenerationTests(unittest.TestCase):
         self.assertEqual(pitcher_headers, PITCHER_COLUMNS)
         self.assertEqual(len(hitter_rows), 1)
         self.assertEqual(len(pitcher_rows), 1)
+        self.assertEqual(hitter_rows[0]["player_id"], "1001")
+        self.assertEqual(pitcher_rows[0]["player_id"], "2002")
 
     def test_generate_output_populates_required_fields_for_hitter_and_pitcher(self) -> None:
         hitter = RatingOutput.from_dict(
             {
                 "name": "Test Hitter",
                 "role": "hitter",
+                "player_id": "1001",
                 "team": "TOR",
                 "primary_position": "CF",
                 "secondary_positions": ["LF", "RF"],
@@ -176,6 +181,7 @@ class GenerationTests(unittest.TestCase):
             {
                 "name": "Test Pitcher",
                 "role": "pitcher",
+                "player_id": "2002",
                 "team": "TOR",
                 "primary_position": "SP",
                 "ratings": {
@@ -229,6 +235,7 @@ class GenerationTests(unittest.TestCase):
         _, pitcher_rows = self._read_csv_rows(output_dir / "TOR_pitchers.csv")
 
         self.assertEqual(hitter_rows[0]["Name"], "Test Hitter")
+        self.assertEqual(hitter_rows[0]["player_id"], "1001")
         self.assertEqual(hitter_rows[0]["Throw Hand"], "R")
         self.assertEqual(hitter_rows[0]["Bat Hand"], "R")
         self.assertEqual(hitter_rows[0]["Primary Position"], "CF")
@@ -238,6 +245,7 @@ class GenerationTests(unittest.TestCase):
         self.assertEqual(hitter_rows[0]["Trait 2"], "")
 
         self.assertEqual(pitcher_rows[0]["Name"], "Test Pitcher")
+        self.assertEqual(pitcher_rows[0]["player_id"], "2002")
         self.assertEqual(pitcher_rows[0]["Throw Hand"], "R")
         self.assertEqual(pitcher_rows[0]["Bat Hand"], "L")
         self.assertEqual(pitcher_rows[0]["Arsenal"], "4F, SL, CH")

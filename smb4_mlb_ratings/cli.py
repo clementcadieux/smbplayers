@@ -8,8 +8,17 @@ import sys
 from pathlib import Path
 
 from .aggregation import aggregate_from_manifest
+from .codec import (
+    build_canonical_snapshot_from_file,
+    build_codec_import_from_file,
+    build_dry_run_patch_preview_from_file,
+    build_encoder_operation_plan_from_file,
+)
+from .codec.decoder import decode_sav_to_file
+from .codec.encoder import apply_encoder_plan_from_file
 from .generation import generate_output
 from .ingest import load_manifest
+from .league_bridge import build_roster_attribute_bridge
 from .ingest.live_team_data import (
     build_baseball_reference_hitter_rows,
     build_baseball_reference_pitcher_rows,
@@ -123,6 +132,88 @@ def run_generate(input_path: Path, output_path: Path) -> int:
 def run_rank(input_path: Path, output_path: Path) -> int:
     ratings = load_ratings(input_path)
     write_json(output_path, build_rank_output(ratings, compact=True))
+    return 0
+
+
+def run_build_roster_bridge(
+    league_roster_path: Path,
+    team_reports_path: Path,
+    output_path: Path,
+    league_folder: Path | None = None,
+) -> int:
+    payload = build_roster_attribute_bridge(
+        league_roster_path,
+        team_reports_path,
+        league_folder_override=league_folder,
+    )
+    write_json(output_path, payload)
+    return 0
+
+
+def run_build_codec_interface(
+    bridge_payload_path: Path,
+    output_path: Path,
+    league_folder: Path | None = None,
+) -> int:
+    build_codec_import_from_file(
+        bridge_payload_path,
+        output_path,
+        league_folder_override=league_folder,
+    )
+    return 0
+
+
+def run_build_canonical_snapshot(
+    decoded_snapshot_path: Path,
+    output_path: Path,
+) -> int:
+    build_canonical_snapshot_from_file(decoded_snapshot_path, output_path)
+    return 0
+
+
+def run_build_encoder_plan(
+    codec_import_path: Path,
+    output_path: Path,
+) -> int:
+    build_encoder_operation_plan_from_file(codec_import_path, output_path)
+    return 0
+
+
+def run_decode_sav(
+    sav_path: Path,
+    output_path: Path,
+) -> int:
+    decode_sav_to_file(sav_path, output_path)
+    return 0
+
+
+def run_encode_sav(
+    plan_path: Path,
+    sav_path: Path,
+    *,
+    dry_run: bool = False,
+) -> int:
+    result = apply_encoder_plan_from_file(plan_path, sav_path, dry_run=dry_run)
+    summary = result.to_dict()
+    print(json.dumps(summary, indent=2))
+    if result.warnings:
+        for w in result.warnings:
+            print(f"[warn] {w}", file=sys.stderr)
+    return 0
+
+
+def run_build_dry_run_report(
+    encoder_plan_path: Path,
+    output_path: Path,
+    current_snapshot_path: Path | None = None,
+    decoded_snapshot_path: Path | None = None,
+) -> int:
+    build_dry_run_patch_preview_from_file(
+        encoder_plan_path,
+        output_path,
+        current_snapshot_path=current_snapshot_path,
+        decoded_snapshot_path=decoded_snapshot_path,
+    )
     return 0
 
 
@@ -312,6 +403,141 @@ def build_parser() -> argparse.ArgumentParser:
     rank_parser.add_argument("input", type=Path, help="Ratings JSON file")
     rank_parser.add_argument("output", type=Path, help="Output roster JSON file")
 
+    bridge_parser = subparsers.add_parser(
+        "build-roster-bridge",
+        help="Merge base roster IDs with team_reports attributes and derive free agents",
+    )
+    bridge_parser.add_argument(
+        "league_roster",
+        type=Path,
+        help="Base roster JSON file (usually export/league_roster.json)",
+    )
+    bridge_parser.add_argument(
+        "team_reports",
+        type=Path,
+        help="Directory containing *_hitters.csv and *_pitchers.csv reports",
+    )
+    bridge_parser.add_argument("output", type=Path, help="Output bridge JSON file")
+    bridge_parser.add_argument(
+        "--league-folder",
+        type=Path,
+        default=None,
+        help="Optional SMB4 league folder override path",
+    )
+
+    codec_parser = subparsers.add_parser(
+        "build-codec-interface",
+        help="Build canonical codec import payload from league bridge JSON",
+    )
+    codec_parser.add_argument(
+        "bridge_payload",
+        type=Path,
+        help="Roster bridge JSON file (usually export/league_bridge.json)",
+    )
+    codec_parser.add_argument(
+        "output",
+        type=Path,
+        help="Output codec import payload JSON",
+    )
+    codec_parser.add_argument(
+        "--league-folder",
+        type=Path,
+        default=None,
+        help="Optional SMB4 league folder override path",
+    )
+
+    snapshot_parser = subparsers.add_parser(
+        "build-canonical-snapshot",
+        help="Normalize decoded league snapshot payload into canonical comparator schema",
+    )
+    snapshot_parser.add_argument(
+        "decoded_snapshot",
+        type=Path,
+        help="Decoded/current league snapshot JSON from decoder output",
+    )
+    snapshot_parser.add_argument(
+        "output",
+        type=Path,
+        help="Output canonical snapshot JSON",
+    )
+
+    encoder_plan_parser = subparsers.add_parser(
+        "build-encoder-plan",
+        help="Build deterministic encoder operation plan from codec import JSON",
+    )
+    encoder_plan_parser.add_argument(
+        "codec_import",
+        type=Path,
+        help="Codec import payload JSON (usually export/codec_import.json)",
+    )
+    encoder_plan_parser.add_argument(
+        "output",
+        type=Path,
+        help="Output encoder operation plan JSON",
+    )
+
+    dry_run_parser = subparsers.add_parser(
+        "build-dry-run-report",
+        help="Build dry-run patch preview report from encoder plan JSON",
+    )
+    dry_run_parser.add_argument(
+        "encoder_plan",
+        type=Path,
+        help="Encoder operation plan JSON (usually export/encoder_plan.json)",
+    )
+    dry_run_parser.add_argument(
+        "output",
+        type=Path,
+        help="Output dry-run patch preview JSON",
+    )
+    dry_run_parser.add_argument(
+        "--current-snapshot",
+        type=Path,
+        default=None,
+        help="Optional decoded/current league snapshot JSON used for concrete before/after diffs",
+    )
+    dry_run_parser.add_argument(
+        "--decoded-snapshot",
+        type=Path,
+        default=None,
+        help="Optional raw decoded snapshot JSON; will be normalized to canonical schema before diffing",
+    )
+
+    decode_sav_parser = subparsers.add_parser(
+        "decode-sav",
+        help="Decompress a SMB4 .sav file and write a canonical snapshot JSON",
+    )
+    decode_sav_parser.add_argument(
+        "sav_file",
+        type=Path,
+        help="Path to the SMB4 .sav league file",
+    )
+    decode_sav_parser.add_argument(
+        "output",
+        type=Path,
+        help="Output canonical snapshot JSON",
+    )
+
+    encode_sav_parser = subparsers.add_parser(
+        "encode-sav",
+        help="Apply an encoder operation plan to a SMB4 .sav file",
+    )
+    encode_sav_parser.add_argument(
+        "encoder_plan",
+        type=Path,
+        help="Encoder operation plan JSON (usually export/encoder_plan.json)",
+    )
+    encode_sav_parser.add_argument(
+        "sav_file",
+        type=Path,
+        help="Path to the SMB4 .sav league file to patch",
+    )
+    encode_sav_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Perform all DB work but do not write back to the .sav file",
+    )
+
     ingest_rate_parser = subparsers.add_parser("ingest-rate", help="Normalize supported source files and rate them")
     ingest_rate_parser.add_argument("manifest", type=Path, help="Ingestion manifest JSON file")
     ingest_rate_parser.add_argument("output", type=Path, nargs="?", default=None, help="Optional output ratings JSON file")
@@ -372,6 +598,36 @@ def main(argv: list[str] | None = None) -> int:
         return run_generate(namespace.input, namespace.output)
     if namespace.command == "rank":
         return run_rank(namespace.input, namespace.output)
+    if namespace.command == "build-roster-bridge":
+        return run_build_roster_bridge(
+            namespace.league_roster,
+            namespace.team_reports,
+            namespace.output,
+            league_folder=namespace.league_folder,
+        )
+    if namespace.command == "build-codec-interface":
+        return run_build_codec_interface(
+            namespace.bridge_payload,
+            namespace.output,
+            league_folder=namespace.league_folder,
+        )
+    if namespace.command == "build-canonical-snapshot":
+        return run_build_canonical_snapshot(
+            namespace.decoded_snapshot,
+            namespace.output,
+        )
+    if namespace.command == "build-encoder-plan":
+        return run_build_encoder_plan(
+            namespace.codec_import,
+            namespace.output,
+        )
+    if namespace.command == "build-dry-run-report":
+        return run_build_dry_run_report(
+            namespace.encoder_plan,
+            namespace.output,
+            current_snapshot_path=namespace.current_snapshot,
+            decoded_snapshot_path=namespace.decoded_snapshot,
+        )
     if namespace.command == "ingest-rate":
         if namespace.output is None and namespace.structured_output is None:
             parser.error("ingest-rate requires either an output file or --structured-output")
@@ -383,6 +639,10 @@ def main(argv: list[str] | None = None) -> int:
             namespace.team,
             namespace.config_path,
         )
+    if namespace.command == "decode-sav":
+        return run_decode_sav(namespace.sav_file, namespace.output)
+    if namespace.command == "encode-sav":
+        return run_encode_sav(namespace.encoder_plan, namespace.sav_file, dry_run=namespace.dry_run)
     if namespace.command == "refresh-bluejays-example":
         return run_refresh_bluejays_example(namespace.example_root, insecure_ssl=namespace.insecure)
 

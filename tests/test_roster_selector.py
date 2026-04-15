@@ -33,15 +33,15 @@ class RosterSelectorTests(unittest.TestCase):
         roster = select_roster(self._team_players())
         flex_players = {slot.player.name for slot in roster if slot.slot_type.startswith("flex_")}
 
-        self.assertEqual(flex_players, {"Sixth Infielder", "Fifth Outfielder"})
+        self.assertEqual(flex_players, {"Infielder 5", "Outfielder 4"})
 
-    def test_rank_players_by_role_deprioritizes_injured_players_on_ties(self) -> None:
+    def test_rank_players_by_role_does_not_penalize_injury_status(self) -> None:
         healthy = self._player("Healthy OF", "hitter", "CF", projected_pa=350, age=26, overall=70)
-        injured = self._player("Injured OF", "hitter", "RF", projected_pa=350, age=26, overall=70)
+        injured = self._player("Injured OF", "hitter", "RF", projected_pa=350, age=26, overall=85)
 
         ranked = rank_players_by_role([injured, healthy], injured_list={"Injured OF"})
 
-        self.assertEqual([player.name for player in ranked["OF"]], ["Healthy OF", "Injured OF"])
+        self.assertEqual([player.name for player in ranked["OF"]], ["Injured OF", "Healthy OF"])
 
     def test_rank_players_by_role_uses_all_secondary_positions(self) -> None:
         utility = self._player(
@@ -78,6 +78,36 @@ class RosterSelectorTests(unittest.TestCase):
 
         self.assertEqual(selected_names.count("Super Utility"), 1)
 
+    def test_select_roster_keeps_same_name_players_with_distinct_ids(self) -> None:
+        players = self._team_players()
+        players.append(
+            self._player(
+                "Alex Smith",
+                "hitter",
+                "C",
+                projected_pa=700,
+                age=26,
+                overall=95,
+                player_id="dup-1",
+            )
+        )
+        players.append(
+            self._player(
+                "Alex Smith",
+                "hitter",
+                "RF",
+                projected_pa=690,
+                age=27,
+                overall=94,
+                player_id="dup-2",
+            )
+        )
+
+        roster = select_roster(players)
+        selected_ids = [slot.player.player_id for slot in roster]
+        self.assertIn("dup-1", selected_ids)
+        self.assertIn("dup-2", selected_ids)
+
     def test_cli_rank_writes_team_rosters(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             root = Path(tempdir)
@@ -104,6 +134,125 @@ class RosterSelectorTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "matching team"):
             select_roster(players, target_team="NYM")
+
+    def test_select_roster_does_not_promote_reliever_to_sp_when_starters_exist(self) -> None:
+        players = self._team_players()
+        players.append(
+            self._player(
+                "High Skill Misclassified",
+                "pitcher",
+                "P",
+                projected_ip=120,
+                age=28,
+                overall=95,
+                metadata={"pitching_role": "reliever"},
+                player_id="skill-lock-1",
+            )
+        )
+
+        roster = select_roster(players)
+        sp_names = {slot.player.name for slot in roster if slot.position_group == "SP"}
+        rp_names = {slot.player.name for slot in roster if slot.position_group == "RP"}
+        self.assertNotIn("High Skill Misclassified", sp_names)
+        self.assertIn("High Skill Misclassified", rp_names)
+
+    def test_select_roster_keeps_relievers_out_of_sp_when_starters_available(self) -> None:
+        players = self._team_players()
+        players.append(
+            self._player(
+                "Elite Reliever",
+                "pitcher",
+                "P",
+                projected_ip=95,
+                age=26,
+                overall=99,
+                metadata={"pitching_role": "reliever"},
+                player_id="elite-rp",
+            )
+        )
+
+        roster = select_roster(players)
+        sp_names = {slot.player.name for slot in roster if slot.position_group == "SP"}
+        rp_names = {slot.player.name for slot in roster if slot.position_group == "RP"}
+
+        self.assertNotIn("Elite Reliever", sp_names)
+        self.assertIn("Elite Reliever", rp_names)
+
+    def test_two_way_pitcher_with_pa_is_hitter_eligible(self) -> None:
+        players = self._team_players()
+        players.append(
+            self._player(
+                "Two Way DH",
+                "two_way",
+                "P",
+                projected_pa=620,
+                projected_ip=40,
+                age=29,
+                overall=99,
+                player_id="two-way-dh",
+            )
+        )
+
+        roster = select_roster(players)
+        selected_names = {slot.player.name for slot in roster}
+        self.assertIn("Two Way DH", selected_names)
+
+    def test_high_ip_reliever_stays_in_rp_bucket(self) -> None:
+        # A pitcher with ~83 IP (below the 120-IP SP threshold) should be RP
+        # regardless of how high their overall rating is.
+        players = self._team_players()
+        players.append(
+            self._player(
+                "Louis Varland",
+                "pitcher",
+                "P",
+                projected_ip=83,
+                age=27,
+                overall=99,
+                player_id="varland-ip-test",
+            )
+        )
+
+        roster = select_roster(players)
+        sp_names = {slot.player.name for slot in roster if slot.position_group == "SP"}
+        rp_names = {slot.player.name for slot in roster if slot.position_group == "RP"}
+        self.assertNotIn("Louis Varland", sp_names)
+        self.assertIn("Louis Varland", rp_names)
+
+    def test_sub_120_ip_pitchers_classified_as_rp(self) -> None:
+        # Pitchers with realistic reliever IP (85-112) fall below the 120-IP SP
+        # threshold and should land in the RP bucket, even with high ratings.
+        players = self._team_players()
+        players.append(
+            self._player(
+                "Braydon Fisher",
+                "pitcher",
+                "P",
+                projected_ip=85,
+                age=25,
+                overall=98,
+                player_id="fisher-ip-test",
+            )
+        )
+        players.append(
+            self._player(
+                "Spencer Miles",
+                "pitcher",
+                "P",
+                projected_ip=112,
+                age=25,
+                overall=97,
+                player_id="miles-ip-test",
+            )
+        )
+
+        roster = select_roster(players)
+        sp_names = {slot.player.name for slot in roster if slot.position_group == "SP"}
+        rp_names = {slot.player.name for slot in roster if slot.position_group == "RP"}
+        self.assertNotIn("Braydon Fisher", sp_names)
+        self.assertNotIn("Spencer Miles", sp_names)
+        self.assertIn("Braydon Fisher", rp_names)
+        self.assertIn("Spencer Miles", rp_names)
 
     def _team_players(self) -> list[RatingOutput]:
         players: list[RatingOutput] = []
@@ -135,8 +284,10 @@ class RosterSelectorTests(unittest.TestCase):
         metadata: dict[str, object] | None = None,
         team: str = "NYM",
         secondary_positions: list[str] | None = None,
+        player_id: str | None = None,
     ) -> RatingOutput:
         return RatingOutput(
+            player_id=player_id,
             name=name,
             role=role,
             team=team,
