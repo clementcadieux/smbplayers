@@ -52,28 +52,6 @@
 - **#113 – Build up Generation Code** – Defined hitter/pitcher CSV output schemas; implemented CSV writer in the Generation layer producing one file per team; wired into the `generate` CLI sub-command; added tests confirming column headers and required fields for synthetic records.
 - **#119 – Starters Are Still Underrated** – Added a configurable `sp_overall_bonus` (default 4.0) in `config.yaml` under `pitcher_adjustments`; loaded it in `refresh_runtime_tuning()`; modified `role_weighted_overall_numeric` to accept an optional `pitcher_role` argument and apply the bonus for SP-classified pitchers; updated both overall-computation call sites to pass the pitcher role; added tests asserting an SP rates higher than an identical RP and that a Skubal-tier ace reaches A+ (≥ 93) overall.
 
----
-
-## Open Issues
-
-### Issue #128 – SMB4 League File Encoder/Decoder
-
-**Problem:** Rated players need to be brought into SMB4 via the game's proprietary save format. Currently there is no tooling to write player data into that format or read it back out, making it impossible to load generated ratings directly into the game.
-
-**Plan:**
-1. **Reverse-engineer the save format** – Use any available external tools (e.g. hex editors, community-published format docs, SMB4 modding resources) to map the binary/JSON structure of an SMB4 league file. Document field offsets, data types, and encoding rules in a `SAVE_FORMAT.md` reference document.
-2. **Implement the decoder** – Create `smb4_mlb_ratings/codec/decoder.py` that reads a raw SMB4 league file and returns a list of `PlayerInput`-compatible dicts (or a new `LeagueFile` model), making it easy to round-trip existing league data through the pipeline.
-3. **Implement the encoder** – Create `smb4_mlb_ratings/codec/encoder.py` that accepts a list of `PlayerOutput` records (or a `LeagueFile` model) and writes a valid SMB4 league file, replacing or patching existing player slots as needed.
-4. **CLI integration** – Add two new sub-commands to `cli.py`:
-   - `decode <league_file> <output_json>` – decode a league file to JSON.
-   - `encode <input_json> <league_file>` – encode rated players back into a league file.
-5. **Config / reference data** – Store any format-version constants, field offsets, or encoding tables in `smb4_player_reference.json` or a new `codec_config.yaml` so they can be updated without code changes when the game patches.
-6. **Tests** – Add round-trip tests: encode a synthetic `PlayerOutput` list to bytes, decode the bytes back, and assert field-level parity. Add a smoke test confirming the CLI sub-commands exit cleanly with a minimal fixture file.
-
----
-
-## Completed Issues (continued)
-
 - **#114 – Quick Layer-Specific Triggers** – Created `Makefile` with one target per pipeline layer (`ingest`, `aggregate`, `process`, `generate`, `rank`) plus a `run-all` target using configurable default paths; added layer-trigger documentation section to `README.md`; added `test_layer_commands_each_exit_zero_with_minimal_fixture` smoke test in `test_ingest.py`.
 - **#116 – Elite Players Ratings Too Low** – Widened the upper tail of `percentile_to_rating` in `config.yaml` so the 90th percentile maps to ≥ 90 and the 95th percentile maps to ≥ 95; raised the Skubal-tier regression-test assertion from ≥ 93 to ≥ 95 (S tier); updated `test_interpolate_rating_expands_elite_percentile_band` to reflect the new curve knots.
 - **#117 – Prioritize Positive Traits Over Negative Traits** – Added polarity as a secondary sort key in `trim_traits_for_output` (`traits.py`) so that positive traits beat negative ones when priority scores tie; added two regression tests confirming positive traits are kept over negative traits of equal confidence when the 2-trait cap forces a choice.
@@ -81,3 +59,32 @@
 - **#123 – Pitchers with Good Raw Stuff but Poor Results Are Overrated** – Rebalanced pitcher composite weights to ~30 % raw stuff / 70 % outcomes in `config.yaml`; added `min_ip_for_outcome_weight` sample-size gate that falls back to higher raw-stuff weighting for pitchers with small samples; created separate SP/RP weight profiles; added test confirming an elite-stuff/poor-results pitcher does not exceed the average tier.
 - **#124 – Pitchers Need Default Fielding Values** – Applied configurable defaults (speed 30, fielding 40, arm 50) in the output layer for all non-two-way pitchers when computed values are absent or zero; stored defaults in `config.yaml`; added unit tests confirming pitchers without fielding data receive exact defaults and two-way players are unaffected.
 - **#125 – Shohei Ohtani Appears Only as a Hitter** – Detected two-way players (`role == "two_way"`) in the Generation layer and emitted dual output records (one in the hitter file, one in the pitcher file with batting stats carried over); extended pitcher CSV schema with a batting-stats subset; added ingestion deduplication guard using the composite merge key; confirmed `roster_selector.py` handles two-way slot eligibility; added synthetic two-way player round-trip tests.
+- **#128 – SMB4 League File Encoder/Decoder** – Implemented `smb4_mlb_ratings/codec/` package with `decoder.py`, `encoder.py`, `sav_io.py`, `operations.py`, `interface.py`, `snapshot.py`, `dry_run.py`, and `db_mappings.py`; added `decode`/`encode` CLI sub-commands; provided round-trip codec tests, interface tests, snapshot tests, and dry-run tests.
+
+---
+
+## Open Issues
+
+### Issue #131 – Player Value Tuning
+
+**Problem:** Two-way players (e.g. Shohei Ohtani) still appear only as hitters in the output despite prior fixes, and elite hitters continue to be underrated relative to their real-world performance level.
+
+**Plan:**
+1. **Diagnose two-way dual-output gap** – Trace the Generation layer for players with `role == "two_way"` and verify that both hitter and pitcher CSV rows are being emitted; check whether the deduplication guard introduced in #125 is incorrectly suppressing the pitcher record.
+2. **Fix two-way pitcher record emission** – Ensure `encoder.py` / the Generation layer writes a pitcher row for two-way players unconditionally when pitcher-side stats are present, separate from any hitter-row deduplication logic.
+3. **Review elite-hitter percentile curve** – Examine `percentile_to_rating` knots in `config.yaml` for the hitter group; compare top-percentile mapping values against known elite players to identify where the curve is capping too early.
+4. **Tune hitter composite weights** – If wRC+, OPS, or barrel-rate weights are lower than their actual predictive importance, increase them so that genuinely elite hitters separate from the pack more aggressively.
+5. **Add named-player regression assertions** – Add or update tests that assert a Shohei Ohtani–tier hitter reaches ≥ 95 overall and that his pitcher record is present in the pitcher output; assert the two-way record appears in both output files.
+
+---
+
+### Issue #132 – Roster Selector Tuning
+
+**Problem:** The roster selector produces suboptimal recommendations for some teams — players who should be obvious roster inclusions are omitted, or less valuable players are preferred over clearly superior alternatives.
+
+**Plan:**
+1. **Audit current slot-fill algorithm** – Review `roster_selector.py` scoring, slot priorities, and tie-breaking logic; identify which rule or weight is causing poor selections on specific teams.
+2. **Review slot distribution** – Verify that the 22-slot breakdown (4 SP, 5 RP, 5 IF, 4 OF, 2 C, 2 Flex) still reflects desired SMB4 roster construction; adjust slot counts in `config.yaml`/`smb4_player_reference.json` if needed.
+3. **Improve scoring for two-way and multi-position players** – Confirm that secondary positions from `secondary_positions` are used in slot eligibility; ensure two-way players can fill either a hitter or pitcher slot without double-counting.
+4. **Tune selection ordering** – Consider weighting by overall rating first (rather than projected playing time) as a primary sort key, using playing time only as a tiebreaker, or make both factors configurable.
+5. **Add edge-case tests** – Add regression tests for known problematic team configurations: verify top-rated players are always included, that Flex slots are filled by best available across OF/IF, and that RP/SP split is respected.
