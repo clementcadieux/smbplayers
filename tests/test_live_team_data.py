@@ -28,6 +28,92 @@ from smb4_mlb_ratings.ingest.live_team_data import (
 
 
 class LiveTeamDataTests(unittest.TestCase):
+    def test_fetch_stats_prefers_highest_pa_split_for_hitters(self) -> None:
+        payload = {
+            "stats": [
+                {
+                    "splits": [
+                        {
+                            "season": "2026",
+                            "stat": {
+                                "plateAppearances": 78,
+                                "atBats": 60,
+                                "hits": 5,
+                                "homeRuns": 0,
+                                "avg": ".267",
+                                "slg": ".533",
+                            },
+                        },
+                        {
+                            "season": "2026",
+                            "stat": {
+                                "plateAppearances": 82,
+                                "atBats": 63,
+                                "hits": 16,
+                                "homeRuns": 5,
+                                "avg": ".254",
+                                "slg": ".508",
+                            },
+                        },
+                    ]
+                }
+            ]
+        }
+
+        with patch.object(live_team_data_module, "_fetch_json", return_value=payload):
+            stats = live_team_data_module._fetch_stats(
+                660271,
+                "hitting",
+                seasons=(2026, 2025),
+                ssl_context=None,
+                mlb_stats_api="https://statsapi.mlb.com/api/v1",
+            )
+
+        self.assertIsNotNone(stats)
+        assert stats is not None
+        self.assertEqual(stats.get("plateAppearances"), 82)
+        self.assertEqual(stats.get("homeRuns"), 5)
+
+    def test_fetch_stats_prefers_highest_bf_split_for_pitchers(self) -> None:
+        payload = {
+            "stats": [
+                {
+                    "splits": [
+                        {
+                            "season": "2026",
+                            "stat": {
+                                "battersFaced": 19,
+                                "homeRuns": 0,
+                                "strikeOuts": 4,
+                            },
+                        },
+                        {
+                            "season": "2026",
+                            "stat": {
+                                "battersFaced": 47,
+                                "homeRuns": 5,
+                                "strikeOuts": 12,
+                            },
+                        },
+                    ]
+                }
+            ]
+        }
+
+        with patch.object(live_team_data_module, "_fetch_json", return_value=payload):
+            stats = live_team_data_module._fetch_stats(
+                660271,
+                "pitching",
+                seasons=(2026, 2025),
+                ssl_context=None,
+                mlb_stats_api="https://statsapi.mlb.com/api/v1",
+            )
+
+        self.assertIsNotNone(stats)
+        assert stats is not None
+        self.assertEqual(stats.get("battersFaced"), 47)
+        self.assertEqual(stats.get("homeRuns"), 5)
+
     def test_build_manifest_uses_supplied_file_names(self) -> None:
         manifest = build_mixed_source_manifest(
             team_abbreviation="TOR",
@@ -405,9 +491,59 @@ class LiveTeamDataTests(unittest.TestCase):
         assert player is not None
         self.assertEqual(player["type"], "hitter")
         self.assertEqual(player["position"], "TWP")
+        self.assertEqual(player.get("home_runs"), 6)
+        self.assertEqual(player.get("hits"), 24)
+        self.assertEqual(player.get("pitching_home_runs"), 4)
+        self.assertEqual(player.get("pitching_hits"), 18)
         self.assertEqual(player.get("batters_faced"), 72)
         self.assertIn("pitch_arsenal", player)
         self.assertIn("FF", player["pitch_arsenal"])
+
+    def test_two_way_pitcher_rows_use_pitching_prefixed_counts(self) -> None:
+        two_way_player = {
+            "player_id": 660271,
+            "name": "Shohei Ohtani",
+            "team": "LAD",
+            "type": "hitter",
+            "position": "TWP",
+            "days_on_roster": 20,
+            "batters_faced": 47,
+            "walks": 6,
+            "strikeouts": 18,
+            "home_runs": 5,
+            "hits": 16,
+            "pitching_walks": 8,
+            "pitching_strikeouts": 12,
+            "pitching_home_runs": 0,
+            "pitching_hits": 5,
+            "innings_pitched": "12.0",
+            "number_of_pitches": 183,
+            "strikes": 114,
+            "whip": 0.75,
+            "era": None,
+            "fip": None,
+            "era_minus": 70.588,
+            "fip_minus": -28.412,
+            "throws": "R",
+            "advanced_pitching": {},
+            "pitch_arsenal": {},
+            "pitching_handedness_splits": {},
+            "situational_pitching_metrics": {},
+            "savant_pitch_details": {},
+        }
+
+        bref_rows = build_baseball_reference_pitcher_rows([two_way_player], team_abbreviation="LAD")
+        savant_rows = build_savant_pitcher_rows([two_way_player], team_abbreviation="LAD")
+
+        self.assertEqual(len(bref_rows), 1)
+        self.assertEqual(len(savant_rows), 1)
+        self.assertEqual(bref_rows[0]["HR"], 0)
+        self.assertEqual(bref_rows[0]["H"], 5)
+        self.assertEqual(bref_rows[0]["BB"], 8)
+        self.assertEqual(bref_rows[0]["SO"], 12)
+        self.assertEqual(savant_rows[0]["H"], 5)
+        self.assertEqual(savant_rows[0]["BB"], 8)
+        self.assertEqual(savant_rows[0]["SO"], 12)
 
     def test_fetch_roster_player_keeps_injured_pitcher_without_current_sample(self) -> None:
         roster_entry = {
