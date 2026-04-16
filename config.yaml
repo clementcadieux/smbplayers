@@ -25,8 +25,8 @@
       [100.0, 99]
     ],
     "surface_weight_caps": {
-      "power": 0.58,
-      "contact": 0.72,
+      "power": 0.75,
+      "contact": 0.85,
       "speed": 0.50,
       "fielding": 0.50,
       "arm": 0.50,

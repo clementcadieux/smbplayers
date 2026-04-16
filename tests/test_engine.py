@@ -1759,7 +1759,7 @@ class SurfaceBlendTests(unittest.TestCase):
 
         self.assertGreaterEqual(average.ratings["contact"], 45)
         self.assertLessEqual(average.ratings["contact"], 75)
-        self.assertGreaterEqual(average.ratings["power"], 38)
+        self.assertGreaterEqual(average.ratings["power"], 37)
         self.assertLessEqual(average.ratings["power"], 75)
 
     def test_elite_pitcher_profile_reaches_elite_overall_rating(self) -> None:
