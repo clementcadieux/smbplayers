@@ -929,11 +929,15 @@ def build_baseball_reference_pitcher_rows(
             continue
         if (_as_int(player.get("batters_faced")) or 0) <= 0:
             continue
+        walks = player.get("pitching_walks", player.get("walks"))
+        strikeouts = player.get("pitching_strikeouts", player.get("strikeouts"))
+        home_runs = player.get("pitching_home_runs", player.get("home_runs"))
+        hits = player.get("pitching_hits", player.get("hits"))
         derived_whip = _as_float(player.get("whip"))
         if derived_whip is None:
             derived_whip = _derive_whip_from_counts(
-                player.get("walks"),
-                player.get("hits"),
+                walks,
+                hits,
                 player.get("innings_pitched"),
             )
         pitching_splits = player.get("pitching_handedness_splits") if isinstance(player.get("pitching_handedness_splits"), Mapping) else {}
@@ -946,10 +950,10 @@ def build_baseball_reference_pitcher_rows(
                 "position": "P",
                 "Days On Roster": player.get("days_on_roster"),
                 "BF": player.get("batters_faced"),
-                "BB": player.get("walks"),
-                "SO": player.get("strikeouts"),
-                "HR": player.get("home_runs"),
-                "H": player.get("hits"),
+                "BB": walks,
+                "SO": strikeouts,
+                "HR": home_runs,
+                "H": hits,
                 "IP": player.get("innings_pitched"),
                 "Pitches": player.get("number_of_pitches"),
                 "Strikes": player.get("strikes"),
@@ -958,8 +962,8 @@ def build_baseball_reference_pitcher_rows(
                 "WHIP": derived_whip,
                 "ERA Minus": player.get("era_minus"),
                 "FIP Minus": player.get("fip_minus"),
-                "K %": _percentage(player.get("strikeouts"), player.get("batters_faced")),
-                "BB %": _percentage(player.get("walks"), player.get("batters_faced")),
+                "K %": _percentage(strikeouts, player.get("batters_faced")),
+                "BB %": _percentage(walks, player.get("batters_faced")),
                 "Same Handed Pitching": pitcher_handedness_score(throws, pitching_splits, split_type="same"),
                 "Same Handed Pitching Gap": pitcher_handedness_gap(throws, pitching_splits, split_type="same"),
                 "Opposite Handed Pitching": pitcher_handedness_score(throws, pitching_splits, split_type="opposite"),
@@ -981,11 +985,14 @@ def build_savant_pitcher_rows(
             continue
         if (_as_int(player.get("batters_faced")) or 0) <= 0:
             continue
+        walks = player.get("pitching_walks", player.get("walks"))
+        strikeouts = player.get("pitching_strikeouts", player.get("strikeouts"))
+        hits = player.get("pitching_hits", player.get("hits"))
         derived_whip = _as_float(player.get("whip"))
         if derived_whip is None:
             derived_whip = _derive_whip_from_counts(
-                player.get("walks"),
-                player.get("hits"),
+                walks,
+                hits,
                 player.get("innings_pitched"),
             )
         advanced = player.get("advanced_pitching") if isinstance(player.get("advanced_pitching"), Mapping) else {}
@@ -1061,10 +1068,10 @@ def build_savant_pitcher_rows(
                 "position": "P",
                 "Days On Roster": player.get("days_on_roster"),
                 "BF": player.get("batters_faced"),
-                "BB": player.get("walks"),
-                "H": player.get("hits"),
+                "BB": walks,
+                "H": hits,
                 "IP": player.get("innings_pitched"),
-                "SO": player.get("strikeouts"),
+                "SO": strikeouts,
                 "Pitches": player.get("number_of_pitches"),
                 "Avg Fastball Velocity": fastball_velocity(arsenal_data, mode="average"),
                 "Peak Fastball Velocity": fastball_velocity(arsenal_data, mode="peak"),
@@ -1081,8 +1088,8 @@ def build_savant_pitcher_rows(
                 "SV %": arsenal_percentage(arsenal_data, "SV"),
                 "SwStr %": _as_percentage_string(advanced.get("whiffPercentage")),
                 "Chase %": chase_rate,
-                "BB %": _percentage(player.get("walks"), player.get("batters_faced")),
-                "K %": _percentage(player.get("strikeouts"), player.get("batters_faced")),
+                "BB %": _percentage(walks, player.get("batters_faced")),
+                "K %": _percentage(strikeouts, player.get("batters_faced")),
                 "ERA": player.get("era"),
                 "FIP": player.get("fip"),
                 "WHIP": derived_whip,
@@ -1392,10 +1399,10 @@ def _fetch_roster_player(
         base_player.update(
             {
                 "batters_faced": batters_faced,
-                "walks": _as_int(pitching_stats.get("baseOnBalls")) or 0,
-                "strikeouts": _as_int(pitching_stats.get("strikeOuts")) or 0,
-                "home_runs": _as_int(pitching_stats.get("homeRuns")) or 0,
-                "hits": _as_int(pitching_stats.get("hits")) or 0,
+                "pitching_walks": _as_int(pitching_stats.get("baseOnBalls")) or 0,
+                "pitching_strikeouts": _as_int(pitching_stats.get("strikeOuts")) or 0,
+                "pitching_home_runs": _as_int(pitching_stats.get("homeRuns")) or 0,
+                "pitching_hits": _as_int(pitching_stats.get("hits")) or 0,
                 "era": _as_float(pitching_stats.get("era")) or _as_float(advanced_pitching_stats.get("era")),
                 "fip": _as_float(advanced_pitching_stats.get("fip")) or _as_float(pitching_stats.get("fip")),
                 "whip": _as_float(pitching_stats.get("whip")) or _as_float(advanced_pitching_stats.get("whip")),
@@ -1406,7 +1413,7 @@ def _fetch_roster_player(
                 "strikes": _as_int(pitching_stats.get("strikes")) or 0,
                 "strike_percentage": _as_str(pitching_stats.get("strikePercentage")) or _as_str(advanced_pitching_stats.get("strikePercentage")),
                 "stolen_bases_allowed": _as_int(pitching_stats.get("stolenBases")) or 0,
-                "caught_stealing": _as_int(pitching_stats.get("caughtStealing")) or 0,
+                "pitching_caught_stealing": _as_int(pitching_stats.get("caughtStealing")) or 0,
                 "pickoffs": _as_int(pitching_stats.get("pickoffs")) or 0,
                 "stolen_base_percentage": _as_str(pitching_stats.get("stolenBasePercentage")),
                 "advanced_pitching": advanced_pitching_stats,
@@ -1541,6 +1548,22 @@ def _fetch_stats(
     mlb_stats_api: str,
     stats_type: str = "season",
 ) -> dict[str, Any] | None:
+    def _sample_size(stat_line: Mapping[str, Any]) -> float:
+        if group == "hitting":
+            return float(_as_int(stat_line.get("plateAppearances")) or 0)
+        if group == "pitching":
+            batters_faced = _as_int(stat_line.get("battersFaced"))
+            if batters_faced is not None:
+                return float(batters_faced)
+            innings = _as_str(stat_line.get("inningsPitched"))
+            return float(_parse_ip_to_outs(innings) or 0.0)
+        if group == "fielding":
+            innings = _as_float(stat_line.get("innings"))
+            if innings is not None:
+                return innings
+            return float(_as_float(stat_line.get("outs")) or 0.0)
+        return 0.0
+
     for season in seasons:
         payload = _fetch_json(
             f"{mlb_stats_api}/people/{player_id}/stats?stats={stats_type}&group={group}&season={season}",
@@ -1549,18 +1572,33 @@ def _fetch_stats(
         stats = payload.get("stats", [])
         if not isinstance(stats, list) or not stats:
             continue
-        first_stats = stats[0]
-        if not isinstance(first_stats, Mapping):
-            continue
-        splits = first_stats.get("splits", [])
-        if not isinstance(splits, list) or not splits:
-            continue
-        first_split = splits[0]
-        if not isinstance(first_split, Mapping):
-            continue
-        stat_line = first_split.get("stat", {})
-        if isinstance(stat_line, Mapping):
-            return dict(stat_line)
+        best_stat_line: dict[str, Any] | None = None
+        best_sample = -1.0
+        fallback_stat_line: dict[str, Any] | None = None
+
+        for stats_entry in stats:
+            if not isinstance(stats_entry, Mapping):
+                continue
+            splits = stats_entry.get("splits", [])
+            if not isinstance(splits, list) or not splits:
+                continue
+            for split in splits:
+                if not isinstance(split, Mapping):
+                    continue
+                stat_line = split.get("stat", {})
+                if not isinstance(stat_line, Mapping):
+                    continue
+                if fallback_stat_line is None:
+                    fallback_stat_line = dict(stat_line)
+                sample = _sample_size(stat_line)
+                if sample > best_sample:
+                    best_sample = sample
+                    best_stat_line = dict(stat_line)
+
+        if best_stat_line is not None:
+            return best_stat_line
+        if fallback_stat_line is not None:
+            return fallback_stat_line
     return None
 
 

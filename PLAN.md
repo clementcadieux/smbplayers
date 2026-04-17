@@ -67,14 +67,14 @@
 
 ### Issue #131 – Player Value Tuning
 
-**Problem:** Two-way players (e.g. Shohei Ohtani) still appear only as hitters in the output despite prior fixes, and elite hitters continue to be underrated relative to their real-world performance level.
+**Problem:** Elite hitters are still underrated relative to their real-world production because hitter composites and blending still lean too heavily on underlying/tool metrics compared with outcome stats.
 
 **Plan:**
-1. **Diagnose two-way dual-output gap** – Trace the Generation layer for players with `role == "two_way"` and verify that both hitter and pitcher CSV rows are being emitted; check whether the deduplication guard introduced in #125 is incorrectly suppressing the pitcher record.
-2. **Fix two-way pitcher record emission** – Ensure `encoder.py` / the Generation layer writes a pitcher row for two-way players unconditionally when pitcher-side stats are present, separate from any hitter-row deduplication logic.
-3. **Review elite-hitter percentile curve** – Examine `percentile_to_rating` knots in `config.yaml` for the hitter group; compare top-percentile mapping values against known elite players to identify where the curve is capping too early.
-4. **Tune hitter composite weights** – If wRC+, OPS, or barrel-rate weights are lower than their actual predictive importance, increase them so that genuinely elite hitters separate from the pack more aggressively.
-5. **Add named-player regression assertions** – Add or update tests that assert a Shohei Ohtani–tier hitter reaches ≥ 95 overall and that his pitcher record is present in the pitcher output; assert the two-way record appears in both output files.
+1. **Capture baseline hitter distribution** – Record current contact/power/overall quantiles so tuning is validated on distribution shifts rather than single-player anecdotes.
+2. **Increase surface-stat influence for hitters** – Raise hitter `surface_weight_caps` in `config.yaml` so batting outcomes carry more influence at meaningful sample sizes.
+3. **Reweight hitter composites toward outcomes** – Shift `power` and `contact` component weights in `processing/core.py` toward SLG/HR and AVG/OBP outcomes while retaining a reduced underlying signal.
+4. **Re-check elite tail and middle band** – Validate that top-end hitters separate more while average hitters remain in a stable middle range.
+5. **Add/adjust regression guardrails** – Update tests to enforce distribution-based guardrails (elite uplift + middle-band stability) and preserve low-sample protection.
 
 ---
 
